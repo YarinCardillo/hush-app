@@ -10,11 +10,50 @@ export function useMediasoup() {
   const [consumers, setConsumers] = useState(new Map()); // incoming streams from others
   const [peers, setPeers] = useState([]);
 
+  // ─── Noise Gate State ─────────────────────────────
+  const [noiseGateEnabled, setNoiseGateEnabled] = useState(true);
+  const [noiseGateThreshold, setNoiseGateThreshold] = useState(-50);
+  const [micLevel, setMicLevel] = useState(0);
+
   const deviceRef = useRef(null);
   const sendTransportRef = useRef(null);
   const recvTransportRef = useRef(null);
   const producersRef = useRef(new Map());
   const consumersRef = useRef(new Map());
+
+  // ─── Noise Gate Refs ──────────────────────────────
+  const micPipelineRef = useRef(null);
+  const noiseGateEnabledRef = useRef(true);
+  const noiseGateThresholdRef = useRef(-50);
+
+  // ─── Noise Gate Controls ──────────────────────────
+  const updateNoiseGateEnabled = useCallback((enabled) => {
+    noiseGateEnabledRef.current = enabled;
+    setNoiseGateEnabled(enabled);
+    if (!enabled && micPipelineRef.current) {
+      const { gainNode, audioContext } = micPipelineRef.current;
+      gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
+    }
+  }, []);
+
+  const updateNoiseGateThreshold = useCallback((threshold) => {
+    const clamped = Math.max(-60, Math.min(-30, threshold));
+    noiseGateThresholdRef.current = clamped;
+    setNoiseGateThreshold(clamped);
+  }, []);
+
+  const cleanupMicPipeline = useCallback(() => {
+    const pipeline = micPipelineRef.current;
+    if (!pipeline) return;
+    clearInterval(pipeline.monitorInterval);
+    pipeline.source.disconnect();
+    pipeline.analyser.disconnect();
+    pipeline.gainNode.disconnect();
+    pipeline.audioContext.close();
+    pipeline.rawStream.getTracks().forEach((t) => t.stop());
+    micPipelineRef.current = null;
+    setMicLevel(0);
+  }, []);
 
   // ─── Initialize Device ──────────────────────────────
   const initDevice = useCallback(async () => {
@@ -337,16 +376,102 @@ export function useMediasoup() {
 
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
       },
     });
 
-    const track = stream.getAudioTracks()[0];
+    // Build Web Audio noise gate pipeline:
+    // Source → Analyser → Gain → Destination
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    const gainNode = audioContext.createGain();
+    const destination = audioContext.createMediaStreamDestination();
+
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.3;
+
+    source.connect(analyser);
+    analyser.connect(gainNode);
+    gainNode.connect(destination);
+
+    // Noise gate monitoring loop (20ms interval)
+    const dataArray = new Float32Array(analyser.fftSize);
+    let gateOpen = false;
+    let holdTimer = null;
+    let tickCount = 0;
+
+    const monitorInterval = setInterval(() => {
+      analyser.getFloatTimeDomainData(dataArray);
+
+      // Calculate RMS
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i] * dataArray[i];
+      }
+      const rms = Math.sqrt(sum / dataArray.length);
+      const rmsDb = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+
+      // Update mic level for UI meter (every 3rd tick = ~60ms)
+      tickCount++;
+      if (tickCount % 3 === 0) {
+        const normalized = Math.max(0, Math.min(100, ((rmsDb + 60) / 60) * 100));
+        setMicLevel(Math.round(normalized));
+      }
+
+      // Gate logic
+      const enabled = noiseGateEnabledRef.current;
+      const threshold = noiseGateThresholdRef.current;
+
+      if (!enabled) {
+        if (!gateOpen) {
+          gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
+          gateOpen = true;
+        }
+        if (holdTimer) {
+          clearTimeout(holdTimer);
+          holdTimer = null;
+        }
+        return;
+      }
+
+      if (rmsDb > threshold) {
+        // Signal above threshold — open gate (10ms attack)
+        if (!gateOpen) {
+          gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
+          gateOpen = true;
+        }
+        if (holdTimer) {
+          clearTimeout(holdTimer);
+          holdTimer = null;
+        }
+      } else if (gateOpen && !holdTimer) {
+        // Signal below threshold — hold 150ms then close (50ms release)
+        holdTimer = setTimeout(() => {
+          gainNode.gain.setTargetAtTime(0, audioContext.currentTime, 0.05);
+          gateOpen = false;
+          holdTimer = null;
+        }, 150);
+      }
+    }, 20);
+
+    micPipelineRef.current = {
+      audioContext,
+      source,
+      analyser,
+      gainNode,
+      destination,
+      monitorInterval,
+      rawStream: stream,
+    };
+
+    // Send the processed stream to mediasoup (not the raw mic stream)
+    const processedTrack = destination.stream.getAudioTracks()[0];
 
     const producer = await sendTransportRef.current.produce({
-      track,
+      track: processedTrack,
       appData: { source: MEDIA_SOURCES.MIC },
     });
 
@@ -360,6 +485,11 @@ export function useMediasoup() {
   const stopProducer = useCallback(async (producerId) => {
     const producer = producersRef.current.get(producerId);
     if (!producer) return;
+
+    // Clean up mic audio pipeline when stopping mic producer
+    if (producer.appData?.source === MEDIA_SOURCES.MIC) {
+      cleanupMicPipeline();
+    }
 
     producer.close();
     producersRef.current.delete(producerId);
@@ -480,6 +610,7 @@ export function useMediasoup() {
   // ─── Cleanup on unmount ─────────────────────────────
   useEffect(() => {
     return () => {
+      cleanupMicPipeline();
       for (const producer of producersRef.current.values()) {
         producer.close();
       }
@@ -508,5 +639,11 @@ export function useMediasoup() {
     consumeProducer,
     setPeers,
     sendTransport: sendTransportRef.current,
+    // Noise gate
+    noiseGateEnabled,
+    noiseGateThreshold,
+    micLevel,
+    setNoiseGateEnabled: updateNoiseGateEnabled,
+    setNoiseGateThreshold: updateNoiseGateThreshold,
   };
 }
