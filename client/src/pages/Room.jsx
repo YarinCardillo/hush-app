@@ -4,7 +4,7 @@ import { connectSocket, disconnectSocket, socketRequest } from '../lib/socket';
 import { useMediasoup } from '../hooks/useMediasoup';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDevices } from '../hooks/useDevices';
-import { QUALITY_PRESETS, DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
+import { DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
 import { estimateUploadSpeed, getRecommendedQuality } from '../lib/bandwidthEstimator';
 import StreamView from '../components/StreamView';
 import ScreenShareCard from '../components/ScreenShareCard';
@@ -50,6 +50,12 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+    padding: '4px 8px',
+    borderRadius: 'var(--radius-sm)',
   },
   main: {
     flex: 1,
@@ -174,7 +180,7 @@ export default function Room() {
   const [isMicOn, setIsMicOn] = useState(false);
   const [isWebcamOn, setIsWebcamOn] = useState(false);
   const [showQualityPanel, setShowQualityPanel] = useState(false);
-  const [pendingCapture, setPendingCapture] = useState(null);
+  const [showQualityPicker, setShowQualityPicker] = useState(false);
   const [showMicPicker, setShowMicPicker] = useState(false);
   const [showWebcamPicker, setShowWebcamPicker] = useState(false);
 
@@ -230,7 +236,7 @@ export default function Room() {
       setIsScreenSharing(false);
       setIsMicOn(false);
       setIsWebcamOn(false);
-      setPendingCapture(null);
+      setShowQualityPicker(false);
 
       try {
         await initDevice();
@@ -283,28 +289,17 @@ export default function Room() {
       }
       setIsScreenSharing(false);
     } else {
-      const capture = await captureScreen();
-      if (!capture) return;
-
-      // Show quality picker BEFORE producing
-      setPendingCapture(capture);
+      setShowQualityPicker(true);
     }
   };
 
   const handleQualityPick = async (qualityKey) => {
-    const capture = pendingCapture;
-    setPendingCapture(null);
-    if (!capture) return;
-
-    // Verify the captured track is still alive
-    const videoTrack = capture.stream.getVideoTracks()[0];
-    if (!videoTrack || videoTrack.readyState !== 'live') {
-      console.error('[room] Captured track died before quality selection');
-      capture.stream.getTracks().forEach((t) => t.stop());
-      return;
-    }
-
+    setShowQualityPicker(false);
     setQuality(qualityKey);
+
+    // Capture and produce in one shot — no delay for track to die
+    const capture = await captureScreen();
+    if (!capture) return;
 
     try {
       const result = await produceScreen(capture.stream, qualityKey);
@@ -318,13 +313,6 @@ export default function Room() {
       console.error('[room] Screen share failed:', err);
       capture.stream.getTracks().forEach((t) => t.stop());
     }
-  };
-
-  const handleCaptureCancelled = () => {
-    if (pendingCapture?.stream) {
-      pendingCapture.stream.getTracks().forEach((t) => t.stop());
-    }
-    setPendingCapture(null);
   };
 
   const handleMic = async () => {
@@ -521,15 +509,27 @@ export default function Room() {
         <div style={styles.headerLeft}>
           <span
             style={{
+              position: 'relative',
               fontFamily: 'var(--font-sans)',
               fontSize: '1.1rem',
-              fontWeight: 300,
-              color: 'var(--hush-amber)',
+              fontWeight: 200,
+              color: 'var(--hush-text)',
               letterSpacing: '-0.03em',
               userSelect: 'none',
             }}
           >
-            h
+            hush
+            <span
+              style={{
+                position: 'absolute',
+                top: '-1px',
+                left: '53%',
+                width: '5px',
+                height: '5px',
+                borderRadius: '50%',
+                background: 'var(--hush-amber)',
+              }}
+            />
           </span>
           <span style={styles.roomTitle}>{decodeURIComponent(roomName)}</span>
           <span className="badge badge-live">
@@ -538,7 +538,11 @@ export default function Room() {
           </span>
         </div>
         <div style={styles.headerRight}>
-          <div style={styles.participantCount}>
+          <button
+            style={styles.participantCount}
+            title="Room panel"
+            onClick={() => setShowQualityPanel(!showQualityPanel)}
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
@@ -546,16 +550,6 @@ export default function Room() {
               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
             {peers.length + 1}
-          </div>
-          <button
-            className="btn btn-icon"
-            title="Quality settings"
-            onClick={() => setShowQualityPanel(!showQualityPanel)}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
           </button>
         </div>
       </div>
@@ -614,14 +608,6 @@ export default function Room() {
             )}
             <div style={styles.sidebar(isMobile)}>
               <div style={styles.sidebarSection}>
-                <div style={styles.sidebarLabel}>Stream Quality</div>
-                <QualitySelector
-                  currentQuality={quality}
-                  onSelect={handleQualityChange}
-                />
-              </div>
-
-              <div style={styles.sidebarSection}>
                 <div style={styles.sidebarLabel}>Participants ({peers.length + 1})</div>
                 <div style={styles.peerItem}>
                   <div style={styles.peerDot(isScreenSharing)} />
@@ -634,6 +620,16 @@ export default function Room() {
                   </div>
                 ))}
               </div>
+
+              {isScreenSharing && (
+                <div style={styles.sidebarSection}>
+                  <div style={styles.sidebarLabel}>Stream Quality</div>
+                  <QualitySelector
+                    currentQuality={quality}
+                    onSelect={handleQualityChange}
+                  />
+                </div>
+              )}
             </div>
           </>
         )}
@@ -643,12 +639,10 @@ export default function Room() {
         <OrphanAudio key={oa.id} track={oa.track} />
       ))}
 
-      {pendingCapture && (
+      {showQualityPicker && (
         <QualityPickerModal
-          nativeWidth={pendingCapture.nativeWidth}
-          nativeHeight={pendingCapture.nativeHeight}
           onSelect={handleQualityPick}
-          onCancel={handleCaptureCancelled}
+          onCancel={() => setShowQualityPicker(false)}
         />
       )}
 

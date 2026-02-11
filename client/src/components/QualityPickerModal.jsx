@@ -88,7 +88,7 @@ function OptionRow({ label, detail, onClick }) {
   );
 }
 
-export default function QualityPickerModal({ nativeWidth, nativeHeight, onSelect, onCancel }) {
+export default function QualityPickerModal({ onSelect, onCancel }) {
   useEffect(() => {
     const handleKey = (e) => {
       if (e.key === 'Escape') onCancel();
@@ -104,7 +104,7 @@ export default function QualityPickerModal({ nativeWidth, nativeHeight, onSelect
 
         <OptionRow
           label="Source"
-          detail={`${nativeWidth}x${nativeHeight}, 60fps`}
+          detail="native resolution, 60fps"
           onClick={() => onSelect('source')}
         />
 
