@@ -433,7 +433,7 @@ export function useMediasoup() {
 
     videoTrack.removeEventListener('ended', onTrackEnded);
     producersRef.current.set(videoProducer.id, videoProducer);
-    await applyEncryptionTransform(videoProducer.rtpSender, e2eKeyBytesRef.current, 'video');
+    applyEncryptionTransform(videoProducer.rtpSender, e2eKeyBytesRef.current, 'video'); // No await - must be immediate!
 
     // When user clicks "Stop sharing" in browser UI
     videoTrack.addEventListener('ended', () => {
@@ -458,7 +458,7 @@ export function useMediasoup() {
           appData: { source: MEDIA_SOURCES.SCREEN_AUDIO },
         });
         producersRef.current.set(audioProducer.id, audioProducer);
-        await applyEncryptionTransform(audioProducer.rtpSender, e2eKeyBytesRef.current, 'audio');
+        applyEncryptionTransform(audioProducer.rtpSender, e2eKeyBytesRef.current, 'audio');
         console.log('[screen] Audio producer created:', audioProducer.id);
       } catch (audioErr) {
         console.warn('[screen] Audio produce failed (non-fatal):', audioErr.message);
@@ -585,7 +585,7 @@ export function useMediasoup() {
     });
 
     producersRef.current.set(producer.id, producer);
-    await applyEncryptionTransform(producer.rtpSender, e2eKeyBytesRef.current, 'video');
+    applyEncryptionTransform(producer.rtpSender, e2eKeyBytesRef.current, 'video');
     scheduleProducersUpdate();
 
     return producer;
@@ -753,7 +753,7 @@ export function useMediasoup() {
     });
 
     producersRef.current.set(producer.id, producer);
-    await applyEncryptionTransform(producer.rtpSender, e2eKeyBytesRef.current, 'audio');
+    applyEncryptionTransform(producer.rtpSender, e2eKeyBytesRef.current, 'audio');
     scheduleProducersUpdate();
 
     return producer;
