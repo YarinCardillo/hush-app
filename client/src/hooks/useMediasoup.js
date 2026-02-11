@@ -5,7 +5,7 @@ import { QUALITY_PRESETS, DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } 
 import {
   isE2ESupported, hasScriptTransform,
   applyEncryptionTransform, applyDecryptionTransform,
-  terminateE2EWorker,
+  terminateE2EWorker, monitorFrameDrops,
 } from '../lib/encryption';
 
 export function useMediasoup() {
@@ -41,12 +41,33 @@ export function useMediasoup() {
   const noiseGateEnabledRef = useRef(true);
   const noiseGateThresholdRef = useRef(-50);
 
+  // ─── Adaptive Quality Refs ────────────────────────
+  const frameDropMonitorRef = useRef(null);
+  const currentQualityRef = useRef(DEFAULT_QUALITY);
+  const qualityDowngradedRef = useRef(false);
+
+  // ─── Debounced State Updates ──────────────────────
+  const pendingProducersUpdateRef = useRef(false);
+  const pendingConsumersUpdateRef = useRef(false);
+  const pendingScreensUpdateRef = useRef(false);
+
   // ─── Noise Gate Controls ──────────────────────────
   const updateNoiseGateEnabled = useCallback((enabled) => {
     noiseGateEnabledRef.current = enabled;
     setNoiseGateEnabled(enabled);
-    if (!enabled && micPipelineRef.current) {
-      const { gainNode, audioContext } = micPipelineRef.current;
+
+    const pipeline = micPipelineRef.current;
+    if (!pipeline) return;
+
+    // Update worklet if using AudioWorklet
+    if (pipeline.workletNode) {
+      pipeline.workletNode.port.postMessage({
+        type: 'updateParams',
+        enabled,
+      });
+    } else if (!enabled && pipeline.gainNode) {
+      // Legacy fallback: open gate immediately
+      const { gainNode, audioContext } = pipeline;
       gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
     }
   }, []);
@@ -55,6 +76,17 @@ export function useMediasoup() {
     const clamped = Math.max(-60, Math.min(-30, threshold));
     noiseGateThresholdRef.current = clamped;
     setNoiseGateThreshold(clamped);
+
+    const pipeline = micPipelineRef.current;
+    if (!pipeline) return;
+
+    // Update worklet if using AudioWorklet
+    if (pipeline.workletNode) {
+      pipeline.workletNode.port.postMessage({
+        type: 'updateParams',
+        threshold: clamped,
+      });
+    }
   }, []);
 
   const setE2EKey = useCallback((keyBytes) => {
@@ -63,13 +95,56 @@ export function useMediasoup() {
     if (keyBytes) console.log('[e2e] Key set for encryption');
   }, []);
 
+  // ─── Debounced State Updates ──────────────────────
+  const scheduleProducersUpdate = useCallback(() => {
+    if (pendingProducersUpdateRef.current) return;
+    pendingProducersUpdateRef.current = true;
+    requestAnimationFrame(() => {
+      setProducers(new Map(producersRef.current));
+      pendingProducersUpdateRef.current = false;
+    });
+  }, []);
+
+  const scheduleConsumersUpdate = useCallback(() => {
+    if (pendingConsumersUpdateRef.current) return;
+    pendingConsumersUpdateRef.current = true;
+    requestAnimationFrame(() => {
+      setConsumers(new Map(consumersRef.current));
+      pendingConsumersUpdateRef.current = false;
+    });
+  }, []);
+
+  const scheduleScreensUpdate = useCallback(() => {
+    if (pendingScreensUpdateRef.current) return;
+    pendingScreensUpdateRef.current = true;
+    requestAnimationFrame(() => {
+      setAvailableScreens(new Map(availableScreensRef.current));
+      setWatchedScreens(new Set(watchedScreensRef.current));
+      pendingScreensUpdateRef.current = false;
+    });
+  }, []);
+
   const cleanupMicPipeline = useCallback(() => {
     const pipeline = micPipelineRef.current;
     if (!pipeline) return;
-    clearInterval(pipeline.monitorInterval);
+
+    // Cleanup legacy interval if present
+    if (pipeline.monitorInterval) {
+      clearInterval(pipeline.monitorInterval);
+    }
+
+    // Disconnect nodes
     pipeline.source.disconnect();
-    pipeline.analyser.disconnect();
-    pipeline.gainNode.disconnect();
+
+    if (pipeline.workletNode) {
+      // AudioWorklet path
+      pipeline.workletNode.disconnect();
+    } else if (pipeline.analyser && pipeline.gainNode) {
+      // Legacy path
+      pipeline.analyser.disconnect();
+      pipeline.gainNode.disconnect();
+    }
+
     pipeline.audioContext.close();
     pipeline.rawStream.getTracks().forEach((t) => t.stop());
     micPipelineRef.current = null;
@@ -392,9 +467,9 @@ export function useMediasoup() {
       console.log('[screen] No audio track to produce');
     }
 
-    setProducers(new Map(producersRef.current));
+    scheduleProducersUpdate();
     return { videoProducer, stream };
-  }, []);
+  }, [scheduleProducersUpdate]);
 
   // ─── Switch Screen/Window On The Fly ────────────────
   const switchScreenSource = useCallback(async (qualityKey) => {
@@ -511,10 +586,10 @@ export function useMediasoup() {
 
     producersRef.current.set(producer.id, producer);
     await applyEncryptionTransform(producer.rtpSender, e2eKeyBytesRef.current, 'video');
-    setProducers(new Map(producersRef.current));
+    scheduleProducersUpdate();
 
     return producer;
-  }, []);
+  }, [scheduleProducersUpdate]);
 
   // ─── Microphone ─────────────────────────────────────
   const startMic = useCallback(async (deviceId = null) => {
@@ -531,90 +606,143 @@ export function useMediasoup() {
       audio: audioConstraints,
     });
 
-    // Build Web Audio noise gate pipeline:
-    // Source → Analyser → Gain → Destination
     const audioContext = new AudioContext();
     const source = audioContext.createMediaStreamSource(stream);
-    const analyser = audioContext.createAnalyser();
-    const gainNode = audioContext.createGain();
-    const destination = audioContext.createMediaStreamDestination();
 
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.3;
+    // Try to use AudioWorklet (preferred — runs in audio thread)
+    const hasWorklet = typeof audioContext.audioWorklet !== 'undefined';
+    let destination;
+    let workletNode = null;
+    let legacyMonitorInterval = null;
 
-    source.connect(analyser);
-    analyser.connect(gainNode);
-    gainNode.connect(destination);
+    if (hasWorklet) {
+      try {
+        // Load noise gate worklet
+        await audioContext.audioWorklet.addModule(
+          new URL('./noiseGateWorklet.js', import.meta.url)
+        );
 
-    // Noise gate monitoring loop (20ms interval)
-    const dataArray = new Float32Array(analyser.fftSize);
-    let gateOpen = false;
-    let holdTimer = null;
-    let tickCount = 0;
+        workletNode = new AudioWorkletNode(audioContext, 'noise-gate-processor');
+        destination = audioContext.createMediaStreamDestination();
 
-    const monitorInterval = setInterval(() => {
-      analyser.getFloatTimeDomainData(dataArray);
+        // Connect: Source → NoiseGate → Destination
+        source.connect(workletNode);
+        workletNode.connect(destination);
 
-      // Calculate RMS
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i] * dataArray[i];
+        // Receive level updates from worklet
+        workletNode.port.onmessage = (event) => {
+          const { type, level } = event.data;
+          if (type === 'level') {
+            setMicLevel(level);
+          }
+        };
+
+        // Send initial parameters to worklet
+        workletNode.port.postMessage({
+          type: 'updateParams',
+          enabled: noiseGateEnabledRef.current,
+          threshold: noiseGateThresholdRef.current,
+        });
+
+        console.log('[noise-gate] Using AudioWorklet (runs in audio thread)');
+      } catch (err) {
+        console.warn('[noise-gate] AudioWorklet failed, falling back to main thread:', err);
+        workletNode = null;
       }
-      const rms = Math.sqrt(sum / dataArray.length);
-      const rmsDb = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+    }
 
-      // Update mic level for UI meter (every 3rd tick = ~60ms)
-      tickCount++;
-      if (tickCount % 3 === 0) {
-        const normalized = Math.max(0, Math.min(100, ((rmsDb + 60) / 60) * 100));
-        setMicLevel(Math.round(normalized));
-      }
+    // Fallback: Use old approach with setInterval (main thread)
+    if (!workletNode) {
+      const analyser = audioContext.createAnalyser();
+      const gainNode = audioContext.createGain();
+      destination = audioContext.createMediaStreamDestination();
 
-      // Gate logic
-      const enabled = noiseGateEnabledRef.current;
-      const threshold = noiseGateThresholdRef.current;
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.3;
 
-      if (!enabled) {
-        if (!gateOpen) {
-          gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
-          gateOpen = true;
+      source.connect(analyser);
+      analyser.connect(gainNode);
+      gainNode.connect(destination);
+
+      // Noise gate monitoring loop (20ms interval)
+      const dataArray = new Float32Array(analyser.fftSize);
+      let gateOpen = false;
+      let holdTimer = null;
+      let tickCount = 0;
+
+      legacyMonitorInterval = setInterval(() => {
+        analyser.getFloatTimeDomainData(dataArray);
+
+        // Calculate RMS
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i] * dataArray[i];
         }
-        if (holdTimer) {
-          clearTimeout(holdTimer);
-          holdTimer = null;
-        }
-        return;
-      }
+        const rms = Math.sqrt(sum / dataArray.length);
+        const rmsDb = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
 
-      if (rmsDb > threshold) {
-        // Signal above threshold — open gate (10ms attack)
-        if (!gateOpen) {
-          gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
-          gateOpen = true;
+        // Update mic level for UI meter (every 3rd tick = ~60ms)
+        tickCount++;
+        if (tickCount % 3 === 0) {
+          const normalized = Math.max(0, Math.min(100, ((rmsDb + 60) / 60) * 100));
+          setMicLevel(Math.round(normalized));
         }
-        if (holdTimer) {
-          clearTimeout(holdTimer);
-          holdTimer = null;
-        }
-      } else if (gateOpen && !holdTimer) {
-        // Signal below threshold — hold 150ms then close (50ms release)
-        holdTimer = setTimeout(() => {
-          gainNode.gain.setTargetAtTime(0, audioContext.currentTime, 0.05);
-          gateOpen = false;
-          holdTimer = null;
-        }, 150);
-      }
-    }, 20);
 
-    micPipelineRef.current = {
-      audioContext,
-      source,
-      analyser,
-      gainNode,
-      destination,
-      monitorInterval,
-      rawStream: stream,
-    };
+        // Gate logic
+        const enabled = noiseGateEnabledRef.current;
+        const threshold = noiseGateThresholdRef.current;
+
+        if (!enabled) {
+          if (!gateOpen) {
+            gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
+            gateOpen = true;
+          }
+          if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+          }
+          return;
+        }
+
+        if (rmsDb > threshold) {
+          if (!gateOpen) {
+            gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
+            gateOpen = true;
+          }
+          if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+          }
+        } else if (gateOpen && !holdTimer) {
+          holdTimer = setTimeout(() => {
+            gainNode.gain.setTargetAtTime(0, audioContext.currentTime, 0.05);
+            gateOpen = false;
+            holdTimer = null;
+          }, 150);
+        }
+      }, 20);
+
+      console.log('[noise-gate] Using legacy main thread implementation');
+
+      micPipelineRef.current = {
+        audioContext,
+        source,
+        analyser,
+        gainNode,
+        destination,
+        monitorInterval: legacyMonitorInterval,
+        rawStream: stream,
+      };
+    } else {
+      // AudioWorklet path
+      micPipelineRef.current = {
+        audioContext,
+        source,
+        workletNode,
+        destination,
+        rawStream: stream,
+      };
+    }
 
     // Send the processed stream to mediasoup (not the raw mic stream)
     const processedTrack = destination.stream.getAudioTracks()[0];
@@ -626,10 +754,10 @@ export function useMediasoup() {
 
     producersRef.current.set(producer.id, producer);
     await applyEncryptionTransform(producer.rtpSender, e2eKeyBytesRef.current, 'audio');
-    setProducers(new Map(producersRef.current));
+    scheduleProducersUpdate();
 
     return producer;
-  }, []);
+  }, [scheduleProducersUpdate]);
 
   // ─── Stop Producer ──────────────────────────────────
   const stopProducer = useCallback(async (producerId) => {
@@ -643,14 +771,14 @@ export function useMediasoup() {
 
     producer.close();
     producersRef.current.delete(producerId);
-    setProducers(new Map(producersRef.current));
+    scheduleProducersUpdate();
 
     try {
       await socketRequest('closeProducer', { producerId });
     } catch {
       // Server might already know
     }
-  }, []);
+  }, [cleanupMicPipeline, scheduleProducersUpdate]);
 
   // ─── Consume a remote producer ──────────────────────
   const consumeProducer = useCallback(async (producerId, producerPeerId) => {
@@ -687,13 +815,13 @@ export function useMediasoup() {
         appData: response.appData,
       });
 
-      setConsumers(new Map(consumersRef.current));
+      scheduleConsumersUpdate();
 
       return consumer;
     } catch (err) {
       console.error('[mediasoup] Consume error:', err);
     }
-  }, []);
+  }, [scheduleConsumersUpdate]);
 
   // ─── Socket event listeners ─────────────────────────
   useEffect(() => {
@@ -705,7 +833,7 @@ export function useMediasoup() {
 
       if (isScreenShareSource(appData?.source)) {
         availableScreensRef.current.set(producerId, { producerId, peerId, kind, appData });
-        setAvailableScreens(new Map(availableScreensRef.current));
+        scheduleScreensUpdate();
 
         // Auto-consume screen-audio if user is already watching this peer's screen
         if (appData?.source === MEDIA_SOURCES.SCREEN_AUDIO) {
@@ -728,12 +856,11 @@ export function useMediasoup() {
     const handleProducerClosed = ({ producerId }) => {
       if (availableScreensRef.current.has(producerId)) {
         availableScreensRef.current.delete(producerId);
-        setAvailableScreens(new Map(availableScreensRef.current));
       }
       if (watchedScreensRef.current.has(producerId)) {
         watchedScreensRef.current.delete(producerId);
-        setWatchedScreens(new Set(watchedScreensRef.current));
       }
+      scheduleScreensUpdate();
 
       for (const [consumerId, data] of consumersRef.current.entries()) {
         if (data.consumer.producerId === producerId) {
@@ -741,7 +868,7 @@ export function useMediasoup() {
           consumersRef.current.delete(consumerId);
         }
       }
-      setConsumers(new Map(consumersRef.current));
+      scheduleConsumersUpdate();
     };
 
     const handleConsumerClosed = ({ consumerId }) => {
@@ -749,7 +876,7 @@ export function useMediasoup() {
       if (data) {
         data.consumer.close();
         consumersRef.current.delete(consumerId);
-        setConsumers(new Map(consumersRef.current));
+        scheduleConsumersUpdate();
       }
     };
 
@@ -769,8 +896,7 @@ export function useMediasoup() {
           watchedScreensRef.current.delete(producerId);
         }
       }
-      setAvailableScreens(new Map(availableScreensRef.current));
-      setWatchedScreens(new Set(watchedScreensRef.current));
+      scheduleScreensUpdate();
 
       // Clean up their consumers
       for (const [consumerId, data] of consumersRef.current.entries()) {
@@ -779,7 +905,7 @@ export function useMediasoup() {
           consumersRef.current.delete(consumerId);
         }
       }
-      setConsumers(new Map(consumersRef.current));
+      scheduleConsumersUpdate();
     };
 
     socket.on('newProducer', handleNewProducer);
@@ -795,12 +921,58 @@ export function useMediasoup() {
       socket.off('peerJoined', handlePeerJoined);
       socket.off('peerLeft', handlePeerLeft);
     };
-  }, [consumeProducer, isReady]);
+  }, [consumeProducer, isReady, scheduleConsumersUpdate, scheduleScreensUpdate]);
+
+  // ─── Adaptive Quality: Monitor Frame Drops ──────────
+  useEffect(() => {
+    // Only monitor when E2E encryption is active (CPU-intensive)
+    if (!isE2EActive || !isReady) return;
+
+    // Find active screen producer
+    const screenEntry = Array.from(producersRef.current.entries())
+      .find(([, p]) => p.appData?.source === MEDIA_SOURCES.SCREEN);
+
+    if (!screenEntry) return;
+
+    const [, producer] = screenEntry;
+    const sender = producer.rtpSender;
+    if (!sender) return;
+
+    console.log('[adaptive] Starting frame drop monitoring for screen share');
+    currentQualityRef.current = DEFAULT_QUALITY;
+    qualityDowngradedRef.current = false;
+
+    const stopMonitoring = monitorFrameDrops(sender, {
+      threshold: 0.05, // 5% drop rate
+      intervalMs: 5000,
+      onHighDropRate: async ({ dropRate }) => {
+        // Downgrade quality if still on source preset
+        if (!qualityDowngradedRef.current && currentQualityRef.current === 'source') {
+          console.warn(`[adaptive] High frame drop rate (${(dropRate * 100).toFixed(1)}%) - downgrading to lite quality`);
+          qualityDowngradedRef.current = true;
+          currentQualityRef.current = 'lite';
+          await changeQuality('lite');
+        }
+      },
+    });
+
+    frameDropMonitorRef.current = stopMonitoring;
+
+    return () => {
+      if (frameDropMonitorRef.current) {
+        frameDropMonitorRef.current();
+        frameDropMonitorRef.current = null;
+      }
+    };
+  }, [isE2EActive, isReady, producers, changeQuality]);
 
   // ─── Cleanup on unmount ─────────────────────────────
   useEffect(() => {
     return () => {
       cleanupMicPipeline();
+      if (frameDropMonitorRef.current) {
+        frameDropMonitorRef.current();
+      }
       for (const producer of producersRef.current.values()) {
         producer.close();
       }
@@ -816,8 +988,8 @@ export function useMediasoup() {
   // ─── Click-to-Watch Functions ──────────────────────
   const addAvailableScreen = useCallback((producerId, peerId, kind, appData) => {
     availableScreensRef.current.set(producerId, { producerId, peerId, kind, appData });
-    setAvailableScreens(new Map(availableScreensRef.current));
-  }, []);
+    scheduleScreensUpdate();
+  }, [scheduleScreensUpdate]);
 
   const watchScreen = useCallback(async (producerId) => {
     const screenInfo = availableScreensRef.current.get(producerId);
@@ -836,8 +1008,8 @@ export function useMediasoup() {
     }
 
     watchedScreensRef.current.add(producerId);
-    setWatchedScreens(new Set(watchedScreensRef.current));
-  }, [consumeProducer]);
+    scheduleScreensUpdate();
+  }, [consumeProducer, scheduleScreensUpdate]);
 
   const unwatchScreen = useCallback((producerId) => {
     const screenInfo = availableScreensRef.current.get(producerId);
@@ -861,10 +1033,10 @@ export function useMediasoup() {
       }
     }
 
-    setConsumers(new Map(consumersRef.current));
+    scheduleConsumersUpdate();
     watchedScreensRef.current.delete(producerId);
-    setWatchedScreens(new Set(watchedScreensRef.current));
-  }, []);
+    scheduleScreensUpdate();
+  }, [scheduleConsumersUpdate, scheduleScreensUpdate]);
 
   return {
     isReady,

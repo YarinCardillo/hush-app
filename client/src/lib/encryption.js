@@ -122,6 +122,72 @@ export function terminateE2EWorker() {
   }
 }
 
+// ─── Performance Monitoring ──────────────────────────
+
+/**
+ * Get frame drop statistics from an RTCRtpSender.
+ * Returns { framesDropped, totalFrames, dropRate }.
+ */
+export async function getSenderStats(sender) {
+  if (!sender) return { framesDropped: 0, totalFrames: 0, dropRate: 0 };
+
+  try {
+    const stats = await sender.getStats();
+    let framesDropped = 0;
+    let totalFrames = 0;
+
+    for (const [, report] of stats) {
+      if (report.type === 'outbound-rtp' && report.kind === 'video') {
+        framesDropped = report.framesDropped || 0;
+        totalFrames = (report.framesSent || 0) + framesDropped;
+        break;
+      }
+    }
+
+    const dropRate = totalFrames > 0 ? (framesDropped / totalFrames) : 0;
+    return { framesDropped, totalFrames, dropRate };
+  } catch (err) {
+    console.error('[e2e] Failed to get sender stats:', err);
+    return { framesDropped: 0, totalFrames: 0, dropRate: 0 };
+  }
+}
+
+/**
+ * Monitor frame drop rate and invoke callback when threshold is exceeded.
+ * Returns cleanup function to stop monitoring.
+ */
+export function monitorFrameDrops(sender, options = {}) {
+  const {
+    threshold = 0.05, // 5% drop rate triggers callback
+    intervalMs = 5000, // Check every 5 seconds
+    onHighDropRate = () => {},
+  } = options;
+
+  let lastFramesDropped = 0;
+  let consecutiveHighDrops = 0;
+
+  const intervalId = setInterval(async () => {
+    const { framesDropped, totalFrames, dropRate } = await getSenderStats(sender);
+
+    // Calculate drop rate since last check
+    const newDrops = framesDropped - lastFramesDropped;
+    lastFramesDropped = framesDropped;
+
+    if (dropRate > threshold && newDrops > 0) {
+      consecutiveHighDrops++;
+      if (consecutiveHighDrops >= 2) {
+        // Two consecutive high drop periods = real issue
+        console.warn(`[e2e] High frame drop rate detected: ${(dropRate * 100).toFixed(1)}% (${framesDropped}/${totalFrames})`);
+        onHighDropRate({ dropRate, framesDropped, totalFrames });
+      }
+    } else {
+      consecutiveHighDrops = 0;
+    }
+  }, intervalMs);
+
+  return () => clearInterval(intervalId);
+}
+
 // ─── Transform Helpers ───────────────────────────────
 
 async function importCryptoKey(keyBytes, usages) {
