@@ -202,6 +202,7 @@ All configuration via environment variables:
 - [ ] Room invitations via link
 - [ ] Admin controls (kick, mute)
 - [ ] Simulcast for adaptive quality per viewer
+- [ ] End-to-end encryption (WebRTC Encoded Transform)
 
 ---
 
