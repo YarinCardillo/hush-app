@@ -57,13 +57,29 @@ export default function StreamView({ track, label, source, isLocal }) {
   useEffect(() => {
     if (!videoRef.current || !track) return;
 
+    const video = videoRef.current;
     const stream = new MediaStream([track]);
-    videoRef.current.srcObject = stream;
+    video.srcObject = stream;
+
+    // iOS Safari blocks autoplay of unmuted video.
+    // Attempt unmuted first, fall back to muted playback.
+    const tryPlay = async () => {
+      try {
+        await video.play();
+      } catch {
+        video.muted = true;
+        try {
+          await video.play();
+        } catch (retryErr) {
+          console.error('[StreamView] Playback failed:', retryErr);
+        }
+      }
+    };
+
+    tryPlay();
 
     return () => {
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
+      video.srcObject = null;
     };
   }, [track]);
 
