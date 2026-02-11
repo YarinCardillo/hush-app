@@ -1,12 +1,21 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { Device } from 'mediasoup-client';
-import { getSocket, socketRequest } from '../lib/socket';
-import { QUALITY_PRESETS, DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
+import { useState, useRef, useCallback, useEffect } from "react";
+import { Device } from "mediasoup-client";
+import { getSocket, socketRequest } from "../lib/socket";
 import {
-  isE2ESupported, hasScriptTransform,
-  applyEncryptionTransform, applyDecryptionTransform,
-  terminateE2EWorker, monitorFrameDrops,
-} from '../lib/encryption';
+  QUALITY_PRESETS,
+  DEFAULT_QUALITY,
+  MEDIA_SOURCES,
+  isScreenShareSource,
+} from "../utils/constants";
+import {
+  isE2ESupported,
+  hasScriptTransform,
+  applyEncryptionTransform,
+  applyDecryptionTransform,
+  importCryptoKey,
+  terminateE2EWorker,
+  monitorFrameDrops,
+} from "../lib/encryption";
 
 export function useMediasoup() {
   const [isReady, setIsReady] = useState(false);
@@ -62,7 +71,7 @@ export function useMediasoup() {
     // Update worklet if using AudioWorklet
     if (pipeline.workletNode) {
       pipeline.workletNode.port.postMessage({
-        type: 'updateParams',
+        type: "updateParams",
         enabled,
       });
     } else if (!enabled && pipeline.gainNode) {
@@ -83,7 +92,7 @@ export function useMediasoup() {
     // Update worklet if using AudioWorklet
     if (pipeline.workletNode) {
       pipeline.workletNode.port.postMessage({
-        type: 'updateParams',
+        type: "updateParams",
         threshold: clamped,
       });
     }
@@ -92,7 +101,7 @@ export function useMediasoup() {
   const setE2EKey = useCallback((keyBytes) => {
     e2eKeyBytesRef.current = keyBytes;
     setIsE2EActive(!!keyBytes);
-    if (keyBytes) console.log('[e2e] Key set for encryption');
+    if (keyBytes) console.log("[e2e] Key set for encryption");
   }, []);
 
   // ─── Debounced State Updates ──────────────────────
@@ -174,77 +183,105 @@ export function useMediasoup() {
       setIsReady(false);
       cleanupMicPipeline();
 
-      const { rtpCapabilities } = await socketRequest('getRouterRtpCapabilities');
+      const { rtpCapabilities } = await socketRequest(
+        "getRouterRtpCapabilities",
+      );
 
       const device = new Device();
       await device.load({ routerRtpCapabilities: rtpCapabilities });
       deviceRef.current = device;
 
       // E2E: legacy createEncodedStreams needs this flag on the PeerConnection
-      const needsLegacyE2E = e2eKeyBytesRef.current && !hasScriptTransform() && isE2ESupported();
-      const additionalSettings = needsLegacyE2E ? { encodedInsertableStreams: true } : {};
+      const needsLegacyE2E =
+        e2eKeyBytesRef.current && !hasScriptTransform() && isE2ESupported();
+      const additionalSettings = needsLegacyE2E
+        ? { encodedInsertableStreams: true }
+        : {};
 
       // Create send transport
-      const sendData = await socketRequest('createWebRtcTransport', { direction: 'send' });
-      const sendTransport = device.createSendTransport({ ...sendData.params, additionalSettings });
-
-      sendTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
-        try {
-          await socketRequest('connectTransport', {
-            transportId: sendTransport.id,
-            dtlsParameters,
-          });
-          callback();
-        } catch (err) {
-          errback(err);
-        }
+      const sendData = await socketRequest("createWebRtcTransport", {
+        direction: "send",
+      });
+      const sendTransport = device.createSendTransport({
+        ...sendData.params,
+        additionalSettings,
       });
 
-      sendTransport.on('connectionstatechange', (state) => {
+      sendTransport.on(
+        "connect",
+        async ({ dtlsParameters }, callback, errback) => {
+          try {
+            await socketRequest("connectTransport", {
+              transportId: sendTransport.id,
+              dtlsParameters,
+            });
+            callback();
+          } catch (err) {
+            errback(err);
+          }
+        },
+      );
+
+      sendTransport.on("connectionstatechange", (state) => {
         console.log(`[mediasoup] Send transport state: ${state}`);
-        if (state === 'failed') {
-          console.error('[mediasoup] Send transport ICE failed — check firewall (ports 40000-40100 UDP/TCP)');
-          setError('Media upload failed: cannot reach server media ports.');
+        if (state === "failed") {
+          console.error(
+            "[mediasoup] Send transport ICE failed — check firewall (ports 40000-40100 UDP/TCP)",
+          );
+          setError("Media upload failed: cannot reach server media ports.");
         }
       });
 
-      sendTransport.on('produce', async ({ kind, rtpParameters, appData }, callback, errback) => {
-        try {
-          const { producerId } = await socketRequest('produce', {
-            transportId: sendTransport.id,
-            kind,
-            rtpParameters,
-            appData,
-          });
-          callback({ id: producerId });
-        } catch (err) {
-          errback(err);
-        }
-      });
+      sendTransport.on(
+        "produce",
+        async ({ kind, rtpParameters, appData }, callback, errback) => {
+          try {
+            const { producerId } = await socketRequest("produce", {
+              transportId: sendTransport.id,
+              kind,
+              rtpParameters,
+              appData,
+            });
+            callback({ id: producerId });
+          } catch (err) {
+            errback(err);
+          }
+        },
+      );
 
       sendTransportRef.current = sendTransport;
 
       // Create receive transport
-      const recvData = await socketRequest('createWebRtcTransport', { direction: 'recv' });
-      const recvTransport = device.createRecvTransport({ ...recvData.params, additionalSettings });
-
-      recvTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
-        try {
-          await socketRequest('connectTransport', {
-            transportId: recvTransport.id,
-            dtlsParameters,
-          });
-          callback();
-        } catch (err) {
-          errback(err);
-        }
+      const recvData = await socketRequest("createWebRtcTransport", {
+        direction: "recv",
+      });
+      const recvTransport = device.createRecvTransport({
+        ...recvData.params,
+        additionalSettings,
       });
 
-      recvTransport.on('connectionstatechange', (state) => {
+      recvTransport.on(
+        "connect",
+        async ({ dtlsParameters }, callback, errback) => {
+          try {
+            await socketRequest("connectTransport", {
+              transportId: recvTransport.id,
+              dtlsParameters,
+            });
+            callback();
+          } catch (err) {
+            errback(err);
+          }
+        },
+      );
+
+      recvTransport.on("connectionstatechange", (state) => {
         console.log(`[mediasoup] Recv transport state: ${state}`);
-        if (state === 'failed') {
-          console.error('[mediasoup] Recv transport ICE failed — check firewall (ports 40000-40100 UDP/TCP)');
-          setError('Media download failed: cannot reach server media ports.');
+        if (state === "failed") {
+          console.error(
+            "[mediasoup] Recv transport ICE failed — check firewall (ports 40000-40100 UDP/TCP)",
+          );
+          setError("Media download failed: cannot reach server media ports.");
         }
       });
 
@@ -265,22 +302,25 @@ export function useMediasoup() {
 
         const warmupProducer = await sendTransport.produce({
           track: silentTrack,
-          appData: { source: '_warmup' },
+          appData: { source: "_warmup" },
         });
 
         // Wait for DTLS to complete
-        if (sendTransport.connectionState !== 'connected') {
+        if (sendTransport.connectionState !== "connected") {
           await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => reject(new Error('warmup timeout')), 15000);
+            const timeout = setTimeout(
+              () => reject(new Error("warmup timeout")),
+              15000,
+            );
             const onState = (state) => {
-              if (state === 'connected' || state === 'failed') {
+              if (state === "connected" || state === "failed") {
                 clearTimeout(timeout);
-                sendTransport.off('connectionstatechange', onState);
-                if (state === 'connected') resolve();
-                else reject(new Error('DTLS failed'));
+                sendTransport.off("connectionstatechange", onState);
+                if (state === "connected") resolve();
+                else reject(new Error("DTLS failed"));
               }
             };
-            sendTransport.on('connectionstatechange', onState);
+            sendTransport.on("connectionstatechange", onState);
           });
         }
 
@@ -288,38 +328,50 @@ export function useMediasoup() {
         silentTrack.stop();
         warmupCtx.close();
         try {
-          await socketRequest('closeProducer', { producerId: warmupProducer.id });
-        } catch { /* server may already know */ }
+          await socketRequest("closeProducer", {
+            producerId: warmupProducer.id,
+          });
+        } catch {
+          /* server may already know */
+        }
 
         // Let the internal SDP renegotiation from producer close settle.
         // producer.close() triggers handler.stopSending() as fire-and-forget,
         // which renegotiates the PeerConnection's SDP asynchronously.
         await new Promise((r) => setTimeout(r, 100));
 
-        console.log('[mediasoup] Send transport pre-warmed, state:', sendTransport.connectionState);
+        console.log(
+          "[mediasoup] Send transport pre-warmed, state:",
+          sendTransport.connectionState,
+        );
       } catch (warmupErr) {
-        console.warn('[mediasoup] Send transport warmup failed:', warmupErr.message);
+        console.warn(
+          "[mediasoup] Send transport warmup failed:",
+          warmupErr.message,
+        );
       }
 
       setIsReady(true);
-      console.log('[mediasoup] Device initialized');
+      console.log("[mediasoup] Device initialized");
     } catch (err) {
-      console.error('[mediasoup] Init error:', err);
+      console.error("[mediasoup] Init error:", err);
       setError(err.message);
     }
   }, []);
 
   // ─── Capture Screen (step 1: get stream, no produce) ─
   const captureScreen = useCallback(async () => {
-    if (!sendTransportRef.current) throw new Error('Transport not ready');
+    if (!sendTransportRef.current) throw new Error("Transport not ready");
 
-    console.log('[screen] captureScreen called, transport state:',
-      sendTransportRef.current.connectionState);
+    console.log(
+      "[screen] captureScreen called, transport state:",
+      sendTransportRef.current.connectionState,
+    );
 
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
-          cursor: 'always',
+          cursor: "always",
           frameRate: { ideal: 60 },
         },
         audio: {
@@ -331,7 +383,7 @@ export function useMediasoup() {
 
       const videoTrack = stream.getVideoTracks()[0];
       const audioTracks = stream.getAudioTracks();
-      console.log('[screen] Captured tracks:', {
+      console.log("[screen] Captured tracks:", {
         video: {
           readyState: videoTrack?.readyState,
           muted: videoTrack?.muted,
@@ -339,16 +391,18 @@ export function useMediasoup() {
           settings: videoTrack?.getSettings(),
         },
         audioCount: audioTracks.length,
-        audio: audioTracks[0] ? {
-          readyState: audioTracks[0].readyState,
-          muted: audioTracks[0].muted,
-          enabled: audioTracks[0].enabled,
-          label: audioTracks[0].label,
-        } : 'NO AUDIO TRACK - user may not have checked "Share audio"',
+        audio: audioTracks[0]
+          ? {
+              readyState: audioTracks[0].readyState,
+              muted: audioTracks[0].muted,
+              enabled: audioTracks[0].enabled,
+              label: audioTracks[0].label,
+            }
+          : 'NO AUDIO TRACK - user may not have checked "Share audio"',
       });
 
-      if (!videoTrack || videoTrack.readyState !== 'live') {
-        console.error('[screen] Video track not live:', videoTrack?.readyState);
+      if (!videoTrack || videoTrack.readyState !== "live") {
+        console.error("[screen] Video track not live:", videoTrack?.readyState);
         stream.getTracks().forEach((t) => t.stop());
         return null;
       }
@@ -361,129 +415,171 @@ export function useMediasoup() {
         nativeHeight: settings.height || 0,
       };
     } catch (err) {
-      if (err.name === 'NotAllowedError') return null;
-      console.error('[screen] captureScreen error:', err);
+      if (err.name === "NotAllowedError") return null;
+      console.error("[screen] captureScreen error:", err);
       return null;
     }
   }, []);
 
   // ─── Produce Screen (step 2: produce with chosen quality) ─
-  const produceScreen = useCallback(async (stream, qualityKey = DEFAULT_QUALITY) => {
-    if (!sendTransportRef.current) throw new Error('Transport not ready');
+  const produceScreen = useCallback(
+    async (stream, qualityKey = DEFAULT_QUALITY) => {
+      if (!sendTransportRef.current) throw new Error("Transport not ready");
 
-    const quality = QUALITY_PRESETS[qualityKey];
-    const videoTrack = stream.getVideoTracks()[0];
-    const audioTrack = stream.getAudioTracks()[0];
+      const quality = QUALITY_PRESETS[qualityKey];
+      const videoTrack = stream.getVideoTracks()[0];
+      const audioTrack = stream.getAudioTracks()[0];
 
-    console.log('[screen] produceScreen called:', {
-      qualityKey,
-      transportState: sendTransportRef.current.connectionState,
-      trackState: videoTrack?.readyState,
-    });
-
-    // For "lite": downscale the track to 720p/30fps
-    if (quality.width && quality.height) {
-      try {
-        await videoTrack.applyConstraints({
-          width: { ideal: quality.width },
-          height: { ideal: quality.height },
-          frameRate: { ideal: quality.frameRate },
-        });
-      } catch (err) {
-        console.warn('[screen] Could not apply track constraints:', err);
-      }
-    }
-
-    // Guard: verify the track is still usable
-    if (!videoTrack || videoTrack.readyState !== 'live') {
-      console.error('[screen] Video track not live after constraints:', videoTrack?.readyState);
-      stream.getTracks().forEach((t) => t.stop());
-      return null;
-    }
-
-    // Diagnostic: detect if the track dies during the async produce call
-    const onTrackEnded = () => {
-      console.error('[screen] Video track ended DURING produce — possible OS permission issue');
-    };
-    videoTrack.addEventListener('ended', onTrackEnded);
-
-    let videoProducer;
-    try {
-      videoProducer = await sendTransportRef.current.produce({
-        track: videoTrack,
-        encodings: [{ maxBitrate: quality.bitrate }],
-        codecOptions: { videoGoogleStartBitrate: 1000 },
-        appData: { source: MEDIA_SOURCES.SCREEN },
+      console.log("[screen] produceScreen called:", {
+        qualityKey,
+        transportState: sendTransportRef.current.connectionState,
+        trackState: videoTrack?.readyState,
       });
-    } catch (produceErr) {
-      videoTrack.removeEventListener('ended', onTrackEnded);
-      console.error('[screen] produce() threw:', produceErr.name, produceErr.message);
-      if (produceErr.name === 'InvalidStateError') {
-        console.error('[screen] Track state at failure:', videoTrack?.readyState);
+
+      // For "lite": downscale the track to 720p/30fps
+      if (quality.width && quality.height) {
+        try {
+          await videoTrack.applyConstraints({
+            width: { ideal: quality.width },
+            height: { ideal: quality.height },
+            frameRate: { ideal: quality.frameRate },
+          });
+        } catch (err) {
+          console.warn("[screen] Could not apply track constraints:", err);
+        }
+      }
+
+      // Guard: verify the track is still usable
+      if (!videoTrack || videoTrack.readyState !== "live") {
+        console.error(
+          "[screen] Video track not live after constraints:",
+          videoTrack?.readyState,
+        );
         stream.getTracks().forEach((t) => t.stop());
         return null;
       }
-      throw produceErr;
-    }
 
-    console.log('[screen] produce() succeeded:', {
-      producerId: videoProducer.id,
-      trackState: videoProducer.track?.readyState,
-    });
+      // Diagnostic: detect if the track dies during the async produce call
+      const onTrackEnded = () => {
+        console.error(
+          "[screen] Video track ended DURING produce — possible OS permission issue",
+        );
+      };
+      videoTrack.addEventListener("ended", onTrackEnded);
 
-    videoTrack.removeEventListener('ended', onTrackEnded);
-    producersRef.current.set(videoProducer.id, videoProducer);
-    applyEncryptionTransform(videoProducer.rtpSender, e2eKeyBytesRef.current, 'video'); // No await - must be immediate!
+      // Pre-import E2E key to avoid race condition with produce()
+      const encryptKey = e2eKeyBytesRef.current
+        ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
+        : null;
 
-    // When user clicks "Stop sharing" in browser UI
-    videoTrack.addEventListener('ended', () => {
-      stopProducer(videoProducer.id);
-      if (audioTrack) {
-        const audioProducerId = Array.from(producersRef.current.entries())
-          .find(([, p]) => p.appData.source === MEDIA_SOURCES.SCREEN_AUDIO)?.[0];
-        if (audioProducerId) stopProducer(audioProducerId);
-      }
-    });
-
-    // Produce system audio if available (best-effort — don't tear down video on failure)
-    console.log('[screen] Audio track status:', {
-      exists: !!audioTrack,
-      readyState: audioTrack?.readyState,
-      label: audioTrack?.label,
-    });
-    if (audioTrack && audioTrack.readyState === 'live') {
+      let videoProducer;
       try {
-        const audioProducer = await sendTransportRef.current.produce({
-          track: audioTrack,
-          appData: { source: MEDIA_SOURCES.SCREEN_AUDIO },
+        videoProducer = await sendTransportRef.current.produce({
+          track: videoTrack,
+          encodings: [{ maxBitrate: quality.bitrate }],
+          codecOptions: { videoGoogleStartBitrate: 1000 },
+          appData: { source: MEDIA_SOURCES.SCREEN },
         });
-        producersRef.current.set(audioProducer.id, audioProducer);
-        applyEncryptionTransform(audioProducer.rtpSender, e2eKeyBytesRef.current, 'audio');
-        console.log('[screen] Audio producer created:', audioProducer.id);
-      } catch (audioErr) {
-        console.warn('[screen] Audio produce failed (non-fatal):', audioErr.message);
+      } catch (produceErr) {
+        videoTrack.removeEventListener("ended", onTrackEnded);
+        console.error(
+          "[screen] produce() threw:",
+          produceErr.name,
+          produceErr.message,
+        );
+        if (produceErr.name === "InvalidStateError") {
+          console.error(
+            "[screen] Track state at failure:",
+            videoTrack?.readyState,
+          );
+          stream.getTracks().forEach((t) => t.stop());
+          return null;
+        }
+        throw produceErr;
       }
-    } else {
-      console.log('[screen] No audio track to produce');
-    }
 
-    scheduleProducersUpdate();
-    return { videoProducer, stream };
-  }, [scheduleProducersUpdate]);
+      console.log("[screen] produce() succeeded:", {
+        producerId: videoProducer.id,
+        trackState: videoProducer.track?.readyState,
+      });
+
+      videoTrack.removeEventListener("ended", onTrackEnded);
+      producersRef.current.set(videoProducer.id, videoProducer);
+      applyEncryptionTransform(
+        videoProducer.rtpSender,
+        e2eKeyBytesRef.current,
+        "video",
+        encryptKey,
+      );
+
+      // When user clicks "Stop sharing" in browser UI
+      videoTrack.addEventListener("ended", () => {
+        stopProducer(videoProducer.id);
+        if (audioTrack) {
+          const audioProducerId = Array.from(
+            producersRef.current.entries(),
+          ).find(
+            ([, p]) => p.appData.source === MEDIA_SOURCES.SCREEN_AUDIO,
+          )?.[0];
+          if (audioProducerId) stopProducer(audioProducerId);
+        }
+      });
+
+      // Produce system audio if available (best-effort — don't tear down video on failure)
+      console.log("[screen] Audio track status:", {
+        exists: !!audioTrack,
+        readyState: audioTrack?.readyState,
+        label: audioTrack?.label,
+      });
+      if (audioTrack && audioTrack.readyState === "live") {
+        try {
+          const audioProducer = await sendTransportRef.current.produce({
+            track: audioTrack,
+            appData: { source: MEDIA_SOURCES.SCREEN_AUDIO },
+          });
+          producersRef.current.set(audioProducer.id, audioProducer);
+
+          // Apply E2E encryption with pre-imported key to avoid race condition
+          const encryptKey = e2eKeyBytesRef.current
+            ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
+            : null;
+          applyEncryptionTransform(
+            audioProducer.rtpSender,
+            e2eKeyBytesRef.current,
+            "audio",
+            encryptKey,
+          );
+          console.log("[screen] Audio producer created:", audioProducer.id);
+        } catch (audioErr) {
+          console.warn(
+            "[screen] Audio produce failed (non-fatal):",
+            audioErr.message,
+          );
+        }
+      } else {
+        console.log("[screen] No audio track to produce");
+      }
+
+      scheduleProducersUpdate();
+      return { videoProducer, stream };
+    },
+    [scheduleProducersUpdate],
+  );
 
   // ─── Switch Screen/Window On The Fly ────────────────
   const switchScreenSource = useCallback(async (qualityKey) => {
     const quality = QUALITY_PRESETS[qualityKey || DEFAULT_QUALITY];
 
-    const screenEntry = Array.from(producersRef.current.entries())
-      .find(([, p]) => p.appData.source === MEDIA_SOURCES.SCREEN);
+    const screenEntry = Array.from(producersRef.current.entries()).find(
+      ([, p]) => p.appData.source === MEDIA_SOURCES.SCREEN,
+    );
 
-    if (!screenEntry) throw new Error('No active screen share');
+    if (!screenEntry) throw new Error("No active screen share");
     const [producerId, producer] = screenEntry;
 
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: {
-        cursor: 'always',
+        cursor: "always",
         frameRate: { ideal: quality.frameRate },
       },
       audio: {
@@ -504,18 +600,18 @@ export function useMediasoup() {
           frameRate: { ideal: quality.frameRate },
         });
       } catch (err) {
-        console.warn('[screen] Could not apply track constraints:', err);
+        console.warn("[screen] Could not apply track constraints:", err);
       }
     }
 
     await producer.replaceTrack({ track: newTrack });
 
-    await socketRequest('updateProducerAppData', {
+    await socketRequest("updateProducerAppData", {
       producerId,
       appData: { source: MEDIA_SOURCES.SCREEN, switchedAt: Date.now() },
     });
 
-    newTrack.addEventListener('ended', () => {
+    newTrack.addEventListener("ended", () => {
       stopProducer(producerId);
     });
 
@@ -527,15 +623,16 @@ export function useMediasoup() {
     const quality = QUALITY_PRESETS[qualityKey];
     if (!quality) return;
 
-    const screenEntry = Array.from(producersRef.current.entries())
-      .find(([, p]) => p.appData.source === MEDIA_SOURCES.SCREEN);
+    const screenEntry = Array.from(producersRef.current.entries()).find(
+      ([, p]) => p.appData.source === MEDIA_SOURCES.SCREEN,
+    );
 
     if (!screenEntry) return;
     const [, producer] = screenEntry;
 
     // Apply track constraints (resolution/framerate)
     const track = producer.track;
-    if (track && track.readyState === 'live') {
+    if (track && track.readyState === "live") {
       try {
         if (quality.width && quality.height) {
           await track.applyConstraints({
@@ -550,7 +647,7 @@ export function useMediasoup() {
           });
         }
       } catch (err) {
-        console.warn('[quality] Could not apply track constraints:', err);
+        console.warn("[quality] Could not apply track constraints:", err);
       }
     }
 
@@ -566,262 +663,307 @@ export function useMediasoup() {
   }, []);
 
   // ─── Webcam ─────────────────────────────────────────
-  const startWebcam = useCallback(async (deviceId = null) => {
-    if (!sendTransportRef.current) throw new Error('Transport not ready');
+  const startWebcam = useCallback(
+    async (deviceId = null) => {
+      if (!sendTransportRef.current) throw new Error("Transport not ready");
 
-    const videoConstraints = { width: 640, height: 480, frameRate: 30 };
-    if (deviceId) videoConstraints.deviceId = { exact: deviceId };
+      const videoConstraints = { width: 640, height: 480, frameRate: 30 };
+      if (deviceId) videoConstraints.deviceId = { exact: deviceId };
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: videoConstraints,
-    });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+      });
 
-    const track = stream.getVideoTracks()[0];
+      const track = stream.getVideoTracks()[0];
 
-    const producer = await sendTransportRef.current.produce({
-      track,
-      encodings: [{ maxBitrate: 500000 }],
-      appData: { source: MEDIA_SOURCES.WEBCAM },
-    });
+      // Pre-import E2E key to avoid race condition with produce()
+      const encryptKey = e2eKeyBytesRef.current
+        ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
+        : null;
 
-    producersRef.current.set(producer.id, producer);
-    applyEncryptionTransform(producer.rtpSender, e2eKeyBytesRef.current, 'video');
-    scheduleProducersUpdate();
+      const producer = await sendTransportRef.current.produce({
+        track,
+        encodings: [{ maxBitrate: 500000 }],
+        appData: { source: MEDIA_SOURCES.WEBCAM },
+      });
 
-    return producer;
-  }, [scheduleProducersUpdate]);
+      producersRef.current.set(producer.id, producer);
+      applyEncryptionTransform(
+        producer.rtpSender,
+        e2eKeyBytesRef.current,
+        "video",
+        encryptKey,
+      );
+      scheduleProducersUpdate();
+
+      return producer;
+    },
+    [scheduleProducersUpdate],
+  );
 
   // ─── Microphone ─────────────────────────────────────
-  const startMic = useCallback(async (deviceId = null) => {
-    if (!sendTransportRef.current) throw new Error('Transport not ready');
+  const startMic = useCallback(
+    async (deviceId = null) => {
+      if (!sendTransportRef.current) throw new Error("Transport not ready");
 
-    const audioConstraints = {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    };
-    if (deviceId) audioConstraints.deviceId = { exact: deviceId };
+      const audioConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      };
+      if (deviceId) audioConstraints.deviceId = { exact: deviceId };
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: audioConstraints,
-    });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+      });
 
-    const audioContext = new AudioContext();
-    const source = audioContext.createMediaStreamSource(stream);
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(stream);
 
-    // Try to use AudioWorklet (preferred — runs in audio thread)
-    const hasWorklet = typeof audioContext.audioWorklet !== 'undefined';
-    let destination;
-    let workletNode = null;
-    let legacyMonitorInterval = null;
+      // Try to use AudioWorklet (preferred — runs in audio thread)
+      const hasWorklet = typeof audioContext.audioWorklet !== "undefined";
+      let destination;
+      let workletNode = null;
+      let legacyMonitorInterval = null;
 
-    if (hasWorklet) {
-      try {
-        // Load noise gate worklet
-        await audioContext.audioWorklet.addModule(
-          new URL('./noiseGateWorklet.js', import.meta.url)
-        );
+      if (hasWorklet) {
+        try {
+          // Load noise gate worklet
+          await audioContext.audioWorklet.addModule(
+            new URL("./noiseGateWorklet.js", import.meta.url),
+          );
 
-        workletNode = new AudioWorkletNode(audioContext, 'noise-gate-processor');
+          workletNode = new AudioWorkletNode(
+            audioContext,
+            "noise-gate-processor",
+          );
+          destination = audioContext.createMediaStreamDestination();
+
+          // Connect: Source → NoiseGate → Destination
+          source.connect(workletNode);
+          workletNode.connect(destination);
+
+          // Receive level updates from worklet
+          workletNode.port.onmessage = (event) => {
+            const { type, level } = event.data;
+            if (type === "level") {
+              setMicLevel(level);
+            }
+          };
+
+          // Send initial parameters to worklet
+          workletNode.port.postMessage({
+            type: "updateParams",
+            enabled: noiseGateEnabledRef.current,
+            threshold: noiseGateThresholdRef.current,
+          });
+
+          console.log("[noise-gate] Using AudioWorklet (runs in audio thread)");
+        } catch (err) {
+          console.warn(
+            "[noise-gate] AudioWorklet failed, falling back to main thread:",
+            err,
+          );
+          workletNode = null;
+        }
+      }
+
+      // Fallback: Use old approach with setInterval (main thread)
+      if (!workletNode) {
+        const analyser = audioContext.createAnalyser();
+        const gainNode = audioContext.createGain();
         destination = audioContext.createMediaStreamDestination();
 
-        // Connect: Source → NoiseGate → Destination
-        source.connect(workletNode);
-        workletNode.connect(destination);
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.3;
 
-        // Receive level updates from worklet
-        workletNode.port.onmessage = (event) => {
-          const { type, level } = event.data;
-          if (type === 'level') {
-            setMicLevel(level);
+        source.connect(analyser);
+        analyser.connect(gainNode);
+        gainNode.connect(destination);
+
+        // Noise gate monitoring loop (20ms interval)
+        const dataArray = new Float32Array(analyser.fftSize);
+        let gateOpen = false;
+        let holdTimer = null;
+        let tickCount = 0;
+
+        legacyMonitorInterval = setInterval(() => {
+          analyser.getFloatTimeDomainData(dataArray);
+
+          // Calculate RMS
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i] * dataArray[i];
           }
+          const rms = Math.sqrt(sum / dataArray.length);
+          const rmsDb = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+
+          // Update mic level for UI meter (every 3rd tick = ~60ms)
+          tickCount++;
+          if (tickCount % 3 === 0) {
+            const normalized = Math.max(
+              0,
+              Math.min(100, ((rmsDb + 60) / 60) * 100),
+            );
+            setMicLevel(Math.round(normalized));
+          }
+
+          // Gate logic
+          const enabled = noiseGateEnabledRef.current;
+          const threshold = noiseGateThresholdRef.current;
+
+          if (!enabled) {
+            if (!gateOpen) {
+              gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
+              gateOpen = true;
+            }
+            if (holdTimer) {
+              clearTimeout(holdTimer);
+              holdTimer = null;
+            }
+            return;
+          }
+
+          if (rmsDb > threshold) {
+            if (!gateOpen) {
+              gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
+              gateOpen = true;
+            }
+            if (holdTimer) {
+              clearTimeout(holdTimer);
+              holdTimer = null;
+            }
+          } else if (gateOpen && !holdTimer) {
+            holdTimer = setTimeout(() => {
+              gainNode.gain.setTargetAtTime(0, audioContext.currentTime, 0.05);
+              gateOpen = false;
+              holdTimer = null;
+            }, 150);
+          }
+        }, 20);
+
+        console.log("[noise-gate] Using legacy main thread implementation");
+
+        micPipelineRef.current = {
+          audioContext,
+          source,
+          analyser,
+          gainNode,
+          destination,
+          monitorInterval: legacyMonitorInterval,
+          rawStream: stream,
         };
-
-        // Send initial parameters to worklet
-        workletNode.port.postMessage({
-          type: 'updateParams',
-          enabled: noiseGateEnabledRef.current,
-          threshold: noiseGateThresholdRef.current,
-        });
-
-        console.log('[noise-gate] Using AudioWorklet (runs in audio thread)');
-      } catch (err) {
-        console.warn('[noise-gate] AudioWorklet failed, falling back to main thread:', err);
-        workletNode = null;
+      } else {
+        // AudioWorklet path
+        micPipelineRef.current = {
+          audioContext,
+          source,
+          workletNode,
+          destination,
+          rawStream: stream,
+        };
       }
-    }
 
-    // Fallback: Use old approach with setInterval (main thread)
-    if (!workletNode) {
-      const analyser = audioContext.createAnalyser();
-      const gainNode = audioContext.createGain();
-      destination = audioContext.createMediaStreamDestination();
+      // Send the processed stream to mediasoup (not the raw mic stream)
+      const processedTrack = destination.stream.getAudioTracks()[0];
 
-      analyser.fftSize = 2048;
-      analyser.smoothingTimeConstant = 0.3;
+      // Pre-import E2E key to avoid race condition with produce()
+      const encryptKey = e2eKeyBytesRef.current
+        ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
+        : null;
 
-      source.connect(analyser);
-      analyser.connect(gainNode);
-      gainNode.connect(destination);
+      const producer = await sendTransportRef.current.produce({
+        track: processedTrack,
+        appData: { source: MEDIA_SOURCES.MIC },
+      });
 
-      // Noise gate monitoring loop (20ms interval)
-      const dataArray = new Float32Array(analyser.fftSize);
-      let gateOpen = false;
-      let holdTimer = null;
-      let tickCount = 0;
+      producersRef.current.set(producer.id, producer);
+      applyEncryptionTransform(
+        producer.rtpSender,
+        e2eKeyBytesRef.current,
+        "audio",
+        encryptKey,
+      );
+      scheduleProducersUpdate();
 
-      legacyMonitorInterval = setInterval(() => {
-        analyser.getFloatTimeDomainData(dataArray);
-
-        // Calculate RMS
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i] * dataArray[i];
-        }
-        const rms = Math.sqrt(sum / dataArray.length);
-        const rmsDb = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
-
-        // Update mic level for UI meter (every 3rd tick = ~60ms)
-        tickCount++;
-        if (tickCount % 3 === 0) {
-          const normalized = Math.max(0, Math.min(100, ((rmsDb + 60) / 60) * 100));
-          setMicLevel(Math.round(normalized));
-        }
-
-        // Gate logic
-        const enabled = noiseGateEnabledRef.current;
-        const threshold = noiseGateThresholdRef.current;
-
-        if (!enabled) {
-          if (!gateOpen) {
-            gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
-            gateOpen = true;
-          }
-          if (holdTimer) {
-            clearTimeout(holdTimer);
-            holdTimer = null;
-          }
-          return;
-        }
-
-        if (rmsDb > threshold) {
-          if (!gateOpen) {
-            gainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.01);
-            gateOpen = true;
-          }
-          if (holdTimer) {
-            clearTimeout(holdTimer);
-            holdTimer = null;
-          }
-        } else if (gateOpen && !holdTimer) {
-          holdTimer = setTimeout(() => {
-            gainNode.gain.setTargetAtTime(0, audioContext.currentTime, 0.05);
-            gateOpen = false;
-            holdTimer = null;
-          }, 150);
-        }
-      }, 20);
-
-      console.log('[noise-gate] Using legacy main thread implementation');
-
-      micPipelineRef.current = {
-        audioContext,
-        source,
-        analyser,
-        gainNode,
-        destination,
-        monitorInterval: legacyMonitorInterval,
-        rawStream: stream,
-      };
-    } else {
-      // AudioWorklet path
-      micPipelineRef.current = {
-        audioContext,
-        source,
-        workletNode,
-        destination,
-        rawStream: stream,
-      };
-    }
-
-    // Send the processed stream to mediasoup (not the raw mic stream)
-    const processedTrack = destination.stream.getAudioTracks()[0];
-
-    const producer = await sendTransportRef.current.produce({
-      track: processedTrack,
-      appData: { source: MEDIA_SOURCES.MIC },
-    });
-
-    producersRef.current.set(producer.id, producer);
-    applyEncryptionTransform(producer.rtpSender, e2eKeyBytesRef.current, 'audio');
-    scheduleProducersUpdate();
-
-    return producer;
-  }, [scheduleProducersUpdate]);
+      return producer;
+    },
+    [scheduleProducersUpdate],
+  );
 
   // ─── Stop Producer ──────────────────────────────────
-  const stopProducer = useCallback(async (producerId) => {
-    const producer = producersRef.current.get(producerId);
-    if (!producer) return;
+  const stopProducer = useCallback(
+    async (producerId) => {
+      const producer = producersRef.current.get(producerId);
+      if (!producer) return;
 
-    // Clean up mic audio pipeline when stopping mic producer
-    if (producer.appData?.source === MEDIA_SOURCES.MIC) {
-      cleanupMicPipeline();
-    }
+      // Clean up mic audio pipeline when stopping mic producer
+      if (producer.appData?.source === MEDIA_SOURCES.MIC) {
+        cleanupMicPipeline();
+      }
 
-    producer.close();
-    producersRef.current.delete(producerId);
-    scheduleProducersUpdate();
+      producer.close();
+      producersRef.current.delete(producerId);
+      scheduleProducersUpdate();
 
-    try {
-      await socketRequest('closeProducer', { producerId });
-    } catch {
-      // Server might already know
-    }
-  }, [cleanupMicPipeline, scheduleProducersUpdate]);
+      try {
+        await socketRequest("closeProducer", { producerId });
+      } catch {
+        // Server might already know
+      }
+    },
+    [cleanupMicPipeline, scheduleProducersUpdate],
+  );
 
   // ─── Consume a remote producer ──────────────────────
-  const consumeProducer = useCallback(async (producerId, producerPeerId) => {
-    if (!recvTransportRef.current || !deviceRef.current) return;
+  const consumeProducer = useCallback(
+    async (producerId, producerPeerId) => {
+      if (!recvTransportRef.current || !deviceRef.current) return;
 
-    try {
-      const response = await socketRequest('consume', {
-        producerId,
-        rtpCapabilities: deviceRef.current.rtpCapabilities,
-      });
+      try {
+        const response = await socketRequest("consume", {
+          producerId,
+          rtpCapabilities: deviceRef.current.rtpCapabilities,
+        });
 
-      const consumer = await recvTransportRef.current.consume({
-        id: response.consumerId,
-        producerId: response.producerId,
-        kind: response.kind,
-        rtpParameters: response.rtpParameters,
-      });
+        const consumer = await recvTransportRef.current.consume({
+          id: response.consumerId,
+          producerId: response.producerId,
+          kind: response.kind,
+          rtpParameters: response.rtpParameters,
+        });
 
-      // Resume consumer (was created paused on server)
-      await socketRequest('resumeConsumer', { consumerId: consumer.id });
-      await applyDecryptionTransform(consumer.rtpReceiver, e2eKeyBytesRef.current, response.kind);
+        // Resume consumer (was created paused on server)
+        await socketRequest("resumeConsumer", { consumerId: consumer.id });
+        await applyDecryptionTransform(
+          consumer.rtpReceiver,
+          e2eKeyBytesRef.current,
+          response.kind,
+        );
 
-      console.log(`[mediasoup] Consumer ${consumer.id} ready:`, {
-        kind: response.kind,
-        trackState: consumer.track?.readyState,
-        paused: consumer.paused,
-        source: response.appData?.source,
-      });
+        console.log(`[mediasoup] Consumer ${consumer.id} ready:`, {
+          kind: response.kind,
+          trackState: consumer.track?.readyState,
+          paused: consumer.paused,
+          source: response.appData?.source,
+        });
 
-      consumersRef.current.set(consumer.id, {
-        consumer,
-        peerId: producerPeerId || null,
-        kind: response.kind,
-        appData: response.appData,
-      });
+        consumersRef.current.set(consumer.id, {
+          consumer,
+          peerId: producerPeerId || null,
+          kind: response.kind,
+          appData: response.appData,
+        });
 
-      scheduleConsumersUpdate();
+        scheduleConsumersUpdate();
 
-      return consumer;
-    } catch (err) {
-      console.error('[mediasoup] Consume error:', err);
-    }
-  }, [scheduleConsumersUpdate]);
+        return consumer;
+      } catch (err) {
+        console.error("[mediasoup] Consume error:", err);
+      }
+    },
+    [scheduleConsumersUpdate],
+  );
 
   // ─── Socket event listeners ─────────────────────────
   useEffect(() => {
@@ -829,10 +971,17 @@ export function useMediasoup() {
     if (!socket) return;
 
     const handleNewProducer = ({ producerId, peerId, kind, appData }) => {
-      console.log(`[mediasoup] New producer from ${peerId}: ${kind} (${appData?.source})`);
+      console.log(
+        `[mediasoup] New producer from ${peerId}: ${kind} (${appData?.source})`,
+      );
 
       if (isScreenShareSource(appData?.source)) {
-        availableScreensRef.current.set(producerId, { producerId, peerId, kind, appData });
+        availableScreensRef.current.set(producerId, {
+          producerId,
+          peerId,
+          kind,
+          appData,
+        });
         scheduleScreensUpdate();
 
         // Auto-consume screen-audio if user is already watching this peer's screen
@@ -908,20 +1057,25 @@ export function useMediasoup() {
       scheduleConsumersUpdate();
     };
 
-    socket.on('newProducer', handleNewProducer);
-    socket.on('producerClosed', handleProducerClosed);
-    socket.on('consumerClosed', handleConsumerClosed);
-    socket.on('peerJoined', handlePeerJoined);
-    socket.on('peerLeft', handlePeerLeft);
+    socket.on("newProducer", handleNewProducer);
+    socket.on("producerClosed", handleProducerClosed);
+    socket.on("consumerClosed", handleConsumerClosed);
+    socket.on("peerJoined", handlePeerJoined);
+    socket.on("peerLeft", handlePeerLeft);
 
     return () => {
-      socket.off('newProducer', handleNewProducer);
-      socket.off('producerClosed', handleProducerClosed);
-      socket.off('consumerClosed', handleConsumerClosed);
-      socket.off('peerJoined', handlePeerJoined);
-      socket.off('peerLeft', handlePeerLeft);
+      socket.off("newProducer", handleNewProducer);
+      socket.off("producerClosed", handleProducerClosed);
+      socket.off("consumerClosed", handleConsumerClosed);
+      socket.off("peerJoined", handlePeerJoined);
+      socket.off("peerLeft", handlePeerLeft);
     };
-  }, [consumeProducer, isReady, scheduleConsumersUpdate, scheduleScreensUpdate]);
+  }, [
+    consumeProducer,
+    isReady,
+    scheduleConsumersUpdate,
+    scheduleScreensUpdate,
+  ]);
 
   // ─── Adaptive Quality: Monitor Frame Drops ──────────
   useEffect(() => {
@@ -929,8 +1083,9 @@ export function useMediasoup() {
     if (!isE2EActive || !isReady) return;
 
     // Find active screen producer
-    const screenEntry = Array.from(producersRef.current.entries())
-      .find(([, p]) => p.appData?.source === MEDIA_SOURCES.SCREEN);
+    const screenEntry = Array.from(producersRef.current.entries()).find(
+      ([, p]) => p.appData?.source === MEDIA_SOURCES.SCREEN,
+    );
 
     if (!screenEntry) return;
 
@@ -938,7 +1093,7 @@ export function useMediasoup() {
     const sender = producer.rtpSender;
     if (!sender) return;
 
-    console.log('[adaptive] Starting frame drop monitoring for screen share');
+    console.log("[adaptive] Starting frame drop monitoring for screen share");
     currentQualityRef.current = DEFAULT_QUALITY;
     qualityDowngradedRef.current = false;
 
@@ -947,11 +1102,16 @@ export function useMediasoup() {
       intervalMs: 5000,
       onHighDropRate: async ({ dropRate }) => {
         // Downgrade quality if still on source preset
-        if (!qualityDowngradedRef.current && currentQualityRef.current === 'source') {
-          console.warn(`[adaptive] High frame drop rate (${(dropRate * 100).toFixed(1)}%) - downgrading to lite quality`);
+        if (
+          !qualityDowngradedRef.current &&
+          currentQualityRef.current === "source"
+        ) {
+          console.warn(
+            `[adaptive] High frame drop rate (${(dropRate * 100).toFixed(1)}%) - downgrading to lite quality`,
+          );
           qualityDowngradedRef.current = true;
-          currentQualityRef.current = 'lite';
-          await changeQuality('lite');
+          currentQualityRef.current = "lite";
+          await changeQuality("lite");
         }
       },
     });
@@ -986,57 +1146,78 @@ export function useMediasoup() {
   }, []);
 
   // ─── Click-to-Watch Functions ──────────────────────
-  const addAvailableScreen = useCallback((producerId, peerId, kind, appData) => {
-    availableScreensRef.current.set(producerId, { producerId, peerId, kind, appData });
-    scheduleScreensUpdate();
-  }, [scheduleScreensUpdate]);
+  const addAvailableScreen = useCallback(
+    (producerId, peerId, kind, appData) => {
+      availableScreensRef.current.set(producerId, {
+        producerId,
+        peerId,
+        kind,
+        appData,
+      });
+      scheduleScreensUpdate();
+    },
+    [scheduleScreensUpdate],
+  );
 
-  const watchScreen = useCallback(async (producerId) => {
-    const screenInfo = availableScreensRef.current.get(producerId);
-    if (!screenInfo || screenInfo.appData?.source !== MEDIA_SOURCES.SCREEN) return;
+  const watchScreen = useCallback(
+    async (producerId) => {
+      const screenInfo = availableScreensRef.current.get(producerId);
+      if (!screenInfo || screenInfo.appData?.source !== MEDIA_SOURCES.SCREEN)
+        return;
 
-    const { peerId } = screenInfo;
+      const { peerId } = screenInfo;
 
-    await consumeProducer(producerId, peerId);
+      await consumeProducer(producerId, peerId);
 
-    // Consume paired screen-audio from the same peer
-    for (const [audioId, info] of availableScreensRef.current.entries()) {
-      if (info.peerId === peerId && info.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO) {
-        await consumeProducer(audioId, peerId);
-        break;
+      // Consume paired screen-audio from the same peer
+      for (const [audioId, info] of availableScreensRef.current.entries()) {
+        if (
+          info.peerId === peerId &&
+          info.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO
+        ) {
+          await consumeProducer(audioId, peerId);
+          break;
+        }
       }
-    }
 
-    watchedScreensRef.current.add(producerId);
-    scheduleScreensUpdate();
-  }, [consumeProducer, scheduleScreensUpdate]);
+      watchedScreensRef.current.add(producerId);
+      scheduleScreensUpdate();
+    },
+    [consumeProducer, scheduleScreensUpdate],
+  );
 
-  const unwatchScreen = useCallback((producerId) => {
-    const screenInfo = availableScreensRef.current.get(producerId);
-    if (!screenInfo) return;
+  const unwatchScreen = useCallback(
+    (producerId) => {
+      const screenInfo = availableScreensRef.current.get(producerId);
+      if (!screenInfo) return;
 
-    const { peerId } = screenInfo;
+      const { peerId } = screenInfo;
 
-    // Close screen video consumer
-    for (const [consumerId, data] of consumersRef.current.entries()) {
-      if (data.consumer.producerId === producerId) {
-        data.consumer.close();
-        consumersRef.current.delete(consumerId);
+      // Close screen video consumer
+      for (const [consumerId, data] of consumersRef.current.entries()) {
+        if (data.consumer.producerId === producerId) {
+          data.consumer.close();
+          consumersRef.current.delete(consumerId);
+        }
       }
-    }
 
-    // Close paired screen-audio consumer from same peer
-    for (const [consumerId, data] of consumersRef.current.entries()) {
-      if (data.peerId === peerId && data.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO) {
-        data.consumer.close();
-        consumersRef.current.delete(consumerId);
+      // Close paired screen-audio consumer from same peer
+      for (const [consumerId, data] of consumersRef.current.entries()) {
+        if (
+          data.peerId === peerId &&
+          data.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO
+        ) {
+          data.consumer.close();
+          consumersRef.current.delete(consumerId);
+        }
       }
-    }
 
-    scheduleConsumersUpdate();
-    watchedScreensRef.current.delete(producerId);
-    scheduleScreensUpdate();
-  }, [scheduleConsumersUpdate, scheduleScreensUpdate]);
+      scheduleConsumersUpdate();
+      watchedScreensRef.current.delete(producerId);
+      scheduleScreensUpdate();
+    },
+    [scheduleConsumersUpdate, scheduleScreensUpdate],
+  );
 
   return {
     isReady,

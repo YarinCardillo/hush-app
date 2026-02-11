@@ -17,45 +17,41 @@
  * Fallback: DTLS/SRTP transport encryption (server can read media).
  */
 
-const ENCRYPTION_ALGO = 'AES-GCM';
+const ENCRYPTION_ALGO = "AES-GCM";
 const KEY_LENGTH = 256;
 const IV_LENGTH = 12;
 
 // Unencrypted header bytes so the SFU can still route packets
 const UNENCRYPTED_BYTES = {
   video: 10, // VP8 header
-  audio: 1,  // Opus TOC header
+  audio: 1, // Opus TOC header
 };
 
 // ─── Browser Support ─────────────────────────────────
 
 export function isE2ESupported() {
   return (
-    typeof RTCRtpSender !== 'undefined' &&
-    typeof RTCRtpSender.prototype.createEncodedStreams === 'function'
-  ) || (
-    typeof RTCRtpScriptTransform !== 'undefined'
+    (typeof RTCRtpSender !== "undefined" &&
+      typeof RTCRtpSender.prototype.createEncodedStreams === "function") ||
+    typeof RTCRtpScriptTransform !== "undefined"
   );
 }
 
 export function hasScriptTransform() {
-  return typeof RTCRtpScriptTransform !== 'undefined';
+  return typeof RTCRtpScriptTransform !== "undefined";
 }
 
 // ─── Base64URL Encoding ──────────────────────────────
 
 function toBase64Url(bytes) {
   const binary = String.fromCharCode(...bytes);
-  return btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
 function fromBase64Url(str) {
-  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const base64 = str.replace(/-/g, "+").replace(/_/g, "/");
   const remainder = base64.length % 4;
-  const padded = remainder ? base64 + '='.repeat(4 - remainder) : base64;
+  const padded = remainder ? base64 + "=".repeat(4 - remainder) : base64;
   const binary = atob(padded);
   return new Uint8Array([...binary].map((c) => c.charCodeAt(0)));
 }
@@ -81,23 +77,27 @@ export async function deriveKeyFromFragment(fragment, roomName) {
   const encoder = new TextEncoder();
 
   const keyMaterial = await crypto.subtle.importKey(
-    'raw', rawBytes, 'HKDF', false, ['deriveKey']
+    "raw",
+    rawBytes,
+    "HKDF",
+    false,
+    ["deriveKey"],
   );
 
   const derivedKey = await crypto.subtle.deriveKey(
     {
-      name: 'HKDF',
-      hash: 'SHA-256',
+      name: "HKDF",
+      hash: "SHA-256",
       salt: encoder.encode(roomName),
-      info: encoder.encode('hush-e2e-v1'),
+      info: encoder.encode("hush-e2e-v1"),
     },
     keyMaterial,
     { name: ENCRYPTION_ALGO, length: KEY_LENGTH },
     true,
-    ['encrypt', 'decrypt']
+    ["encrypt", "decrypt"],
   );
 
-  const exported = await crypto.subtle.exportKey('raw', derivedKey);
+  const exported = await crypto.subtle.exportKey("raw", derivedKey);
   return new Uint8Array(exported);
 }
 
@@ -107,10 +107,9 @@ let e2eWorker = null;
 
 function getE2EWorker() {
   if (!e2eWorker) {
-    e2eWorker = new Worker(
-      new URL('./e2eWorker.js', import.meta.url),
-      { type: 'module' }
-    );
+    e2eWorker = new Worker(new URL("./e2eWorker.js", import.meta.url), {
+      type: "module",
+    });
   }
   return e2eWorker;
 }
@@ -137,17 +136,17 @@ export async function getSenderStats(sender) {
     let totalFrames = 0;
 
     for (const [, report] of stats) {
-      if (report.type === 'outbound-rtp' && report.kind === 'video') {
+      if (report.type === "outbound-rtp" && report.kind === "video") {
         framesDropped = report.framesDropped || 0;
         totalFrames = (report.framesSent || 0) + framesDropped;
         break;
       }
     }
 
-    const dropRate = totalFrames > 0 ? (framesDropped / totalFrames) : 0;
+    const dropRate = totalFrames > 0 ? framesDropped / totalFrames : 0;
     return { framesDropped, totalFrames, dropRate };
   } catch (err) {
-    console.error('[e2e] Failed to get sender stats:', err);
+    console.error("[e2e] Failed to get sender stats:", err);
     return { framesDropped: 0, totalFrames: 0, dropRate: 0 };
   }
 }
@@ -167,7 +166,8 @@ export function monitorFrameDrops(sender, options = {}) {
   let consecutiveHighDrops = 0;
 
   const intervalId = setInterval(async () => {
-    const { framesDropped, totalFrames, dropRate } = await getSenderStats(sender);
+    const { framesDropped, totalFrames, dropRate } =
+      await getSenderStats(sender);
 
     // Calculate drop rate since last check
     const newDrops = framesDropped - lastFramesDropped;
@@ -177,7 +177,9 @@ export function monitorFrameDrops(sender, options = {}) {
       consecutiveHighDrops++;
       if (consecutiveHighDrops >= 2) {
         // Two consecutive high drop periods = real issue
-        console.warn(`[e2e] High frame drop rate detected: ${(dropRate * 100).toFixed(1)}% (${framesDropped}/${totalFrames})`);
+        console.warn(
+          `[e2e] High frame drop rate detected: ${(dropRate * 100).toFixed(1)}% (${framesDropped}/${totalFrames})`,
+        );
         onHighDropRate({ dropRate, framesDropped, totalFrames });
       }
     } else {
@@ -190,11 +192,13 @@ export function monitorFrameDrops(sender, options = {}) {
 
 // ─── Transform Helpers ───────────────────────────────
 
-async function importCryptoKey(keyBytes, usages) {
+export async function importCryptoKey(keyBytes, usages) {
   return crypto.subtle.importKey(
-    'raw', keyBytes,
+    "raw",
+    keyBytes,
     { name: ENCRYPTION_ALGO, length: KEY_LENGTH },
-    false, usages
+    false,
+    usages,
   );
 }
 
@@ -203,14 +207,24 @@ async function importCryptoKey(keyBytes, usages) {
 /**
  * Apply E2E encryption to an RTCRtpSender.
  * Chooses RTCRtpScriptTransform (modern) or createEncodedStreams (legacy).
+ *
+ * @param {RTCRtpSender} sender - The sender to apply encryption to
+ * @param {Uint8Array} keyBytes - The encryption key bytes
+ * @param {string} kind - 'audio' or 'video'
+ * @param {CryptoKey} preImportedKey - Optional pre-imported crypto key (for race condition fix)
  */
-export async function applyEncryptionTransform(sender, keyBytes, kind) {
+export async function applyEncryptionTransform(
+  sender,
+  keyBytes,
+  kind,
+  preImportedKey = null,
+) {
   if (!sender || !keyBytes) return;
 
-  if (typeof RTCRtpScriptTransform !== 'undefined') {
+  if (typeof RTCRtpScriptTransform !== "undefined") {
     const worker = getE2EWorker();
     sender.transform = new RTCRtpScriptTransform(worker, {
-      operation: 'encrypt',
+      operation: "encrypt",
       kind,
       keyBytes: new Uint8Array(keyBytes),
     });
@@ -228,38 +242,45 @@ export async function applyEncryptionTransform(sender, keyBytes, kind) {
     return;
   }
 
-  if (typeof sender.createEncodedStreams === 'function') {
-    const key = await importCryptoKey(keyBytes, ['encrypt']);
+  if (typeof sender.createEncodedStreams === "function") {
+    const key =
+      preImportedKey || (await importCryptoKey(keyBytes, ["encrypt"]));
     const skipBytes = UNENCRYPTED_BYTES[kind] || 0;
     const { readable, writable } = sender.createEncodedStreams();
 
-    readable.pipeThrough(new TransformStream({
-      async transform(frame, controller) {
-        try {
-          const data = new Uint8Array(frame.data);
-          const header = data.slice(0, skipBytes);
-          const payload = data.slice(skipBytes);
-          const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+    readable
+      .pipeThrough(
+        new TransformStream({
+          async transform(frame, controller) {
+            try {
+              const data = new Uint8Array(frame.data);
+              const header = data.slice(0, skipBytes);
+              const payload = data.slice(skipBytes);
+              const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 
-          const encrypted = await crypto.subtle.encrypt(
-            { name: ENCRYPTION_ALGO, iv }, key, payload
-          );
+              const encrypted = await crypto.subtle.encrypt(
+                { name: ENCRYPTION_ALGO, iv },
+                key,
+                payload,
+              );
 
-          const result = new Uint8Array(
-            header.length + IV_LENGTH + encrypted.byteLength
-          );
-          result.set(header, 0);
-          result.set(iv, header.length);
-          result.set(new Uint8Array(encrypted), header.length + IV_LENGTH);
+              const result = new Uint8Array(
+                header.length + IV_LENGTH + encrypted.byteLength,
+              );
+              result.set(header, 0);
+              result.set(iv, header.length);
+              result.set(new Uint8Array(encrypted), header.length + IV_LENGTH);
 
-          frame.data = result.buffer;
-          controller.enqueue(frame);
-        } catch (err) {
-          console.error('[e2e] Encryption error:', err);
-          controller.enqueue(frame);
-        }
-      },
-    })).pipeTo(writable);
+              frame.data = result.buffer;
+              controller.enqueue(frame);
+            } catch (err) {
+              console.error("[e2e] Encryption error:", err);
+              controller.enqueue(frame);
+            }
+          },
+        }),
+      )
+      .pipeTo(writable);
 
     console.log(`[e2e] Encryption active for ${kind}`);
   }
@@ -269,14 +290,24 @@ export async function applyEncryptionTransform(sender, keyBytes, kind) {
 
 /**
  * Apply E2E decryption to an RTCRtpReceiver.
+ *
+ * @param {RTCRtpReceiver} receiver - The receiver to apply decryption to
+ * @param {Uint8Array} keyBytes - The decryption key bytes
+ * @param {string} kind - 'audio' or 'video'
+ * @param {CryptoKey} preImportedKey - Optional pre-imported crypto key (for race condition fix)
  */
-export async function applyDecryptionTransform(receiver, keyBytes, kind) {
+export async function applyDecryptionTransform(
+  receiver,
+  keyBytes,
+  kind,
+  preImportedKey = null,
+) {
   if (!receiver || !keyBytes) return;
 
-  if (typeof RTCRtpScriptTransform !== 'undefined') {
+  if (typeof RTCRtpScriptTransform !== "undefined") {
     const worker = getE2EWorker();
     receiver.transform = new RTCRtpScriptTransform(worker, {
-      operation: 'decrypt',
+      operation: "decrypt",
       kind,
       keyBytes: new Uint8Array(keyBytes),
     });
@@ -284,35 +315,44 @@ export async function applyDecryptionTransform(receiver, keyBytes, kind) {
     return;
   }
 
-  if (typeof receiver.createEncodedStreams === 'function') {
-    const key = await importCryptoKey(keyBytes, ['decrypt']);
+  if (typeof receiver.createEncodedStreams === "function") {
+    const key =
+      preImportedKey || (await importCryptoKey(keyBytes, ["decrypt"]));
     const skipBytes = UNENCRYPTED_BYTES[kind] || 0;
     const { readable, writable } = receiver.createEncodedStreams();
 
-    readable.pipeThrough(new TransformStream({
-      async transform(frame, controller) {
-        try {
-          const data = new Uint8Array(frame.data);
-          const header = data.slice(0, skipBytes);
-          const iv = data.slice(skipBytes, skipBytes + IV_LENGTH);
-          const encrypted = data.slice(skipBytes + IV_LENGTH);
+    readable
+      .pipeThrough(
+        new TransformStream({
+          async transform(frame, controller) {
+            try {
+              const data = new Uint8Array(frame.data);
+              const header = data.slice(0, skipBytes);
+              const iv = data.slice(skipBytes, skipBytes + IV_LENGTH);
+              const encrypted = data.slice(skipBytes + IV_LENGTH);
 
-          const decrypted = await crypto.subtle.decrypt(
-            { name: ENCRYPTION_ALGO, iv }, key, encrypted
-          );
+              const decrypted = await crypto.subtle.decrypt(
+                { name: ENCRYPTION_ALGO, iv },
+                key,
+                encrypted,
+              );
 
-          const result = new Uint8Array(header.length + decrypted.byteLength);
-          result.set(header, 0);
-          result.set(new Uint8Array(decrypted), header.length);
+              const result = new Uint8Array(
+                header.length + decrypted.byteLength,
+              );
+              result.set(header, 0);
+              result.set(new Uint8Array(decrypted), header.length);
 
-          frame.data = result.buffer;
-          controller.enqueue(frame);
-        } catch {
-          // Decryption failed — possibly unencrypted frame, pass through
-          controller.enqueue(frame);
-        }
-      },
-    })).pipeTo(writable);
+              frame.data = result.buffer;
+              controller.enqueue(frame);
+            } catch {
+              // Decryption failed — possibly unencrypted frame, pass through
+              controller.enqueue(frame);
+            }
+          },
+        }),
+      )
+      .pipeTo(writable);
 
     console.log(`[e2e] Decryption active for ${kind}`);
   }
