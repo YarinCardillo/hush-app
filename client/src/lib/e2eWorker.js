@@ -178,7 +178,19 @@ self.onrtctransform = async (event) => {
     ? createEncryptPipeline(key, skipBytes)
     : createDecryptPipeline(key, skipBytes);
 
-  readable.pipeThrough(pipeline).pipeTo(writable).catch(err => {
+  // Debug: log when frames enter the stream
+  let frameCount = 0;
+  const loggingTransform = new TransformStream({
+    transform(frame, controller) {
+      frameCount++;
+      if (frameCount % 60 === 0) {
+        console.log(`[e2e-worker] ${frameCount} frames entered readable stream (${operation} ${kind})`);
+      }
+      controller.enqueue(frame);
+    },
+  });
+
+  readable.pipeThrough(loggingTransform).pipeThrough(pipeline).pipeTo(writable).catch(err => {
     console.error(`[e2e-worker] Pipeline error (${operation} ${kind}):`, err);
   });
 
