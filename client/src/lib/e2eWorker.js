@@ -55,6 +55,11 @@ function createEncryptPipeline(key, skipBytes) {
       const startTime = performance.now();
       totalFrameCount++;
 
+      // Log every 60 frames (roughly 1 second at 60fps)
+      if (totalFrameCount % 60 === 0) {
+        console.log(`[e2e-worker] Encrypted ${totalFrameCount} frames`);
+      }
+
       try {
         const data = new Uint8Array(frame.data);
         const header = data.slice(0, skipBytes);
