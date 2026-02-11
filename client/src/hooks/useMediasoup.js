@@ -472,6 +472,10 @@ export function useMediasoup() {
         ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
         : null;
 
+      // Pause track to prevent unencrypted frames during produce() -> transform window
+      const wasVideoEnabled = videoTrack.enabled;
+      videoTrack.enabled = false;
+
       let videoProducer;
       try {
         videoProducer = await sendTransportRef.current.produce({
@@ -482,6 +486,7 @@ export function useMediasoup() {
         });
       } catch (produceErr) {
         videoTrack.removeEventListener("ended", onTrackEnded);
+        videoTrack.enabled = wasVideoEnabled;
         console.error(
           "[screen] produce() threw:",
           produceErr.name,
@@ -512,6 +517,9 @@ export function useMediasoup() {
         encryptKey,
       );
 
+      // Re-enable track after transform is applied
+      videoTrack.enabled = wasVideoEnabled;
+
       // When user clicks "Stop sharing" in browser UI
       videoTrack.addEventListener("ended", () => {
         stopProducer(videoProducer.id);
@@ -533,22 +541,31 @@ export function useMediasoup() {
       });
       if (audioTrack && audioTrack.readyState === "live") {
         try {
+          // Pre-import E2E key to avoid race condition with produce()
+          const encryptKey = e2eKeyBytesRef.current
+            ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
+            : null;
+
+          // Pause track to prevent unencrypted frames during produce() -> transform window
+          const wasAudioEnabled = audioTrack.enabled;
+          audioTrack.enabled = false;
+
           const audioProducer = await sendTransportRef.current.produce({
             track: audioTrack,
             appData: { source: MEDIA_SOURCES.SCREEN_AUDIO },
           });
           producersRef.current.set(audioProducer.id, audioProducer);
 
-          // Apply E2E encryption with pre-imported key to avoid race condition
-          const encryptKey = e2eKeyBytesRef.current
-            ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
-            : null;
           applyEncryptionTransform(
             audioProducer.rtpSender,
             e2eKeyBytesRef.current,
             "audio",
             encryptKey,
           );
+
+          // Re-enable track after transform is applied
+          audioTrack.enabled = wasAudioEnabled;
+
           console.log("[screen] Audio producer created:", audioProducer.id);
         } catch (audioErr) {
           console.warn(
@@ -681,6 +698,10 @@ export function useMediasoup() {
         ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
         : null;
 
+      // Pause track to prevent unencrypted frames during produce() -> transform window
+      const wasTrackEnabled = track.enabled;
+      track.enabled = false;
+
       const producer = await sendTransportRef.current.produce({
         track,
         encodings: [{ maxBitrate: 500000 }],
@@ -694,6 +715,9 @@ export function useMediasoup() {
         "video",
         encryptKey,
       );
+
+      // Re-enable track after transform is applied
+      track.enabled = wasTrackEnabled;
       scheduleProducersUpdate();
 
       return producer;
@@ -872,6 +896,10 @@ export function useMediasoup() {
         ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
         : null;
 
+      // Pause track to prevent unencrypted frames during produce() -> transform window
+      const wasTrackEnabled = processedTrack.enabled;
+      processedTrack.enabled = false;
+
       const producer = await sendTransportRef.current.produce({
         track: processedTrack,
         appData: { source: MEDIA_SOURCES.MIC },
@@ -884,6 +912,9 @@ export function useMediasoup() {
         "audio",
         encryptKey,
       );
+
+      // Re-enable track after transform is applied
+      processedTrack.enabled = wasTrackEnabled;
       scheduleProducersUpdate();
 
       return producer;
