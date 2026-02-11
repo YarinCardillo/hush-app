@@ -30,8 +30,6 @@
   --hush-live-glow:    rgba(52, 211, 153, 0.25);
   --hush-danger:       #ef4444;
   --hush-danger-ghost: rgba(239, 68, 68, 0.10);
-  --hush-encrypted:    #818cf8;
-  --hush-encrypted-ghost: rgba(129, 140, 248, 0.10);
 
   /* ── Typography ── */
   --font-sans:  'Sora', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -251,13 +249,6 @@ code, .mono {
   background: rgba(52, 211, 153, 0.1);
   color: var(--hush-live);
   border: 1px solid rgba(52, 211, 153, 0.2);
-}
-
-.badge-e2e {
-  background: var(--hush-encrypted-ghost);
-  color: var(--hush-encrypted);
-  border: 1px solid rgba(129, 140, 248, 0.15);
-  font-family: var(--font-mono);
 }
 
 /* ── Layout utilities ──────────────────────────── */

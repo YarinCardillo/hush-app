@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { API_URL, APP_VERSION } from '../utils/constants';
-import { isE2ESupported, generateKeyFragment } from '../lib/encryption';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your', 'privacy.'];
 
@@ -155,17 +154,6 @@ const styles = {
     padding: '12px',
     margin: '1px',
   },
-  e2eNote: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 14px',
-    background: 'var(--hush-encrypted-ghost)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-secondary)',
-    marginTop: '8px',
-  },
   footer: {
     marginTop: '32px',
     textAlign: 'center',
@@ -206,7 +194,6 @@ export default function Home() {
   const [error, setError] = useState('');
   const [poolFull, setPoolFull] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [e2eSupported] = useState(isE2ESupported);
   const [serverStatus, setServerStatus] = useState(null);
   const [serverOnline, setServerOnline] = useState(null);
 
@@ -303,18 +290,7 @@ export default function Home() {
       sessionStorage.setItem('hush_roomName', data.roomName);
 
       const roomPath = `/room/${encodeURIComponent(data.roomName)}`;
-
-      if (mode === 'create') {
-        // Generate E2E key fragment — lives only in the URL hash, never sent to server
-        const fragment = generateKeyFragment();
-        navigate(`${roomPath}#${fragment}`);
-      } else {
-        // Restore E2E fragment from invite link redirect (if any)
-        const savedFragment = sessionStorage.getItem('hush_e2eFragment');
-        const hash = savedFragment ? `#${savedFragment}` : '';
-        sessionStorage.removeItem('hush_e2eFragment');
-        navigate(`${roomPath}${hash}`);
-      }
+      navigate(roomPath);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -565,17 +541,6 @@ export default function Home() {
               </div>
             </div>
           )}
-
-          <div style={styles.e2eNote}>
-            <span className="badge badge-e2e">
-              {e2eSupported ? 'E2E' : 'e2e unavailable'}
-            </span>
-            <span>
-              {e2eSupported
-                ? 'Use the invite link to enable end-to-end encryption'
-                : 'Use Chrome/Edge for E2E. DTLS/SRTP still active.'}
-            </span>
-          </div>
 
           <div style={styles.footer}>
             <div>

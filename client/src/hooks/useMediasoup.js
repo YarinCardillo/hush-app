@@ -7,15 +7,6 @@ import {
   MEDIA_SOURCES,
   isScreenShareSource,
 } from "../utils/constants";
-import {
-  isE2ESupported,
-  hasScriptTransform,
-  applyEncryptionTransform,
-  applyDecryptionTransform,
-  importCryptoKey,
-  terminateE2EWorker,
-  monitorFrameDrops,
-} from "../lib/encryption";
 
 export function useMediasoup() {
   const [isReady, setIsReady] = useState(false);
@@ -35,10 +26,6 @@ export function useMediasoup() {
   const producersRef = useRef(new Map());
   const consumersRef = useRef(new Map());
 
-  // ─── E2E Encryption ─────────────────────────────────
-  const e2eKeyBytesRef = useRef(null);
-  const [isE2EActive, setIsE2EActive] = useState(false);
-
   // ─── Click-to-Watch Screen Shares ──────────────────
   const [availableScreens, setAvailableScreens] = useState(new Map());
   const [watchedScreens, setWatchedScreens] = useState(new Set());
@@ -49,11 +36,6 @@ export function useMediasoup() {
   const micPipelineRef = useRef(null);
   const noiseGateEnabledRef = useRef(true);
   const noiseGateThresholdRef = useRef(-50);
-
-  // ─── Adaptive Quality Refs ────────────────────────
-  const frameDropMonitorRef = useRef(null);
-  const currentQualityRef = useRef(DEFAULT_QUALITY);
-  const qualityDowngradedRef = useRef(false);
 
   // ─── Debounced State Updates ──────────────────────
   const pendingProducersUpdateRef = useRef(false);
@@ -96,12 +78,6 @@ export function useMediasoup() {
         threshold: clamped,
       });
     }
-  }, []);
-
-  const setE2EKey = useCallback((keyBytes) => {
-    e2eKeyBytesRef.current = keyBytes;
-    setIsE2EActive(!!keyBytes);
-    if (keyBytes) console.log("[e2e] Key set for encryption");
   }, []);
 
   // ─── Debounced State Updates ──────────────────────
@@ -191,12 +167,7 @@ export function useMediasoup() {
       await device.load({ routerRtpCapabilities: rtpCapabilities });
       deviceRef.current = device;
 
-      // E2E: legacy createEncodedStreams needs this flag on the PeerConnection
-      const needsLegacyE2E =
-        e2eKeyBytesRef.current && !hasScriptTransform() && isE2ESupported();
-      const additionalSettings = needsLegacyE2E
-        ? { encodedInsertableStreams: true }
-        : {};
+      const additionalSettings = {};
 
       // Create send transport
       const sendData = await socketRequest("createWebRtcTransport", {
@@ -467,15 +438,6 @@ export function useMediasoup() {
       };
       videoTrack.addEventListener("ended", onTrackEnded);
 
-      // Pre-import E2E key to avoid race condition with produce()
-      const encryptKey = e2eKeyBytesRef.current
-        ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
-        : null;
-
-      // Pause track to prevent unencrypted frames during produce() -> transform window
-      const wasVideoEnabled = videoTrack.enabled;
-      videoTrack.enabled = false;
-
       let videoProducer;
       try {
         videoProducer = await sendTransportRef.current.produce({
@@ -486,7 +448,6 @@ export function useMediasoup() {
         });
       } catch (produceErr) {
         videoTrack.removeEventListener("ended", onTrackEnded);
-        videoTrack.enabled = wasVideoEnabled;
         console.error(
           "[screen] produce() threw:",
           produceErr.name,
@@ -510,15 +471,6 @@ export function useMediasoup() {
 
       videoTrack.removeEventListener("ended", onTrackEnded);
       producersRef.current.set(videoProducer.id, videoProducer);
-      applyEncryptionTransform(
-        videoProducer.rtpSender,
-        e2eKeyBytesRef.current,
-        "video",
-        encryptKey,
-      );
-
-      // Re-enable track after transform is applied
-      videoTrack.enabled = wasVideoEnabled;
 
       // When user clicks "Stop sharing" in browser UI
       videoTrack.addEventListener("ended", () => {
@@ -541,30 +493,11 @@ export function useMediasoup() {
       });
       if (audioTrack && audioTrack.readyState === "live") {
         try {
-          // Pre-import E2E key to avoid race condition with produce()
-          const encryptKey = e2eKeyBytesRef.current
-            ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
-            : null;
-
-          // Pause track to prevent unencrypted frames during produce() -> transform window
-          const wasAudioEnabled = audioTrack.enabled;
-          audioTrack.enabled = false;
-
           const audioProducer = await sendTransportRef.current.produce({
             track: audioTrack,
             appData: { source: MEDIA_SOURCES.SCREEN_AUDIO },
           });
           producersRef.current.set(audioProducer.id, audioProducer);
-
-          applyEncryptionTransform(
-            audioProducer.rtpSender,
-            e2eKeyBytesRef.current,
-            "audio",
-            encryptKey,
-          );
-
-          // Re-enable track after transform is applied
-          audioTrack.enabled = wasAudioEnabled;
 
           console.log("[screen] Audio producer created:", audioProducer.id);
         } catch (audioErr) {
@@ -693,15 +626,6 @@ export function useMediasoup() {
 
       const track = stream.getVideoTracks()[0];
 
-      // Pre-import E2E key to avoid race condition with produce()
-      const encryptKey = e2eKeyBytesRef.current
-        ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
-        : null;
-
-      // Pause track to prevent unencrypted frames during produce() -> transform window
-      const wasTrackEnabled = track.enabled;
-      track.enabled = false;
-
       const producer = await sendTransportRef.current.produce({
         track,
         encodings: [{ maxBitrate: 500000 }],
@@ -709,15 +633,6 @@ export function useMediasoup() {
       });
 
       producersRef.current.set(producer.id, producer);
-      applyEncryptionTransform(
-        producer.rtpSender,
-        e2eKeyBytesRef.current,
-        "video",
-        encryptKey,
-      );
-
-      // Re-enable track after transform is applied
-      track.enabled = wasTrackEnabled;
       scheduleProducersUpdate();
 
       return producer;
@@ -891,30 +806,12 @@ export function useMediasoup() {
       // Send the processed stream to mediasoup (not the raw mic stream)
       const processedTrack = destination.stream.getAudioTracks()[0];
 
-      // Pre-import E2E key to avoid race condition with produce()
-      const encryptKey = e2eKeyBytesRef.current
-        ? await importCryptoKey(e2eKeyBytesRef.current, ["encrypt"])
-        : null;
-
-      // Pause track to prevent unencrypted frames during produce() -> transform window
-      const wasTrackEnabled = processedTrack.enabled;
-      processedTrack.enabled = false;
-
       const producer = await sendTransportRef.current.produce({
         track: processedTrack,
         appData: { source: MEDIA_SOURCES.MIC },
       });
 
       producersRef.current.set(producer.id, producer);
-      applyEncryptionTransform(
-        producer.rtpSender,
-        e2eKeyBytesRef.current,
-        "audio",
-        encryptKey,
-      );
-
-      // Re-enable track after transform is applied
-      processedTrack.enabled = wasTrackEnabled;
       scheduleProducersUpdate();
 
       return producer;
@@ -966,11 +863,6 @@ export function useMediasoup() {
 
         // Resume consumer (was created paused on server)
         await socketRequest("resumeConsumer", { consumerId: consumer.id });
-        await applyDecryptionTransform(
-          consumer.rtpReceiver,
-          e2eKeyBytesRef.current,
-          response.kind,
-        );
 
         console.log(`[mediasoup] Consumer ${consumer.id} ready:`, {
           kind: response.kind,
@@ -1108,62 +1000,10 @@ export function useMediasoup() {
     scheduleScreensUpdate,
   ]);
 
-  // ─── Adaptive Quality: Monitor Frame Drops ──────────
-  useEffect(() => {
-    // Only monitor when E2E encryption is active (CPU-intensive)
-    if (!isE2EActive || !isReady) return;
-
-    // Find active screen producer
-    const screenEntry = Array.from(producersRef.current.entries()).find(
-      ([, p]) => p.appData?.source === MEDIA_SOURCES.SCREEN,
-    );
-
-    if (!screenEntry) return;
-
-    const [, producer] = screenEntry;
-    const sender = producer.rtpSender;
-    if (!sender) return;
-
-    console.log("[adaptive] Starting frame drop monitoring for screen share");
-    currentQualityRef.current = DEFAULT_QUALITY;
-    qualityDowngradedRef.current = false;
-
-    const stopMonitoring = monitorFrameDrops(sender, {
-      threshold: 0.05, // 5% drop rate
-      intervalMs: 5000,
-      onHighDropRate: async ({ dropRate }) => {
-        // Downgrade quality if still on source preset
-        if (
-          !qualityDowngradedRef.current &&
-          currentQualityRef.current === "source"
-        ) {
-          console.warn(
-            `[adaptive] High frame drop rate (${(dropRate * 100).toFixed(1)}%) - downgrading to lite quality`,
-          );
-          qualityDowngradedRef.current = true;
-          currentQualityRef.current = "lite";
-          await changeQuality("lite");
-        }
-      },
-    });
-
-    frameDropMonitorRef.current = stopMonitoring;
-
-    return () => {
-      if (frameDropMonitorRef.current) {
-        frameDropMonitorRef.current();
-        frameDropMonitorRef.current = null;
-      }
-    };
-  }, [isE2EActive, isReady, producers, changeQuality]);
-
   // ─── Cleanup on unmount ─────────────────────────────
   useEffect(() => {
     return () => {
       cleanupMicPipeline();
-      if (frameDropMonitorRef.current) {
-        frameDropMonitorRef.current();
-      }
       for (const producer of producersRef.current.values()) {
         producer.close();
       }
@@ -1172,9 +1012,8 @@ export function useMediasoup() {
       }
       sendTransportRef.current?.close();
       recvTransportRef.current?.close();
-      terminateE2EWorker();
     };
-  }, []);
+  }, [cleanupMicPipeline]);
 
   // ─── Click-to-Watch Functions ──────────────────────
   const addAvailableScreen = useCallback(
@@ -1273,9 +1112,6 @@ export function useMediasoup() {
     addAvailableScreen,
     watchScreen,
     unwatchScreen,
-    // E2E encryption
-    setE2EKey,
-    isE2EActive,
     // Noise gate
     noiseGateEnabled,
     noiseGateThreshold,

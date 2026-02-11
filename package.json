@@ -2,7 +2,7 @@
   "name": "hush-app",
   "version": "0.1.0",
   "private": true,
-  "description": "High-quality screen sharing with real privacy. Open source, E2E encrypted, self-hostable.",
+  "description": "High-quality screen sharing with real privacy. Open source, self-hostable.",
   "scripts": {
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",

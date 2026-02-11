@@ -2,7 +2,7 @@
 
 **Stream without limits. Privacy by default.**
 
-High-quality screen sharing with no artificial resolution caps. Open source, end-to-end encrypted, self-hostable. Built where others lock 1080p behind a paywall.
+High-quality screen sharing with no artificial resolution caps. Open source, self-hostable, privacy-first. Built where others lock 1080p behind a paywall.
 
 ---
 
@@ -16,43 +16,14 @@ Hush is a web-based screen sharing tool that lets you stream your screen to frie
 - Switch windows/screens on the fly without disconnecting
 - Automatic quality recommendation based on your upload speed
 - Password-protected rooms
-- E2E encryption (Chromium browsers)
 - Self-hostable with a single `docker-compose up`
 - Transparent server capacity — you always know what's available
 
 **Privacy model:**
-- DTLS/SRTP encryption on all WebRTC traffic (automatic)
-- E2E encryption via WebRTC Encoded Transform — the server can only forward blobs it cannot read
-- Zero tracking, zero analytics, zero ads
+- DTLS/SRTP encryption on all WebRTC traffic (automatic, built into browser)
+- SFU server never decodes media — only forwards encrypted packets
 - Self-host it and trust no one but yourself
-
----
-
-## End-to-End Encryption
-
-Hush uses true end-to-end encryption so the SFU server never sees your media content. The encryption key lives entirely in the URL hash fragment (`#...`), which browsers never send to the server.
-
-**How it works:**
-
-1. When you **create a room**, the client generates a random 256-bit key and encodes it in the URL hash (e.g., `https://hush.app/room/my-room#aB3x...`).
-2. The key is derived using **HKDF** (SHA-256) with the room name as salt, so even if the same fragment is reused across rooms, each room gets a unique encryption key.
-3. Every media frame (video, audio) is encrypted with **AES-256-GCM** before leaving your browser. The SFU only sees encrypted blobs with a small cleartext header for packet routing.
-4. **Share the full URL** (including the `#fragment`) with participants. Anyone who joins via this link gets E2E encryption automatically. The server relays the encrypted media without being able to decrypt it.
-
-**Frame format:**
-
-```text
-[cleartext header (VP8: 10 bytes / Opus: 1 byte)] [12-byte IV] [AES-GCM ciphertext]
-```
-
-**Browser support:**
-
-- Chrome 118+, Edge 118+, Brave: Full support (RTCRtpScriptTransform, Worker-based)
-- Chrome 86-117: Legacy support (Insertable Streams)
-- Firefox: Partial (behind flag)
-- Safari: Not supported — falls back to DTLS/SRTP transport encryption
-
-**What the server sees:** Encrypted blobs. The key never touches the server. If you self-host and inspect the traffic, you'll confirm the SFU cannot decrypt the media payloads.
+- No tracking, zero analytics, zero ads
 
 ---
 
@@ -144,11 +115,6 @@ Server runs on `http://localhost:3001`, client on `http://localhost:5173`.
 │       └──────────────┼──────────────┘         │
 │                      │                        │
 │           ┌──────────┴──────────┐             │
-│           │ E2E Encryption      │             │
-│           │ (Insertable Streams)│             │
-│           └──────────┬──────────┘             │
-│                      │                        │
-│           ┌──────────┴──────────┐             │
 │           │ WebRTC Transport    │             │
 │           │ (DTLS/SRTP)         │             │
 │           └──────────┬──────────┘             │
@@ -169,8 +135,8 @@ Server runs on `http://localhost:3001`, client on `http://localhost:5173`.
 │                      │                        │
 │           ┌──────────┴──────────┐             │
 │           │ mediasoup SFU       │             │
-│           │ (forward only,      │             │
-│           │  no decryption)     │             │
+│           │ (forward encrypted  │             │
+│           │  RTP packets)       │             │
 │           └──────────┬──────────┘             │
 │                      │                        │
 │           ┌──────────┴──────────┐             │
@@ -209,7 +175,7 @@ All configuration via environment variables:
 | Media Engine | mediasoup (SFU) |
 | Signaling | Socket.io |
 | Auth | bcrypt + JWT |
-| Encryption | WebRTC Encoded Transform + Web Crypto API |
+| Encryption | DTLS/SRTP (WebRTC built-in) |
 | Resource mgmt | Custom pool allocator |
 | Containerization | Docker |
 
@@ -221,7 +187,6 @@ All configuration via environment variables:
 |---------|:-----------:|:-------:|:------:|
 | Screen sharing | Yes | Yes | Desktop only |
 | System audio capture | Yes (Win/ChromeOS) | No | No |
-| E2E encryption | Yes | Partial | No |
 | Webcam/Mic | Yes | Yes | Yes |
 
 ---
