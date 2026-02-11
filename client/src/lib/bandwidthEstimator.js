@@ -11,9 +11,14 @@ import { QUALITY_PRESETS } from '../utils/constants';
 export async function estimateUploadSpeed() {
   try {
     // Create a 500KB test payload
+    // crypto.getRandomValues() has a 65536-byte limit per call
     const testSize = 500 * 1024; // 500 KB
     const testData = new Uint8Array(testSize);
-    crypto.getRandomValues(testData);
+    const chunkSize = 65536;
+    for (let offset = 0; offset < testSize; offset += chunkSize) {
+      const end = Math.min(offset + chunkSize, testSize);
+      crypto.getRandomValues(testData.subarray(offset, end));
+    }
 
     const blob = new Blob([testData]);
 

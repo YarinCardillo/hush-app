@@ -119,17 +119,47 @@ export function useMediasoup() {
       const videoTrack = stream.getVideoTracks()[0];
       const audioTrack = stream.getAudioTracks()[0]; // May be null
 
+      // Guard: verify the track is usable before producing
+      if (!videoTrack || videoTrack.readyState !== 'live') {
+        console.error('[screen] Video track not live:', videoTrack?.readyState);
+        stream.getTracks().forEach((t) => t.stop());
+        return null;
+      }
+
+      // Diagnostic: detect if the track dies during the async produce call
+      let trackEndedDuringProduce = false;
+      const onTrackEnded = () => {
+        trackEndedDuringProduce = true;
+        console.error('[screen] Video track ended DURING produce — possible OS permission issue');
+      };
+      videoTrack.addEventListener('ended', onTrackEnded);
+
       // Produce video
-      const videoProducer = await sendTransportRef.current.produce({
-        track: videoTrack,
-        encodings: [
-          { maxBitrate: quality.bitrate },
-        ],
-        codecOptions: {
-          videoGoogleStartBitrate: 1000,
-        },
-        appData: { source: MEDIA_SOURCES.SCREEN },
-      });
+      let videoProducer;
+      try {
+        videoProducer = await sendTransportRef.current.produce({
+          track: videoTrack,
+          encodings: [
+            { maxBitrate: quality.bitrate },
+          ],
+          codecOptions: {
+            videoGoogleStartBitrate: 1000,
+          },
+          appData: { source: MEDIA_SOURCES.SCREEN },
+        });
+      } catch (produceErr) {
+        videoTrack.removeEventListener('ended', onTrackEnded);
+        // Track ended during produce — clean up and signal failure
+        if (produceErr.name === 'InvalidStateError') {
+          console.error('[screen] Produce failed (track ended). Retrying with fresh capture...');
+          stream.getTracks().forEach((t) => t.stop());
+          return null;
+        }
+        throw produceErr;
+      }
+
+      // Replace diagnostic listener with the real one
+      videoTrack.removeEventListener('ended', onTrackEnded);
 
       producersRef.current.set(videoProducer.id, videoProducer);
 
@@ -160,7 +190,8 @@ export function useMediasoup() {
         // User cancelled the screen picker
         return null;
       }
-      throw err;
+      console.error('[screen] startScreenShare error:', err);
+      return null;
     }
   }, []);
 
