@@ -93,6 +93,8 @@ function createEncryptPipeline(key, skipBytes) {
       } catch (err) {
         if (err.message === 'timeout') {
           console.warn('[e2e] Frame dropped: encryption timeout');
+        } else {
+          console.error('[e2e-worker] Encryption failed:', err.message, err);
         }
         // Pass through original frame on error/timeout
         controller.enqueue(frame);
@@ -145,6 +147,8 @@ function createDecryptPipeline(key, skipBytes) {
       } catch (err) {
         if (err.message === 'timeout') {
           console.warn('[e2e] Frame dropped: decryption timeout');
+        } else {
+          console.warn('[e2e-worker] Decryption failed (possibly unencrypted frame):', err.message);
         }
         // Decryption failed — possibly unencrypted frame, pass through
         controller.enqueue(frame);
@@ -158,6 +162,8 @@ function createDecryptPipeline(key, skipBytes) {
 self.onrtctransform = async (event) => {
   const { readable, writable } = event.transformer;
   const { operation, kind, keyBytes } = event.transformer.options;
+
+  console.log(`[e2e-worker] Transform initialized: ${operation} for ${kind}`);
 
   const skipBytes = UNENCRYPTED_BYTES[kind] || 0;
   const isEncrypt = operation === 'encrypt';
