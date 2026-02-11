@@ -207,10 +207,7 @@ async function importCryptoKey(keyBytes, usages) {
 export async function applyEncryptionTransform(sender, keyBytes, kind) {
   if (!sender || !keyBytes) return;
 
-  // TEMPORARY: Force legacy method to test if it works
-  const forceLegacy = true;
-
-  if (typeof RTCRtpScriptTransform !== 'undefined' && !forceLegacy) {
+  if (typeof RTCRtpScriptTransform !== 'undefined') {
     const worker = getE2EWorker();
     sender.transform = new RTCRtpScriptTransform(worker, {
       operation: 'encrypt',
@@ -276,10 +273,7 @@ export async function applyEncryptionTransform(sender, keyBytes, kind) {
 export async function applyDecryptionTransform(receiver, keyBytes, kind) {
   if (!receiver || !keyBytes) return;
 
-  // TEMPORARY: Force legacy method to test if it works
-  const forceLegacy = true;
-
-  if (typeof RTCRtpScriptTransform !== 'undefined' && !forceLegacy) {
+  if (typeof RTCRtpScriptTransform !== 'undefined') {
     const worker = getE2EWorker();
     receiver.transform = new RTCRtpScriptTransform(worker, {
       operation: 'decrypt',
