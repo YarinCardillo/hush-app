@@ -572,7 +572,7 @@ export default function Home() {
             </span>
             <span>
               {e2eSupported
-                ? 'Share the invite link to enable end-to-end encryption'
+                ? 'Use the invite link to enable end-to-end encryption'
                 : 'Use Chrome/Edge for E2E. DTLS/SRTP still active.'}
             </span>
           </div>
