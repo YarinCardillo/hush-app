@@ -7,6 +7,7 @@ import { estimateUploadSpeed, getRecommendedQuality } from '../lib/bandwidthEsti
 import StreamView from '../components/StreamView';
 import Controls from '../components/Controls';
 import QualitySelector from '../components/QualitySelector';
+import QualityPickerModal from '../components/QualityPickerModal';
 
 const styles = {
   page: {
@@ -56,7 +57,8 @@ const styles = {
     gap: '8px',
     padding: '8px',
     overflow: 'auto',
-    alignContent: 'start',
+    alignContent: 'center',
+    justifyItems: 'center',
   },
   sidebar: {
     width: '260px',
@@ -93,16 +95,6 @@ const styles = {
     background: isStreaming ? 'var(--live)' : 'var(--text-muted)',
     boxShadow: isStreaming ? '0 0 6px var(--live-glow)' : 'none',
   }),
-  controlsBar: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    padding: '12px 16px',
-    background: 'var(--bg-secondary)',
-    borderTop: '1px solid var(--border)',
-    flexShrink: 0,
-  },
   empty: {
     display: 'flex',
     flexDirection: 'column',
@@ -136,11 +128,11 @@ export default function Room() {
   const { roomName } = useParams();
   const [connected, setConnected] = useState(false);
   const [quality, setQuality] = useState(DEFAULT_QUALITY);
-  const [recommendedQuality, setRecommendedQuality] = useState(null);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
   const [isWebcamOn, setIsWebcamOn] = useState(false);
   const [showQualityPanel, setShowQualityPanel] = useState(false);
+  const [pendingCapture, setPendingCapture] = useState(null);
 
   const {
     isReady,
@@ -149,7 +141,8 @@ export default function Room() {
     consumers,
     peers,
     initDevice,
-    startScreenShare,
+    captureScreen,
+    produceScreen,
     switchScreenSource,
     changeQuality,
     startWebcam,
@@ -183,7 +176,7 @@ export default function Room() {
       // Consume all existing producers
       for (const peer of existingPeers) {
         for (const producer of peer.producers) {
-          await consumeProducer(producer.id);
+          await consumeProducer(producer.id, peer.id);
         }
       }
     });
@@ -193,10 +186,9 @@ export default function Room() {
       console.log('[room] Disconnected');
     });
 
-    // Estimate bandwidth on connect
+    // Estimate bandwidth and auto-select quality
     estimateUploadSpeed().then((speed) => {
       const rec = getRecommendedQuality(speed);
-      setRecommendedQuality(rec);
       setQuality(rec.key);
     });
 
@@ -219,8 +211,33 @@ export default function Room() {
       }
       setIsScreenSharing(false);
     } else {
-      const result = await startScreenShare(quality);
-      if (result) setIsScreenSharing(true);
+      // Step 1: Capture screen (browser picker opens)
+      const capture = await captureScreen();
+      if (!capture) return;
+
+      // Step 2: Show quality picker modal
+      setPendingCapture(capture);
+    }
+  };
+
+  const handleQualityPick = async (qualityKey) => {
+    if (!pendingCapture) return;
+    setQuality(qualityKey);
+    const result = await produceScreen(pendingCapture.stream, qualityKey);
+    setPendingCapture(null);
+    if (result) {
+      setIsScreenSharing(true);
+      // Sync UI when user stops via browser chrome (native "Stop sharing" button)
+      result.stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        setIsScreenSharing(false);
+      });
+    }
+  };
+
+  const handleCaptureCancelled = () => {
+    if (pendingCapture) {
+      pendingCapture.stream.getTracks().forEach((t) => t.stop());
+      setPendingCapture(null);
     }
   };
 
@@ -276,41 +293,85 @@ export default function Room() {
     navigate('/');
   };
 
-  // ─── Build streams list ─────────────────────────────
+  // ─── Build streams list (with audio pairing) ────────
   const allStreams = [];
+  const pairedAudioTracks = new Set();
 
   // Our own producers that have video
   for (const [id, producer] of producers.entries()) {
-    if (producer.kind === 'video' || producer.appData?.source === MEDIA_SOURCES.SCREEN) {
+    if (producer.kind === 'video') {
+      let audioTrack = null;
+
+      // Pair screen video with screen audio
+      if (producer.appData?.source === MEDIA_SOURCES.SCREEN) {
+        for (const [, p] of producers.entries()) {
+          if (p.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO && p.track) {
+            audioTrack = p.track;
+            break;
+          }
+        }
+      }
+
       allStreams.push({
         id,
         type: 'local',
         track: producer.track,
+        audioTrack,
         label: producer.appData?.source === MEDIA_SOURCES.SCREEN ? 'Your Screen' : 'Your Webcam',
         source: producer.appData?.source,
       });
     }
   }
 
-  // Remote consumers that are video
+  // Remote consumers that are video — pair with matching audio
   for (const [id, data] of consumers.entries()) {
     if (data.consumer.kind === 'video') {
+      const videoPeerId = data.peerId;
+      const videoSource = data.appData?.source;
+
+      // Determine what audio source to pair with
+      const pairedAudioSource = videoSource === MEDIA_SOURCES.SCREEN
+        ? MEDIA_SOURCES.SCREEN_AUDIO
+        : MEDIA_SOURCES.MIC;
+
+      let audioTrack = null;
+      for (const [audioId, audioData] of consumers.entries()) {
+        if (
+          audioData.consumer.kind === 'audio' &&
+          audioData.appData?.source === pairedAudioSource &&
+          audioData.peerId === videoPeerId
+        ) {
+          audioTrack = audioData.consumer.track;
+          pairedAudioTracks.add(audioId);
+          break;
+        }
+      }
+
       const peer = peers.find((p) =>
         p.producers?.some((pr) => pr.id === data.consumer.producerId)
       );
+
       allStreams.push({
         id,
         type: 'remote',
         track: data.consumer.track,
+        audioTrack,
         label: peer?.displayName || 'Remote',
         source: data.appData?.source || 'unknown',
       });
     }
   }
 
+  // Orphan audio consumers (mic without paired webcam video)
+  const orphanAudioConsumers = [];
+  for (const [id, data] of consumers.entries()) {
+    if (data.consumer.kind === 'audio' && !pairedAudioTracks.has(id)) {
+      orphanAudioConsumers.push({ id, track: data.consumer.track });
+    }
+  }
+
   const streamCount = allStreams.length;
   const gridStyle = getGridStyle(streamCount);
-  const peerId = sessionStorage.getItem('hush_peerId');
 
   return (
     <div style={styles.page}>
@@ -368,6 +429,7 @@ export default function Room() {
               <StreamView
                 key={stream.id}
                 track={stream.track}
+                audioTrack={stream.audioTrack}
                 label={stream.label}
                 source={stream.source}
                 isLocal={stream.type === 'local'}
@@ -383,7 +445,6 @@ export default function Room() {
               <div style={styles.sidebarLabel}>Stream Quality</div>
               <QualitySelector
                 currentQuality={quality}
-                recommendedQuality={recommendedQuality}
                 onSelect={handleQualityChange}
               />
             </div>
@@ -405,6 +466,21 @@ export default function Room() {
         )}
       </div>
 
+      {/* ─── Orphan audio (mic without paired video) ─ */}
+      {orphanAudioConsumers.map((oa) => (
+        <OrphanAudio key={oa.id} track={oa.track} />
+      ))}
+
+      {/* ─── Quality Picker Modal ────────────────── */}
+      {pendingCapture && (
+        <QualityPickerModal
+          nativeWidth={pendingCapture.nativeWidth}
+          nativeHeight={pendingCapture.nativeHeight}
+          onSelect={handleQualityPick}
+          onCancel={handleCaptureCancelled}
+        />
+      )}
+
       {/* ─── Controls Bar ─────────────────────────── */}
       <Controls
         isReady={isReady}
@@ -420,4 +496,37 @@ export default function Room() {
       />
     </div>
   );
+}
+
+// Hidden audio element for orphan audio consumers (e.g., mic without webcam)
+function OrphanAudio({ track }) {
+  const audioRef = useRef(null);
+
+  useEffect(() => {
+    if (!audioRef.current || !track) return;
+    const audio = audioRef.current;
+    audio.srcObject = new MediaStream([track]);
+
+    const tryPlay = async () => {
+      try {
+        await audio.play();
+      } catch {
+        // iOS autoplay blocked — retry on user gesture
+        const resume = () => {
+          audio.play().catch(() => {});
+          document.removeEventListener('touchstart', resume);
+          document.removeEventListener('click', resume);
+        };
+        document.addEventListener('touchstart', resume, { once: true });
+        document.addEventListener('click', resume, { once: true });
+      }
+    };
+    tryPlay();
+
+    return () => {
+      audio.srcObject = null;
+    };
+  }, [track]);
+
+  return <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />;
 }

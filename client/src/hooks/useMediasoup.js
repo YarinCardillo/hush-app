@@ -99,119 +99,131 @@ export function useMediasoup() {
     }
   }, []);
 
-  // ─── Share Screen ───────────────────────────────────
-  const startScreenShare = useCallback(async (qualityKey = DEFAULT_QUALITY) => {
+  // ─── Capture Screen (step 1: get stream, no produce) ─
+  const captureScreen = useCallback(async () => {
     if (!sendTransportRef.current) throw new Error('Transport not ready');
-
-    const quality = QUALITY_PRESETS[qualityKey];
 
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
-          width: { ideal: quality.width },
-          height: { ideal: quality.height },
-          frameRate: { ideal: quality.frameRate },
           cursor: 'always',
+          frameRate: { ideal: 60 },
         },
-        audio: true, // Request system audio
+        audio: true,
       });
 
       const videoTrack = stream.getVideoTracks()[0];
-      const audioTrack = stream.getAudioTracks()[0]; // May be null
-
-      // Guard: verify the track is usable before producing
       if (!videoTrack || videoTrack.readyState !== 'live') {
         console.error('[screen] Video track not live:', videoTrack?.readyState);
         stream.getTracks().forEach((t) => t.stop());
         return null;
       }
 
-      // Diagnostic: detect if the track dies during the async produce call
-      let trackEndedDuringProduce = false;
-      const onTrackEnded = () => {
-        trackEndedDuringProduce = true;
-        console.error('[screen] Video track ended DURING produce — possible OS permission issue');
+      const settings = videoTrack.getSettings();
+
+      return {
+        stream,
+        nativeWidth: settings.width || 0,
+        nativeHeight: settings.height || 0,
       };
-      videoTrack.addEventListener('ended', onTrackEnded);
-
-      // Produce video
-      let videoProducer;
-      try {
-        videoProducer = await sendTransportRef.current.produce({
-          track: videoTrack,
-          encodings: [
-            { maxBitrate: quality.bitrate },
-          ],
-          codecOptions: {
-            videoGoogleStartBitrate: 1000,
-          },
-          appData: { source: MEDIA_SOURCES.SCREEN },
-        });
-      } catch (produceErr) {
-        videoTrack.removeEventListener('ended', onTrackEnded);
-        // Track ended during produce — clean up and signal failure
-        if (produceErr.name === 'InvalidStateError') {
-          console.error('[screen] Produce failed (track ended). Retrying with fresh capture...');
-          stream.getTracks().forEach((t) => t.stop());
-          return null;
-        }
-        throw produceErr;
-      }
-
-      // Replace diagnostic listener with the real one
-      videoTrack.removeEventListener('ended', onTrackEnded);
-
-      producersRef.current.set(videoProducer.id, videoProducer);
-
-      // When user clicks "Stop sharing" in browser UI
-      videoTrack.addEventListener('ended', () => {
-        stopProducer(videoProducer.id);
-        if (audioTrack) {
-          const audioProducerId = Array.from(producersRef.current.entries())
-            .find(([, p]) => p.appData.source === MEDIA_SOURCES.SCREEN_AUDIO)?.[0];
-          if (audioProducerId) stopProducer(audioProducerId);
-        }
-      });
-
-      // Produce system audio if available
-      if (audioTrack) {
-        const audioProducer = await sendTransportRef.current.produce({
-          track: audioTrack,
-          appData: { source: MEDIA_SOURCES.SCREEN_AUDIO },
-        });
-        producersRef.current.set(audioProducer.id, audioProducer);
-      }
-
-      setProducers(new Map(producersRef.current));
-
-      return { videoProducer, stream };
     } catch (err) {
-      if (err.name === 'NotAllowedError') {
-        // User cancelled the screen picker
-        return null;
-      }
-      console.error('[screen] startScreenShare error:', err);
+      if (err.name === 'NotAllowedError') return null;
+      console.error('[screen] captureScreen error:', err);
       return null;
     }
+  }, []);
+
+  // ─── Produce Screen (step 2: produce with chosen quality) ─
+  const produceScreen = useCallback(async (stream, qualityKey = DEFAULT_QUALITY) => {
+    if (!sendTransportRef.current) throw new Error('Transport not ready');
+
+    const quality = QUALITY_PRESETS[qualityKey];
+    const videoTrack = stream.getVideoTracks()[0];
+    const audioTrack = stream.getAudioTracks()[0];
+
+    // For "lite": downscale the track to 720p/30fps
+    if (quality.width && quality.height) {
+      try {
+        await videoTrack.applyConstraints({
+          width: { ideal: quality.width },
+          height: { ideal: quality.height },
+          frameRate: { ideal: quality.frameRate },
+        });
+      } catch (err) {
+        console.warn('[screen] Could not apply track constraints:', err);
+      }
+    }
+
+    // Guard: verify the track is still usable
+    if (!videoTrack || videoTrack.readyState !== 'live') {
+      console.error('[screen] Video track not live after constraints:', videoTrack?.readyState);
+      stream.getTracks().forEach((t) => t.stop());
+      return null;
+    }
+
+    // Diagnostic: detect if the track dies during the async produce call
+    const onTrackEnded = () => {
+      console.error('[screen] Video track ended DURING produce — possible OS permission issue');
+    };
+    videoTrack.addEventListener('ended', onTrackEnded);
+
+    let videoProducer;
+    try {
+      videoProducer = await sendTransportRef.current.produce({
+        track: videoTrack,
+        encodings: [{ maxBitrate: quality.bitrate }],
+        codecOptions: { videoGoogleStartBitrate: 1000 },
+        appData: { source: MEDIA_SOURCES.SCREEN },
+      });
+    } catch (produceErr) {
+      videoTrack.removeEventListener('ended', onTrackEnded);
+      if (produceErr.name === 'InvalidStateError') {
+        console.error('[screen] Produce failed (track ended).');
+        stream.getTracks().forEach((t) => t.stop());
+        return null;
+      }
+      throw produceErr;
+    }
+
+    videoTrack.removeEventListener('ended', onTrackEnded);
+    producersRef.current.set(videoProducer.id, videoProducer);
+
+    // When user clicks "Stop sharing" in browser UI
+    videoTrack.addEventListener('ended', () => {
+      stopProducer(videoProducer.id);
+      if (audioTrack) {
+        const audioProducerId = Array.from(producersRef.current.entries())
+          .find(([, p]) => p.appData.source === MEDIA_SOURCES.SCREEN_AUDIO)?.[0];
+        if (audioProducerId) stopProducer(audioProducerId);
+      }
+    });
+
+    // Produce system audio if available
+    if (audioTrack) {
+      const audioProducer = await sendTransportRef.current.produce({
+        track: audioTrack,
+        appData: { source: MEDIA_SOURCES.SCREEN_AUDIO },
+      });
+      producersRef.current.set(audioProducer.id, audioProducer);
+    }
+
+    setProducers(new Map(producersRef.current));
+    return { videoProducer, stream };
   }, []);
 
   // ─── Switch Screen/Window On The Fly ────────────────
   const switchScreenSource = useCallback(async (qualityKey) => {
     const quality = QUALITY_PRESETS[qualityKey || DEFAULT_QUALITY];
 
-    // Find current screen producer
     const screenEntry = Array.from(producersRef.current.entries())
       .find(([, p]) => p.appData.source === MEDIA_SOURCES.SCREEN);
 
     if (!screenEntry) throw new Error('No active screen share');
-
     const [producerId, producer] = screenEntry;
 
-    // Get new screen/window
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: {
-        width: { ideal: quality.width },
-        height: { ideal: quality.height },
+        cursor: 'always',
         frameRate: { ideal: quality.frameRate },
       },
       audio: true,
@@ -219,10 +231,21 @@ export function useMediasoup() {
 
     const newTrack = stream.getVideoTracks()[0];
 
-    // Replace track without closing the producer
+    // Apply constraints for "lite" preset
+    if (quality.width && quality.height) {
+      try {
+        await newTrack.applyConstraints({
+          width: { ideal: quality.width },
+          height: { ideal: quality.height },
+          frameRate: { ideal: quality.frameRate },
+        });
+      } catch (err) {
+        console.warn('[screen] Could not apply track constraints:', err);
+      }
+    }
+
     await producer.replaceTrack({ track: newTrack });
 
-    // Notify server about the change
     await socketRequest('updateProducerAppData', {
       producerId,
       appData: { source: MEDIA_SOURCES.SCREEN, switchedAt: Date.now() },
@@ -246,7 +269,28 @@ export function useMediasoup() {
     if (!screenEntry) return;
     const [, producer] = screenEntry;
 
-    // Update encoding parameters live
+    // Apply track constraints (resolution/framerate)
+    const track = producer.track;
+    if (track && track.readyState === 'live') {
+      try {
+        if (quality.width && quality.height) {
+          await track.applyConstraints({
+            width: { ideal: quality.width },
+            height: { ideal: quality.height },
+            frameRate: { ideal: quality.frameRate },
+          });
+        } else {
+          // Source: remove resolution constraints, set 60fps
+          await track.applyConstraints({
+            frameRate: { ideal: quality.frameRate },
+          });
+        }
+      } catch (err) {
+        console.warn('[quality] Could not apply track constraints:', err);
+      }
+    }
+
+    // Update encoding bitrate
     await producer.setMaxSpatialLayer(0);
     const params = producer.rtpSender?.getParameters();
     if (params?.encodings?.[0]) {
@@ -321,7 +365,7 @@ export function useMediasoup() {
   }, []);
 
   // ─── Consume a remote producer ──────────────────────
-  const consumeProducer = useCallback(async (producerId) => {
+  const consumeProducer = useCallback(async (producerId, producerPeerId) => {
     if (!recvTransportRef.current || !deviceRef.current) return;
 
     try {
@@ -349,7 +393,7 @@ export function useMediasoup() {
 
       consumersRef.current.set(consumer.id, {
         consumer,
-        peerId: null, // Will be matched by producerId
+        peerId: producerPeerId || null,
         kind: response.kind,
         appData: response.appData,
       });
@@ -363,20 +407,16 @@ export function useMediasoup() {
   }, []);
 
   // ─── Socket event listeners ─────────────────────────
-  // Depends on isReady so this re-runs after initDevice() completes,
-  // which guarantees the socket exists (initDevice is called from the
-  // socket's connect handler in Room.jsx).
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
 
     const handleNewProducer = ({ producerId, peerId, kind, appData }) => {
       console.log(`[mediasoup] New producer from ${peerId}: ${kind} (${appData?.source})`);
-      consumeProducer(producerId);
+      consumeProducer(producerId, peerId);
     };
 
-    const handleProducerClosed = ({ producerId, peerId }) => {
-      // Find and close matching consumer
+    const handleProducerClosed = ({ producerId }) => {
       for (const [consumerId, data] of consumersRef.current.entries()) {
         if (data.consumer.producerId === producerId) {
           data.consumer.close();
@@ -450,7 +490,8 @@ export function useMediasoup() {
     consumers,
     peers,
     initDevice,
-    startScreenShare,
+    captureScreen,
+    produceScreen,
     switchScreenSource,
     changeQuality,
     startWebcam,

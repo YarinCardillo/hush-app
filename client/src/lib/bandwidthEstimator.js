@@ -45,23 +45,25 @@ export async function estimateUploadSpeed() {
 }
 
 /**
- * Get recommended quality preset based on estimated upload speed
+ * Get recommended quality preset based on estimated upload speed.
+ * With two presets (source: 12 Mbps, lite: 2.5 Mbps), picks the
+ * highest preset the connection can sustain.
  */
 export function getRecommendedQuality(uploadMbps) {
-  // Sort presets by bitrate descending
   const sorted = Object.entries(QUALITY_PRESETS)
     .sort(([, a], [, b]) => b.bitrate - a.bitrate);
 
+  // Pick highest preset whose bitrate fits within ~80% of upload
   for (const [key, preset] of sorted) {
-    if (uploadMbps >= preset.minUpload) {
+    const requiredMbps = (preset.bitrate / 1_000_000) * 1.2;
+    if (uploadMbps >= requiredMbps) {
       return { key, preset, uploadMbps };
     }
   }
 
-  // Fallback to lowest
   return {
-    key: '480p',
-    preset: QUALITY_PRESETS['480p'],
+    key: 'lite',
+    preset: QUALITY_PRESETS['lite'],
     uploadMbps,
   };
 }

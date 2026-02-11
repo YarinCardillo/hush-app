@@ -1,57 +1,25 @@
 export const API_URL = import.meta.env.VITE_API_URL || '';
 
 export const QUALITY_PRESETS = {
-  '4K': {
-    label: '4K (2160p)',
-    width: 3840,
-    height: 2160,
-    frameRate: 30,
-    bitrate: 15_000_000, // 15 Mbps
-    minUpload: 18, // Mbps recommended upload
-  },
-  '1440p': {
-    label: '1440p (2K)',
-    width: 2560,
-    height: 1440,
-    frameRate: 30,
-    bitrate: 8_000_000,
-    minUpload: 10,
-  },
-  '1080p': {
-    label: '1080p (Full HD)',
-    width: 1920,
-    height: 1080,
-    frameRate: 30,
-    bitrate: 4_500_000,
-    minUpload: 6,
-  },
-  '1080p60': {
-    label: '1080p 60fps',
-    width: 1920,
-    height: 1080,
+  source: {
+    label: 'Source',
+    description: 'native resolution, 60fps',
+    width: null,
+    height: null,
     frameRate: 60,
-    bitrate: 6_000_000,
-    minUpload: 8,
+    bitrate: 12_000_000, // 12 Mbps
   },
-  '720p': {
-    label: '720p (HD)',
+  lite: {
+    label: 'Lite',
+    description: '720p, 30fps',
     width: 1280,
     height: 720,
     frameRate: 30,
-    bitrate: 2_500_000,
-    minUpload: 3,
-  },
-  '480p': {
-    label: '480p (SD)',
-    width: 854,
-    height: 480,
-    frameRate: 30,
-    bitrate: 1_000_000,
-    minUpload: 1.5,
+    bitrate: 2_500_000, // 2.5 Mbps
   },
 };
 
-export const DEFAULT_QUALITY = '1080p';
+export const DEFAULT_QUALITY = 'source';
 
 export const MEDIA_SOURCES = {
   SCREEN: 'screen',
@@ -59,3 +27,7 @@ export const MEDIA_SOURCES = {
   MIC: 'mic',
   SCREEN_AUDIO: 'screen-audio',
 };
+
+export const IS_SCREEN_SHARE_SUPPORTED =
+  typeof navigator !== 'undefined' &&
+  !!navigator.mediaDevices?.getDisplayMedia;
