@@ -22,9 +22,37 @@ Hush is a web-based screen sharing tool that lets you stream your screen to frie
 
 **Privacy model:**
 - DTLS/SRTP encryption on all WebRTC traffic (automatic)
-- Optional E2E encryption via WebRTC Encoded Transform (your data is encrypted before it hits the server — the server can only forward blobs it can't read)
+- E2E encryption via WebRTC Encoded Transform — the server can only forward blobs it cannot read
 - Zero tracking, zero analytics, zero ads
 - Self-host it and trust no one but yourself
+
+---
+
+## End-to-End Encryption
+
+Hush uses true end-to-end encryption so the SFU server never sees your media content. The encryption key lives entirely in the URL hash fragment (`#...`), which browsers never send to the server.
+
+**How it works:**
+
+1. When you **create a room**, the client generates a random 256-bit key and encodes it in the URL hash (e.g., `https://hush.app/room/my-room#aB3x...`).
+2. The key is derived using **HKDF** (SHA-256) with the room name as salt, so even if the same fragment is reused across rooms, each room gets a unique encryption key.
+3. Every media frame (video, audio) is encrypted with **AES-256-GCM** before leaving your browser. The SFU only sees encrypted blobs with a small cleartext header for packet routing.
+4. **Share the full URL** (including the `#fragment`) with participants. Anyone who joins via this link gets E2E encryption automatically. The server relays the encrypted media without being able to decrypt it.
+
+**Frame format:**
+
+```text
+[cleartext header (VP8: 10 bytes / Opus: 1 byte)] [12-byte IV] [AES-GCM ciphertext]
+```
+
+**Browser support:**
+
+- Chrome 118+, Edge 118+, Brave: Full support (RTCRtpScriptTransform, Worker-based)
+- Chrome 86-117: Legacy support (Insertable Streams)
+- Firefox: Partial (behind flag)
+- Safari: Not supported — falls back to DTLS/SRTP transport encryption
+
+**What the server sees:** Encrypted blobs. The key never touches the server. If you self-host and inspect the traffic, you'll confirm the SFU cannot decrypt the media payloads.
 
 ---
 

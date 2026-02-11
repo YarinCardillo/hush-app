@@ -2,6 +2,11 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Device } from 'mediasoup-client';
 import { getSocket, socketRequest } from '../lib/socket';
 import { QUALITY_PRESETS, DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
+import {
+  isE2ESupported, hasScriptTransform,
+  applyEncryptionTransform, applyDecryptionTransform,
+  terminateE2EWorker,
+} from '../lib/encryption';
 
 export function useMediasoup() {
   const [isReady, setIsReady] = useState(false);
@@ -20,6 +25,10 @@ export function useMediasoup() {
   const recvTransportRef = useRef(null);
   const producersRef = useRef(new Map());
   const consumersRef = useRef(new Map());
+
+  // ─── E2E Encryption ─────────────────────────────────
+  const e2eKeyBytesRef = useRef(null);
+  const [isE2EActive, setIsE2EActive] = useState(false);
 
   // ─── Click-to-Watch Screen Shares ──────────────────
   const [availableScreens, setAvailableScreens] = useState(new Map());
@@ -46,6 +55,12 @@ export function useMediasoup() {
     const clamped = Math.max(-60, Math.min(-30, threshold));
     noiseGateThresholdRef.current = clamped;
     setNoiseGateThreshold(clamped);
+  }, []);
+
+  const setE2EKey = useCallback((keyBytes) => {
+    e2eKeyBytesRef.current = keyBytes;
+    setIsE2EActive(!!keyBytes);
+    if (keyBytes) console.log('[e2e] Key set for encryption');
   }, []);
 
   const cleanupMicPipeline = useCallback(() => {
@@ -90,9 +105,13 @@ export function useMediasoup() {
       await device.load({ routerRtpCapabilities: rtpCapabilities });
       deviceRef.current = device;
 
+      // E2E: legacy createEncodedStreams needs this flag on the PeerConnection
+      const needsLegacyE2E = e2eKeyBytesRef.current && !hasScriptTransform() && isE2ESupported();
+      const additionalSettings = needsLegacyE2E ? { encodedInsertableStreams: true } : {};
+
       // Create send transport
       const sendData = await socketRequest('createWebRtcTransport', { direction: 'send' });
-      const sendTransport = device.createSendTransport(sendData.params);
+      const sendTransport = device.createSendTransport({ ...sendData.params, additionalSettings });
 
       sendTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
         try {
@@ -132,7 +151,7 @@ export function useMediasoup() {
 
       // Create receive transport
       const recvData = await socketRequest('createWebRtcTransport', { direction: 'recv' });
-      const recvTransport = device.createRecvTransport(recvData.params);
+      const recvTransport = device.createRecvTransport({ ...recvData.params, additionalSettings });
 
       recvTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
         try {
@@ -256,6 +275,7 @@ export function useMediasoup() {
 
     videoTrack.removeEventListener('ended', onTrackEnded);
     producersRef.current.set(videoProducer.id, videoProducer);
+    await applyEncryptionTransform(videoProducer.rtpSender, e2eKeyBytesRef.current, 'video');
 
     // When user clicks "Stop sharing" in browser UI
     videoTrack.addEventListener('ended', () => {
@@ -274,6 +294,7 @@ export function useMediasoup() {
         appData: { source: MEDIA_SOURCES.SCREEN_AUDIO },
       });
       producersRef.current.set(audioProducer.id, audioProducer);
+      await applyEncryptionTransform(audioProducer.rtpSender, e2eKeyBytesRef.current, 'audio');
     }
 
     setProducers(new Map(producersRef.current));
@@ -394,6 +415,7 @@ export function useMediasoup() {
     });
 
     producersRef.current.set(producer.id, producer);
+    await applyEncryptionTransform(producer.rtpSender, e2eKeyBytesRef.current, 'video');
     setProducers(new Map(producersRef.current));
 
     return producer;
@@ -508,6 +530,7 @@ export function useMediasoup() {
     });
 
     producersRef.current.set(producer.id, producer);
+    await applyEncryptionTransform(producer.rtpSender, e2eKeyBytesRef.current, 'audio');
     setProducers(new Map(producersRef.current));
 
     return producer;
@@ -553,6 +576,7 @@ export function useMediasoup() {
 
       // Resume consumer (was created paused on server)
       await socketRequest('resumeConsumer', { consumerId: consumer.id });
+      await applyDecryptionTransform(consumer.rtpReceiver, e2eKeyBytesRef.current, response.kind);
 
       console.log(`[mediasoup] Consumer ${consumer.id} ready:`, {
         kind: response.kind,
@@ -690,6 +714,7 @@ export function useMediasoup() {
       }
       sendTransportRef.current?.close();
       recvTransportRef.current?.close();
+      terminateE2EWorker();
     };
   }, []);
 
@@ -769,6 +794,9 @@ export function useMediasoup() {
     addAvailableScreen,
     watchScreen,
     unwatchScreen,
+    // E2E encryption
+    setE2EKey,
+    isE2EActive,
     // Noise gate
     noiseGateEnabled,
     noiseGateThreshold,

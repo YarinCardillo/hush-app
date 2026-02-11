@@ -1,32 +1,34 @@
 /**
  * E2E Encryption for Hush
  *
- * Uses the WebRTC Encoded Transform API (formerly Insertable Streams)
- * to encrypt/decrypt media frames before they reach the SFU.
+ * Uses WebRTC Encoded Transform API to encrypt/decrypt media frames
+ * before they reach the SFU. The server only sees encrypted blobs.
  *
- * The SFU only sees encrypted blobs it cannot read.
+ * Key derivation: A random key fragment is embedded in the room URL
+ * hash (#fragment). This fragment never reaches the server. The actual
+ * AES-256-GCM key is derived via HKDF using the fragment + room name.
  *
  * Browser support:
- * - Chrome 86+, Edge 86+, Brave: Full support
+ * - Chrome 118+: RTCRtpScriptTransform (Worker-based)
+ * - Chrome 86-117, Edge 86+, Brave: createEncodedStreams (legacy)
  * - Firefox: Partial (behind flag)
  * - Safari: No support
  *
- * Fallback: If not supported, streams are still protected by DTLS/SRTP
- * (encrypted in transit) but the SFU can read them.
+ * Fallback: DTLS/SRTP transport encryption (server can read media).
  */
 
 const ENCRYPTION_ALGO = 'AES-GCM';
 const KEY_LENGTH = 256;
-// We skip the first few bytes (unencrypted header) so the SFU
-// can still route packets. For VP8, first 10 bytes are the header.
+const IV_LENGTH = 12;
+
+// Unencrypted header bytes so the SFU can still route packets
 const UNENCRYPTED_BYTES = {
-  video: 10,
-  audio: 1, // Opus has a 1-byte TOC header
+  video: 10, // VP8 header
+  audio: 1,  // Opus TOC header
 };
 
-/**
- * Check if the browser supports WebRTC Encoded Transform
- */
+// ─── Browser Support ─────────────────────────────────
+
 export function isE2ESupported() {
   return (
     typeof RTCRtpSender !== 'undefined' &&
@@ -36,147 +38,206 @@ export function isE2ESupported() {
   );
 }
 
+export function hasScriptTransform() {
+  return typeof RTCRtpScriptTransform !== 'undefined';
+}
+
+// ─── Base64URL Encoding ──────────────────────────────
+
+function toBase64Url(bytes) {
+  const binary = String.fromCharCode(...bytes);
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+function fromBase64Url(str) {
+  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const remainder = base64.length % 4;
+  const padded = remainder ? base64 + '='.repeat(4 - remainder) : base64;
+  const binary = atob(padded);
+  return new Uint8Array([...binary].map((c) => c.charCodeAt(0)));
+}
+
+// ─── Key Generation & Derivation ─────────────────────
+
 /**
- * Generate a random encryption key for the room
+ * Generate a random key fragment for the URL hash.
+ * Returns a 43-character base64url string (32 bytes of entropy).
  */
-export async function generateRoomKey() {
-  const key = await crypto.subtle.generateKey(
-    { name: ENCRYPTION_ALGO, length: KEY_LENGTH },
-    true, // extractable — needed to share with peers
-    ['encrypt', 'decrypt']
+export function generateKeyFragment() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return toBase64Url(bytes);
+}
+
+/**
+ * Derive an AES-256-GCM key from a URL hash fragment and room name.
+ * Uses HKDF for domain separation — same fragment in different rooms
+ * produces different keys. Returns raw key bytes (Uint8Array, 32 bytes).
+ */
+export async function deriveKeyFromFragment(fragment, roomName) {
+  const rawBytes = fromBase64Url(fragment);
+  const encoder = new TextEncoder();
+
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', rawBytes, 'HKDF', false, ['deriveKey']
   );
-  return key;
-}
 
-/**
- * Export key to raw bytes for sharing with peers
- */
-export async function exportKey(key) {
-  const raw = await crypto.subtle.exportKey('raw', key);
-  return new Uint8Array(raw);
-}
-
-/**
- * Import key from raw bytes received from a peer
- */
-export async function importKey(rawBytes) {
-  return crypto.subtle.importKey(
-    'raw',
-    rawBytes,
+  const derivedKey = await crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: encoder.encode(roomName),
+      info: encoder.encode('hush-e2e-v1'),
+    },
+    keyMaterial,
     { name: ENCRYPTION_ALGO, length: KEY_LENGTH },
     true,
     ['encrypt', 'decrypt']
   );
+
+  const exported = await crypto.subtle.exportKey('raw', derivedKey);
+  return new Uint8Array(exported);
 }
 
+// ─── Worker Management ───────────────────────────────
+
+let e2eWorker = null;
+
+function getE2EWorker() {
+  if (!e2eWorker) {
+    e2eWorker = new Worker(
+      new URL('./e2eWorker.js', import.meta.url),
+      { type: 'module' }
+    );
+  }
+  return e2eWorker;
+}
+
+export function terminateE2EWorker() {
+  if (e2eWorker) {
+    e2eWorker.terminate();
+    e2eWorker = null;
+  }
+}
+
+// ─── Transform Helpers ───────────────────────────────
+
+async function importCryptoKey(keyBytes, usages) {
+  return crypto.subtle.importKey(
+    'raw', keyBytes,
+    { name: ENCRYPTION_ALGO, length: KEY_LENGTH },
+    false, usages
+  );
+}
+
+// ─── Encryption Transform ────────────────────────────
+
 /**
- * Create an encryption transform for an RTCRtpSender
+ * Apply E2E encryption to an RTCRtpSender.
+ * Chooses RTCRtpScriptTransform (modern) or createEncodedStreams (legacy).
  */
-export function createEncryptionTransform(sender, key, kind) {
-  if (!isE2ESupported()) {
-    console.warn('[e2e] Encryption not supported in this browser');
-    return;
-  }
+export async function applyEncryptionTransform(sender, keyBytes, kind) {
+  if (!sender || !keyBytes) return;
 
-  const skipBytes = UNENCRYPTED_BYTES[kind] || 0;
-
-  // Modern API: RTCRtpScriptTransform
   if (typeof RTCRtpScriptTransform !== 'undefined') {
-    // This would use a Worker — simplified version here
-    console.log('[e2e] Using RTCRtpScriptTransform');
+    const worker = getE2EWorker();
+    sender.transform = new RTCRtpScriptTransform(worker, {
+      operation: 'encrypt',
+      kind,
+      keyBytes: new Uint8Array(keyBytes),
+    });
+    console.log(`[e2e] Encryption active for ${kind}`);
     return;
   }
 
-  // Legacy API: createEncodedStreams
   if (typeof sender.createEncodedStreams === 'function') {
+    const key = await importCryptoKey(keyBytes, ['encrypt']);
+    const skipBytes = UNENCRYPTED_BYTES[kind] || 0;
     const { readable, writable } = sender.createEncodedStreams();
 
-    const transformStream = new TransformStream({
+    readable.pipeThrough(new TransformStream({
       async transform(frame, controller) {
         try {
           const data = new Uint8Array(frame.data);
-
-          // Keep header unencrypted so SFU can route
           const header = data.slice(0, skipBytes);
           const payload = data.slice(skipBytes);
+          const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 
-          // Generate random IV for each frame
-          const iv = crypto.getRandomValues(new Uint8Array(12));
-
-          // Encrypt payload
           const encrypted = await crypto.subtle.encrypt(
-            { name: ENCRYPTION_ALGO, iv },
-            key,
-            payload
+            { name: ENCRYPTION_ALGO, iv }, key, payload
           );
 
-          // Reassemble: [header][iv][encrypted payload]
           const result = new Uint8Array(
-            header.length + iv.length + encrypted.byteLength
+            header.length + IV_LENGTH + encrypted.byteLength
           );
           result.set(header, 0);
           result.set(iv, header.length);
-          result.set(new Uint8Array(encrypted), header.length + iv.length);
+          result.set(new Uint8Array(encrypted), header.length + IV_LENGTH);
 
           frame.data = result.buffer;
           controller.enqueue(frame);
         } catch (err) {
-          // On error, pass through unencrypted to avoid breaking stream
           console.error('[e2e] Encryption error:', err);
           controller.enqueue(frame);
         }
       },
-    });
+    })).pipeTo(writable);
 
-    readable.pipeThrough(transformStream).pipeTo(writable);
     console.log(`[e2e] Encryption active for ${kind}`);
   }
 }
 
-/**
- * Create a decryption transform for an RTCRtpReceiver
- */
-export function createDecryptionTransform(receiver, key, kind) {
-  if (!isE2ESupported()) return;
+// ─── Decryption Transform ────────────────────────────
 
-  const skipBytes = UNENCRYPTED_BYTES[kind] || 0;
+/**
+ * Apply E2E decryption to an RTCRtpReceiver.
+ */
+export async function applyDecryptionTransform(receiver, keyBytes, kind) {
+  if (!receiver || !keyBytes) return;
+
+  if (typeof RTCRtpScriptTransform !== 'undefined') {
+    const worker = getE2EWorker();
+    receiver.transform = new RTCRtpScriptTransform(worker, {
+      operation: 'decrypt',
+      kind,
+      keyBytes: new Uint8Array(keyBytes),
+    });
+    console.log(`[e2e] Decryption active for ${kind}`);
+    return;
+  }
 
   if (typeof receiver.createEncodedStreams === 'function') {
+    const key = await importCryptoKey(keyBytes, ['decrypt']);
+    const skipBytes = UNENCRYPTED_BYTES[kind] || 0;
     const { readable, writable } = receiver.createEncodedStreams();
 
-    const transformStream = new TransformStream({
+    readable.pipeThrough(new TransformStream({
       async transform(frame, controller) {
         try {
           const data = new Uint8Array(frame.data);
-
           const header = data.slice(0, skipBytes);
-          const iv = data.slice(skipBytes, skipBytes + 12);
-          const encrypted = data.slice(skipBytes + 12);
+          const iv = data.slice(skipBytes, skipBytes + IV_LENGTH);
+          const encrypted = data.slice(skipBytes + IV_LENGTH);
 
-          // Decrypt payload
           const decrypted = await crypto.subtle.decrypt(
-            { name: ENCRYPTION_ALGO, iv },
-            key,
-            encrypted
+            { name: ENCRYPTION_ALGO, iv }, key, encrypted
           );
 
-          // Reassemble: [header][decrypted payload]
-          const result = new Uint8Array(
-            header.length + decrypted.byteLength
-          );
+          const result = new Uint8Array(header.length + decrypted.byteLength);
           result.set(header, 0);
           result.set(new Uint8Array(decrypted), header.length);
 
           frame.data = result.buffer;
           controller.enqueue(frame);
-        } catch (err) {
-          // Decryption failed — might be unencrypted frame, pass through
+        } catch {
+          // Decryption failed — possibly unencrypted frame, pass through
           controller.enqueue(frame);
         }
       },
-    });
+    })).pipeTo(writable);
 
-    readable.pipeThrough(transformStream).pipeTo(writable);
     console.log(`[e2e] Decryption active for ${kind}`);
   }
 }

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { API_URL, APP_VERSION } from '../utils/constants';
-import { isE2ESupported } from '../lib/encryption';
+import { isE2ESupported, generateKeyFragment } from '../lib/encryption';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your', 'privacy.'];
 
@@ -215,6 +215,16 @@ export default function Home() {
   const wordmarkRef = useRef(null);
   const [dotLeft, setDotLeft] = useState(null);
 
+  // Pre-fill room name when redirected from a direct invite link
+  useEffect(() => {
+    const pendingRoom = sessionStorage.getItem('hush_pendingRoom');
+    if (pendingRoom) {
+      setRoomName(pendingRoom);
+      setMode('join');
+      sessionStorage.removeItem('hush_pendingRoom');
+    }
+  }, []);
+
   useEffect(() => {
     fetch(`${API_URL}/api/status`)
       .then((r) => r.json())
@@ -292,7 +302,19 @@ export default function Home() {
       sessionStorage.setItem('hush_peerId', data.peerId);
       sessionStorage.setItem('hush_roomName', data.roomName);
 
-      navigate(`/room/${encodeURIComponent(data.roomName)}`);
+      const roomPath = `/room/${encodeURIComponent(data.roomName)}`;
+
+      if (mode === 'create') {
+        // Generate E2E key fragment — lives only in the URL hash, never sent to server
+        const fragment = generateKeyFragment();
+        navigate(`${roomPath}#${fragment}`);
+      } else {
+        // Restore E2E fragment from invite link redirect (if any)
+        const savedFragment = sessionStorage.getItem('hush_e2eFragment');
+        const hash = savedFragment ? `#${savedFragment}` : '';
+        sessionStorage.removeItem('hush_e2eFragment');
+        navigate(`${roomPath}${hash}`);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -550,7 +572,7 @@ export default function Home() {
             </span>
             <span>
               {e2eSupported
-                ? 'End-to-end encryption available'
+                ? 'Share the invite link to enable end-to-end encryption'
                 : 'Use Chrome/Edge for E2E. DTLS/SRTP still active.'}
             </span>
           </div>

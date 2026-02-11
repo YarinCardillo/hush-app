@@ -6,6 +6,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDevices } from '../hooks/useDevices';
 import { DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
 import { estimateUploadSpeed, getRecommendedQuality } from '../lib/bandwidthEstimator';
+import { isE2ESupported, deriveKeyFromFragment } from '../lib/encryption';
 import StreamView from '../components/StreamView';
 import ScreenShareCard from '../components/ScreenShareCard';
 import Controls from '../components/Controls';
@@ -205,6 +206,8 @@ export default function Room() {
     addAvailableScreen,
     watchScreen,
     unwatchScreen,
+    setE2EKey,
+    isE2EActive,
   } = useMediasoup();
 
   const {
@@ -220,11 +223,36 @@ export default function Room() {
   } = useDevices();
 
   useEffect(() => {
+    // Preserve E2E key fragment across auth redirects
+    const hash = window.location.hash.slice(1);
+    if (hash) {
+      sessionStorage.setItem('hush_e2eFragment', hash);
+    }
+
     const token = sessionStorage.getItem('hush_token');
     if (!token) {
+      // Save room name so Home page can pre-fill it
+      if (hash) {
+        sessionStorage.setItem('hush_pendingRoom', decodeURIComponent(roomName));
+      }
       navigate('/');
       return;
     }
+
+    // Derive E2E key from URL hash fragment (async but fast)
+    const fragment = hash || sessionStorage.getItem('hush_e2eFragment');
+    const e2eReady = (async () => {
+      if (fragment && isE2ESupported()) {
+        try {
+          const keyBytes = await deriveKeyFromFragment(
+            fragment, decodeURIComponent(roomName)
+          );
+          setE2EKey(keyBytes);
+        } catch (err) {
+          console.warn('[e2e] Key derivation failed, continuing without E2E:', err);
+        }
+      }
+    })();
 
     const socket = connectSocket(token);
 
@@ -239,6 +267,8 @@ export default function Room() {
       setShowQualityPicker(false);
 
       try {
+        // Ensure E2E key is ready before initializing transports
+        await e2eReady;
         await initDevice();
 
         const { peers: existingPeers } = await socketRequest('getPeers');
@@ -275,7 +305,7 @@ export default function Room() {
     return () => {
       disconnectSocket();
     };
-  }, [navigate, initDevice, setPeers, consumeProducer, addAvailableScreen]);
+  }, [navigate, initDevice, setPeers, consumeProducer, addAvailableScreen, setE2EKey, roomName]);
 
   const handleScreenShare = async () => {
     if (isScreenSharing) {
@@ -412,6 +442,7 @@ export default function Room() {
     sessionStorage.removeItem('hush_token');
     sessionStorage.removeItem('hush_peerId');
     sessionStorage.removeItem('hush_roomName');
+    sessionStorage.removeItem('hush_e2eFragment');
     navigate('/');
   };
 
@@ -536,6 +567,9 @@ export default function Room() {
             <span className="live-dot" />
             Live
           </span>
+          {isE2EActive && (
+            <span className="badge badge-e2e">e2e</span>
+          )}
         </div>
         <div style={styles.headerRight}>
           <button
