@@ -7,3 +7,6 @@ dist/
 # claude-mem generated files
 **/CLAUDE.md
 CLAUDE.md
+
+# Claude Code local settings
+.claude/
