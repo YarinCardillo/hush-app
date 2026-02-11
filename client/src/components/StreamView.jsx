@@ -132,17 +132,31 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
   }, [track]);
 
   useEffect(() => {
+    console.log('[StreamView] Audio effect:', {
+      hasAudioRef: !!audioRef.current,
+      hasAudioTrack: !!audioTrack,
+      audioTrackState: audioTrack?.readyState,
+      audioTrackMuted: audioTrack?.muted,
+      isLocal,
+      label,
+    });
+
     if (!audioRef.current || !audioTrack || isLocal) return;
 
     const audio = audioRef.current;
     audio.srcObject = new MediaStream([audioTrack]);
+    console.log('[StreamView] Audio srcObject set for:', label);
 
     const tryPlay = async () => {
       try {
         await audio.play();
-      } catch {
+        console.log('[StreamView] Audio playing for:', label);
+      } catch (err) {
+        console.warn('[StreamView] Audio autoplay blocked:', err.name, '- waiting for user interaction');
         const resume = () => {
-          audio.play().catch(() => {});
+          audio.play()
+            .then(() => console.log('[StreamView] Audio resumed after interaction'))
+            .catch((e) => console.error('[StreamView] Audio resume failed:', e));
           document.removeEventListener('touchstart', resume);
           document.removeEventListener('click', resume);
         };
@@ -155,7 +169,7 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
     return () => {
       audio.srcObject = null;
     };
-  }, [audioTrack, isLocal]);
+  }, [audioTrack, isLocal, label]);
 
   useEffect(() => {
     const handleChange = () => {

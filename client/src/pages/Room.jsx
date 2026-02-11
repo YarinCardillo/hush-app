@@ -481,6 +481,15 @@ export default function Room() {
     }
   }
 
+  // Debug: log all consumers
+  console.log('[Room] All consumers:', Array.from(consumers.entries()).map(([id, d]) => ({
+    id,
+    kind: d.consumer.kind,
+    source: d.appData?.source,
+    peerId: d.peerId,
+    trackState: d.consumer.track?.readyState,
+  })));
+
   for (const [id, data] of consumers.entries()) {
     if (data.consumer.kind === 'video') {
       const videoPeerId = data.peerId;
@@ -499,8 +508,12 @@ export default function Room() {
         ) {
           audioTrack = audioData.consumer.track;
           pairedAudioTracks.add(audioId);
+          console.log('[Room] Paired audio:', { videoId: id, audioId, source: pairedAudioSource });
           break;
         }
+      }
+      if (!audioTrack && videoSource === MEDIA_SOURCES.SCREEN) {
+        console.log('[Room] No audio found for screen share from peer:', videoPeerId);
       }
 
       const peer = peers.find((p) =>

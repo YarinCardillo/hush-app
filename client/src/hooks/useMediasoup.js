@@ -255,11 +255,21 @@ export function useMediasoup() {
       });
 
       const videoTrack = stream.getVideoTracks()[0];
-      console.log('[screen] Captured track:', {
-        readyState: videoTrack?.readyState,
-        muted: videoTrack?.muted,
-        enabled: videoTrack?.enabled,
-        settings: videoTrack?.getSettings(),
+      const audioTracks = stream.getAudioTracks();
+      console.log('[screen] Captured tracks:', {
+        video: {
+          readyState: videoTrack?.readyState,
+          muted: videoTrack?.muted,
+          enabled: videoTrack?.enabled,
+          settings: videoTrack?.getSettings(),
+        },
+        audioCount: audioTracks.length,
+        audio: audioTracks[0] ? {
+          readyState: audioTracks[0].readyState,
+          muted: audioTracks[0].muted,
+          enabled: audioTracks[0].enabled,
+          label: audioTracks[0].label,
+        } : 'NO AUDIO TRACK - user may not have checked "Share audio"',
       });
 
       if (!videoTrack || videoTrack.readyState !== 'live') {
@@ -361,6 +371,11 @@ export function useMediasoup() {
     });
 
     // Produce system audio if available (best-effort — don't tear down video on failure)
+    console.log('[screen] Audio track status:', {
+      exists: !!audioTrack,
+      readyState: audioTrack?.readyState,
+      label: audioTrack?.label,
+    });
     if (audioTrack && audioTrack.readyState === 'live') {
       try {
         const audioProducer = await sendTransportRef.current.produce({
@@ -369,9 +384,12 @@ export function useMediasoup() {
         });
         producersRef.current.set(audioProducer.id, audioProducer);
         await applyEncryptionTransform(audioProducer.rtpSender, e2eKeyBytesRef.current, 'audio');
+        console.log('[screen] Audio producer created:', audioProducer.id);
       } catch (audioErr) {
         console.warn('[screen] Audio produce failed (non-fatal):', audioErr.message);
       }
+    } else {
+      console.log('[screen] No audio track to produce');
     }
 
     setProducers(new Map(producersRef.current));
