@@ -309,6 +309,9 @@ export function useMediasoup() {
   }, []);
 
   // ─── Socket event listeners ─────────────────────────
+  // Depends on isReady so this re-runs after initDevice() completes,
+  // which guarantees the socket exists (initDevice is called from the
+  // socket's connect handler in Room.jsx).
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
@@ -370,7 +373,7 @@ export function useMediasoup() {
       socket.off('peerJoined', handlePeerJoined);
       socket.off('peerLeft', handlePeerLeft);
     };
-  }, [consumeProducer]);
+  }, [consumeProducer, isReady]);
 
   // ─── Cleanup on unmount ─────────────────────────────
   useEffect(() => {
