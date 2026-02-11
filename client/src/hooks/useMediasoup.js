@@ -360,14 +360,18 @@ export function useMediasoup() {
       }
     });
 
-    // Produce system audio if available
-    if (audioTrack) {
-      const audioProducer = await sendTransportRef.current.produce({
-        track: audioTrack,
-        appData: { source: MEDIA_SOURCES.SCREEN_AUDIO },
-      });
-      producersRef.current.set(audioProducer.id, audioProducer);
-      await applyEncryptionTransform(audioProducer.rtpSender, e2eKeyBytesRef.current, 'audio');
+    // Produce system audio if available (best-effort — don't tear down video on failure)
+    if (audioTrack && audioTrack.readyState === 'live') {
+      try {
+        const audioProducer = await sendTransportRef.current.produce({
+          track: audioTrack,
+          appData: { source: MEDIA_SOURCES.SCREEN_AUDIO },
+        });
+        producersRef.current.set(audioProducer.id, audioProducer);
+        await applyEncryptionTransform(audioProducer.rtpSender, e2eKeyBytesRef.current, 'audio');
+      } catch (audioErr) {
+        console.warn('[screen] Audio produce failed (non-fatal):', audioErr.message);
+      }
     }
 
     setProducers(new Map(producersRef.current));
