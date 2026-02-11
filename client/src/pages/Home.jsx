@@ -568,7 +568,7 @@ export default function Home() {
 
           <div style={styles.e2eNote}>
             <span className="badge badge-e2e">
-              {e2eSupported ? 'e2e encrypted' : 'e2e unavailable'}
+              {e2eSupported ? 'E2E' : 'e2e unavailable'}
             </span>
             <span>
               {e2eSupported
