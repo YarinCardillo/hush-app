@@ -328,13 +328,20 @@ export default function Room() {
     setShowQualityPicker(false);
     setQuality(qualityKey);
 
-    // Capture and produce in one shot — no delay for track to die
+    console.log('[room] handleQualityPick:', qualityKey);
+
     const capture = await captureScreen();
-    if (!capture) return;
+    if (!capture) {
+      console.warn('[room] captureScreen returned null (user cancelled or track dead)');
+      return;
+    }
 
     try {
       const result = await produceScreen(capture.stream, qualityKey);
-      if (!result) return;
+      if (!result) {
+        console.error('[room] produceScreen returned null — track likely died during produce');
+        return;
+      }
 
       setIsScreenSharing(true);
       result.stream.getVideoTracks()[0]?.addEventListener('ended', () => {

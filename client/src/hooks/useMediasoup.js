@@ -216,7 +216,12 @@ export function useMediasoup() {
           await socketRequest('closeProducer', { producerId: warmupProducer.id });
         } catch { /* server may already know */ }
 
-        console.log('[mediasoup] Send transport pre-warmed');
+        // Let the internal SDP renegotiation from producer close settle.
+        // producer.close() triggers handler.stopSending() as fire-and-forget,
+        // which renegotiates the PeerConnection's SDP asynchronously.
+        await new Promise((r) => setTimeout(r, 100));
+
+        console.log('[mediasoup] Send transport pre-warmed, state:', sendTransport.connectionState);
       } catch (warmupErr) {
         console.warn('[mediasoup] Send transport warmup failed:', warmupErr.message);
       }
@@ -233,6 +238,9 @@ export function useMediasoup() {
   const captureScreen = useCallback(async () => {
     if (!sendTransportRef.current) throw new Error('Transport not ready');
 
+    console.log('[screen] captureScreen called, transport state:',
+      sendTransportRef.current.connectionState);
+
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
@@ -247,6 +255,13 @@ export function useMediasoup() {
       });
 
       const videoTrack = stream.getVideoTracks()[0];
+      console.log('[screen] Captured track:', {
+        readyState: videoTrack?.readyState,
+        muted: videoTrack?.muted,
+        enabled: videoTrack?.enabled,
+        settings: videoTrack?.getSettings(),
+      });
+
       if (!videoTrack || videoTrack.readyState !== 'live') {
         console.error('[screen] Video track not live:', videoTrack?.readyState);
         stream.getTracks().forEach((t) => t.stop());
@@ -274,6 +289,12 @@ export function useMediasoup() {
     const quality = QUALITY_PRESETS[qualityKey];
     const videoTrack = stream.getVideoTracks()[0];
     const audioTrack = stream.getAudioTracks()[0];
+
+    console.log('[screen] produceScreen called:', {
+      qualityKey,
+      transportState: sendTransportRef.current.connectionState,
+      trackState: videoTrack?.readyState,
+    });
 
     // For "lite": downscale the track to 720p/30fps
     if (quality.width && quality.height) {
@@ -311,13 +332,19 @@ export function useMediasoup() {
       });
     } catch (produceErr) {
       videoTrack.removeEventListener('ended', onTrackEnded);
+      console.error('[screen] produce() threw:', produceErr.name, produceErr.message);
       if (produceErr.name === 'InvalidStateError') {
-        console.error('[screen] Produce failed (track ended).');
+        console.error('[screen] Track state at failure:', videoTrack?.readyState);
         stream.getTracks().forEach((t) => t.stop());
         return null;
       }
       throw produceErr;
     }
+
+    console.log('[screen] produce() succeeded:', {
+      producerId: videoProducer.id,
+      trackState: videoProducer.track?.readyState,
+    });
 
     videoTrack.removeEventListener('ended', onTrackEnded);
     producersRef.current.set(videoProducer.id, videoProducer);
