@@ -208,8 +208,9 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
         style={styles.video}
       />
 
-      {audioTrack && !isLocal && (
-        <audio ref={audioRef} autoPlay playsInline />
+      {/* Always render audio element so ref is available when useEffect runs */}
+      {!isLocal && (
+        <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />
       )}
 
       <button
