@@ -10,6 +10,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: '20px',
+    userSelect: 'none',
   },
   container: {
     width: '100%',
@@ -258,7 +259,7 @@ export default function Home() {
                   try again
                 </button>
                 <a
-                  href="https://github.com/hush-app/hush#self-hosting-docker"
+                  href="https://github.com/YarinCardillo/hush-app#self-hosting-docker"
                   target="_blank"
                   rel="noopener"
                   className="btn btn-secondary"
@@ -337,7 +338,7 @@ export default function Home() {
 
         <div style={styles.footer}>
           hush is open source and self-hostable.{' '}
-          <a href="https://github.com/hush-app/hush" style={styles.footerLink}>
+          <a href="https://github.com/YarinCardillo/hush-app" style={styles.footerLink}>
             GitHub
           </a>
         </div>

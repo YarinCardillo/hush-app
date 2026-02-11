@@ -109,7 +109,11 @@ export function useMediasoup() {
           cursor: 'always',
           frameRate: { ideal: 60 },
         },
-        audio: true,
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
       });
 
       const videoTrack = stream.getVideoTracks()[0];
@@ -226,7 +230,11 @@ export function useMediasoup() {
         cursor: 'always',
         frameRate: { ideal: quality.frameRate },
       },
-      audio: true,
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
     });
 
     const newTrack = stream.getVideoTracks()[0];
@@ -329,9 +337,9 @@ export function useMediasoup() {
 
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
       },
     });
 

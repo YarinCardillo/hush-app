@@ -382,10 +382,9 @@ export default function Room() {
               fontSize: '1.1rem',
               fontWeight: 300,
               color: 'var(--hush-amber)',
-              cursor: 'pointer',
               letterSpacing: '-0.03em',
+              userSelect: 'none',
             }}
-            onClick={() => navigate('/')}
           >
             h
           </span>
