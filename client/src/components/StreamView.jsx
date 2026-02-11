@@ -6,7 +6,7 @@ const styles = {
     background: '#000',
     borderRadius: isFullscreen ? 0 : 'var(--radius-md)',
     overflow: 'hidden',
-    border: isFullscreen ? 'none' : '1px solid var(--border)',
+    /* NO border — video containers are windows, not cards */
     aspectRatio: isFullscreen ? 'auto' : '16 / 9',
     width: '100%',
     maxWidth: '100%',
@@ -19,17 +19,18 @@ const styles = {
   },
   label: {
     position: 'absolute',
-    bottom: '8px',
-    left: '8px',
+    bottom: '10px',
+    left: '10px',
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-    padding: '4px 10px',
-    background: 'rgba(0, 0, 0, 0.7)',
-    backdropFilter: 'blur(8px)',
+    padding: '5px 12px',
+    background: 'rgba(8, 8, 12, 0.7)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
     borderRadius: 'var(--radius-sm)',
     fontSize: '0.75rem',
-    color: '#e8e8f0',
+    color: 'var(--hush-text)',
     fontWeight: 500,
   },
   sourceIcon: {
@@ -39,36 +40,37 @@ const styles = {
   },
   localBadge: {
     position: 'absolute',
-    top: '8px',
-    right: '8px',
+    top: '10px',
+    right: '10px',
     padding: '2px 8px',
-    background: 'rgba(108, 92, 231, 0.3)',
+    background: 'var(--hush-amber-glow)',
     backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
     borderRadius: 'var(--radius-sm)',
-    fontSize: '0.65rem',
-    color: 'var(--accent)',
+    fontSize: '0.6rem',
     fontWeight: 600,
+    color: 'var(--hush-amber)',
     textTransform: 'uppercase',
-    letterSpacing: '0.05em',
+    letterSpacing: '0.1em',
   },
   fullscreenBtn: (isActive) => ({
     position: 'absolute',
-    top: '8px',
-    left: '8px',
+    top: '10px',
+    left: '10px',
     width: '32px',
     height: '32px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'rgba(0, 0, 0, 0.7)',
+    background: 'rgba(8, 8, 12, 0.7)',
     backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
     border: 'none',
     borderRadius: 'var(--radius-sm)',
-    color: '#e8e8f0',
+    color: 'var(--hush-text)',
     cursor: 'pointer',
-    transition: 'opacity 150ms ease',
+    transition: 'opacity var(--duration-fast) var(--ease-out)',
     zIndex: 2,
-    // Always visible at low opacity for touch devices; full on hover/fullscreen
     opacity: isActive ? 1 : 0.4,
   }),
 };
@@ -80,7 +82,6 @@ export default function StreamView({ track, audioTrack, label, source, isLocal }
   const [isHovered, setIsHovered] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // ─── Video track attachment ─────────────────────────
   useEffect(() => {
     if (!videoRef.current || !track) return;
 
@@ -88,8 +89,6 @@ export default function StreamView({ track, audioTrack, label, source, isLocal }
     const stream = new MediaStream([track]);
     video.srcObject = stream;
 
-    // iOS Safari blocks autoplay of unmuted video.
-    // Attempt unmuted first, fall back to muted playback.
     const tryPlay = async () => {
       try {
         await video.play();
@@ -110,7 +109,6 @@ export default function StreamView({ track, audioTrack, label, source, isLocal }
     };
   }, [track]);
 
-  // ─── Audio track attachment (remote only) ───────────
   useEffect(() => {
     if (!audioRef.current || !audioTrack || isLocal) return;
 
@@ -121,7 +119,6 @@ export default function StreamView({ track, audioTrack, label, source, isLocal }
       try {
         await audio.play();
       } catch {
-        // iOS autoplay blocked — retry on next user gesture
         const resume = () => {
           audio.play().catch(() => {});
           document.removeEventListener('touchstart', resume);
@@ -138,7 +135,6 @@ export default function StreamView({ track, audioTrack, label, source, isLocal }
     };
   }, [audioTrack, isLocal]);
 
-  // ─── Fullscreen state tracking ──────────────────────
   useEffect(() => {
     const handleChange = () => {
       const el = containerRef.current;
@@ -171,7 +167,6 @@ export default function StreamView({ track, audioTrack, label, source, isLocal }
     } else if (el.webkitRequestFullscreen) {
       el.webkitRequestFullscreen();
     } else if (videoRef.current?.webkitEnterFullscreen) {
-      // iOS Safari: only video elements support fullscreen
       videoRef.current.webkitEnterFullscreen();
     }
   };
@@ -191,12 +186,10 @@ export default function StreamView({ track, audioTrack, label, source, isLocal }
         style={styles.video}
       />
 
-      {/* Hidden audio element for paired audio track */}
       {audioTrack && !isLocal && (
         <audio ref={audioRef} autoPlay playsInline />
       )}
 
-      {/* Fullscreen button — visible on hover */}
       <button
         style={styles.fullscreenBtn(isHovered || isFullscreen)}
         onClick={toggleFullscreen}

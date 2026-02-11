@@ -21,8 +21,9 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '8px 16px',
-    background: 'var(--bg-secondary)',
-    borderBottom: '1px solid var(--border)',
+    height: '48px',
+    background: 'var(--hush-surface)',
+    borderBottom: '1px solid var(--hush-border)',
     flexShrink: 0,
   },
   headerLeft: {
@@ -41,7 +42,7 @@ const styles = {
   },
   participantCount: {
     fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--hush-text-secondary)',
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
@@ -54,16 +55,16 @@ const styles = {
   streamsArea: {
     flex: 1,
     display: 'grid',
-    gap: '8px',
-    padding: '8px',
+    gap: '6px',
+    padding: '6px',
     overflow: 'auto',
     alignContent: 'center',
     justifyItems: 'center',
   },
   sidebar: {
     width: '260px',
-    background: 'var(--bg-secondary)',
-    borderLeft: '1px solid var(--border)',
+    background: 'var(--hush-surface)',
+    borderLeft: '1px solid var(--hush-border)',
     display: 'flex',
     flexDirection: 'column',
     flexShrink: 0,
@@ -76,7 +77,7 @@ const styles = {
   sidebarLabel: {
     fontSize: '0.7rem',
     fontWeight: 600,
-    color: 'var(--text-muted)',
+    color: 'var(--hush-text-muted)',
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
     marginBottom: '8px',
@@ -92,8 +93,8 @@ const styles = {
     width: '6px',
     height: '6px',
     borderRadius: '50%',
-    background: isStreaming ? 'var(--live)' : 'var(--text-muted)',
-    boxShadow: isStreaming ? '0 0 6px var(--live-glow)' : 'none',
+    background: isStreaming ? 'var(--hush-live)' : 'var(--hush-text-muted)',
+    boxShadow: isStreaming ? '0 0 6px var(--hush-live-glow)' : 'none',
   }),
   empty: {
     display: 'flex',
@@ -101,19 +102,33 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     height: '100%',
-    color: 'var(--text-muted)',
-    gap: '12px',
+    color: 'var(--hush-text-muted)',
+    gap: '16px',
     textAlign: 'center',
     padding: '40px',
   },
+  emptyIcon: {
+    width: '56px',
+    height: '56px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 'var(--radius-lg)',
+    background: 'var(--hush-surface)',
+    border: '1px solid var(--hush-border)',
+  },
   emptyTitle: {
-    fontSize: '1.1rem',
+    fontSize: '1rem',
     fontWeight: 500,
-    color: 'var(--text-secondary)',
+    color: 'var(--hush-text-secondary)',
+  },
+  emptyDescription: {
+    fontSize: '0.85rem',
+    color: 'var(--hush-text-muted)',
+    maxWidth: '280px',
   },
 };
 
-// Calculate grid layout based on stream count
 function getGridStyle(count) {
   if (count === 0) return {};
   if (count === 1) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' };
@@ -152,7 +167,6 @@ export default function Room() {
     setPeers,
   } = useMediasoup();
 
-  // ─── Connect to room on mount ───────────────────────
   useEffect(() => {
     const token = sessionStorage.getItem('hush_token');
     if (!token) {
@@ -166,14 +180,11 @@ export default function Room() {
       setConnected(true);
       console.log('[room] Connected');
 
-      // Initialize mediasoup device
       await initDevice();
 
-      // Get existing peers and consume their streams
       const { peers: existingPeers } = await socketRequest('getPeers');
       setPeers(existingPeers);
 
-      // Consume all existing producers
       for (const peer of existingPeers) {
         for (const producer of peer.producers) {
           await consumeProducer(producer.id, peer.id);
@@ -186,7 +197,6 @@ export default function Room() {
       console.log('[room] Disconnected');
     });
 
-    // Estimate bandwidth and auto-select quality
     estimateUploadSpeed().then((speed) => {
       const rec = getRecommendedQuality(speed);
       setQuality(rec.key);
@@ -197,10 +207,8 @@ export default function Room() {
     };
   }, [navigate, initDevice, setPeers, consumeProducer]);
 
-  // ─── Handlers ───────────────────────────────────────
   const handleScreenShare = async () => {
     if (isScreenSharing) {
-      // Stop all screen producers
       for (const [id, producer] of producers.entries()) {
         if (
           producer.appData?.source === MEDIA_SOURCES.SCREEN ||
@@ -211,11 +219,9 @@ export default function Room() {
       }
       setIsScreenSharing(false);
     } else {
-      // Step 1: Capture screen (browser picker opens)
       const capture = await captureScreen();
       if (!capture) return;
 
-      // Step 2: Produce immediately at current quality (no delay = no track death)
       const result = await produceScreen(capture.stream, quality);
       if (!result) return;
 
@@ -224,7 +230,6 @@ export default function Room() {
         setIsScreenSharing(false);
       });
 
-      // Step 3: Show quality picker so user can adjust if desired
       setPendingCapture(capture);
     }
   };
@@ -238,7 +243,6 @@ export default function Room() {
   };
 
   const handleCaptureCancelled = () => {
-    // Stream is already running — just dismiss the modal
     setPendingCapture(null);
   };
 
@@ -294,16 +298,13 @@ export default function Room() {
     navigate('/');
   };
 
-  // ─── Build streams list (with audio pairing) ────────
   const allStreams = [];
   const pairedAudioTracks = new Set();
 
-  // Our own producers that have video
   for (const [id, producer] of producers.entries()) {
     if (producer.kind === 'video') {
       let audioTrack = null;
 
-      // Pair screen video with screen audio
       if (producer.appData?.source === MEDIA_SOURCES.SCREEN) {
         for (const [, p] of producers.entries()) {
           if (p.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO && p.track) {
@@ -324,13 +325,11 @@ export default function Room() {
     }
   }
 
-  // Remote consumers that are video — pair with matching audio
   for (const [id, data] of consumers.entries()) {
     if (data.consumer.kind === 'video') {
       const videoPeerId = data.peerId;
       const videoSource = data.appData?.source;
 
-      // Determine what audio source to pair with
       const pairedAudioSource = videoSource === MEDIA_SOURCES.SCREEN
         ? MEDIA_SOURCES.SCREEN_AUDIO
         : MEDIA_SOURCES.MIC;
@@ -363,7 +362,6 @@ export default function Room() {
     }
   }
 
-  // Orphan audio consumers (mic without paired webcam video)
   const orphanAudioConsumers = [];
   for (const [id, data] of consumers.entries()) {
     if (data.consumer.kind === 'audio' && !pairedAudioTracks.has(id)) {
@@ -376,14 +374,20 @@ export default function Room() {
 
   return (
     <div style={styles.page}>
-      {/* ─── Header ─────────────────────────────── */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <span
-            style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--accent)', cursor: 'pointer' }}
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '1.1rem',
+              fontWeight: 300,
+              color: 'var(--hush-amber)',
+              cursor: 'pointer',
+              letterSpacing: '-0.03em',
+            }}
             onClick={() => navigate('/')}
           >
-            H
+            h
           </span>
           <span style={styles.roomTitle}>{decodeURIComponent(roomName)}</span>
           <span className="badge badge-live">
@@ -401,7 +405,11 @@ export default function Room() {
             </svg>
             {peers.length + 1}
           </div>
-          <button className="btn btn-secondary btn-icon" title="Quality settings" onClick={() => setShowQualityPanel(!showQualityPanel)}>
+          <button
+            className="btn btn-icon"
+            title="Quality settings"
+            onClick={() => setShowQualityPanel(!showQualityPanel)}
+          >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -410,19 +418,20 @@ export default function Room() {
         </div>
       </div>
 
-      {/* ─── Main Area ──────────────────────────── */}
       <div style={styles.main}>
         <div style={{ ...styles.streamsArea, ...gridStyle }}>
           {streamCount === 0 ? (
             <div style={styles.empty}>
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
-              <div style={styles.emptyTitle}>No active streams</div>
-              <div style={{ fontSize: '0.85rem' }}>
-                Click "Share Screen" to start streaming
+              <div style={styles.emptyIcon}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--hush-text-ghost)" strokeWidth="1.5">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                  <line x1="8" y1="21" x2="16" y2="21" />
+                  <line x1="12" y1="17" x2="12" y2="21" />
+                </svg>
+              </div>
+              <div style={styles.emptyTitle}>no active streams</div>
+              <div style={styles.emptyDescription}>
+                click share to start streaming
               </div>
             </div>
           ) : (
@@ -439,7 +448,6 @@ export default function Room() {
           )}
         </div>
 
-        {/* ─── Sidebar ────────────────────────────── */}
         {showQualityPanel && (
           <div style={styles.sidebar}>
             <div style={styles.sidebarSection}>
@@ -467,12 +475,10 @@ export default function Room() {
         )}
       </div>
 
-      {/* ─── Orphan audio (mic without paired video) ─ */}
       {orphanAudioConsumers.map((oa) => (
         <OrphanAudio key={oa.id} track={oa.track} />
       ))}
 
-      {/* ─── Quality Picker Modal ────────────────── */}
       {pendingCapture && (
         <QualityPickerModal
           nativeWidth={pendingCapture.nativeWidth}
@@ -482,7 +488,6 @@ export default function Room() {
         />
       )}
 
-      {/* ─── Controls Bar ─────────────────────────── */}
       <Controls
         isReady={isReady}
         isScreenSharing={isScreenSharing}
@@ -499,7 +504,6 @@ export default function Room() {
   );
 }
 
-// Hidden audio element for orphan audio consumers (e.g., mic without webcam)
 function OrphanAudio({ track }) {
   const audioRef = useRef(null);
 
@@ -512,7 +516,6 @@ function OrphanAudio({ track }) {
       try {
         await audio.play();
       } catch {
-        // iOS autoplay blocked — retry on user gesture
         const resume = () => {
           audio.play().catch(() => {});
           document.removeEventListener('touchstart', resume);

@@ -12,10 +12,10 @@ const styles = {
     justifyContent: 'space-between',
     padding: '10px 12px',
     borderRadius: 'var(--radius-sm)',
-    border: isActive ? '1px solid var(--accent)' : '1px solid transparent',
-    background: isActive ? 'var(--accent-subtle)' : 'var(--bg-primary)',
+    border: isActive ? '1px solid var(--hush-amber-dim)' : '1px solid transparent',
+    background: isActive ? 'var(--hush-amber-ghost)' : 'var(--hush-black)',
     cursor: 'pointer',
-    transition: 'all 150ms ease',
+    transition: 'all var(--duration-fast) var(--ease-out)',
   }),
   itemLeft: {
     display: 'flex',
@@ -28,15 +28,15 @@ const styles = {
   },
   itemDetail: {
     fontSize: '0.7rem',
-    color: 'var(--text-muted)',
+    color: 'var(--hush-text-muted)',
     fontFamily: 'var(--font-mono)',
   },
   active: {
     fontSize: '0.65rem',
-    fontWeight: 600,
-    color: 'var(--accent)',
+    fontWeight: 500,
+    color: 'var(--hush-amber)',
     textTransform: 'uppercase',
-    letterSpacing: '0.05em',
+    letterSpacing: '0.06em',
   },
 };
 

@@ -7,8 +7,10 @@ const styles = {
     justifyContent: 'center',
     gap: '8px',
     padding: '12px 16px',
-    background: 'var(--bg-secondary)',
-    borderTop: '1px solid var(--border)',
+    background: 'rgba(8, 8, 12, 0.75)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    borderTop: '1px solid var(--hush-border)',
     flexShrink: 0,
   },
   btn: (active, variant = 'default') => ({
@@ -20,26 +22,26 @@ const styles = {
     padding: '0 16px',
     border: 'none',
     borderRadius: 'var(--radius-md)',
-    fontFamily: 'var(--font-body)',
+    fontFamily: 'var(--font-sans)',
     fontSize: '0.85rem',
     fontWeight: 500,
     cursor: 'pointer',
-    transition: 'all 150ms ease',
+    transition: 'all var(--duration-fast) var(--ease-out)',
     ...(variant === 'danger'
       ? {
-          background: 'var(--danger)',
-          color: 'white',
+          background: 'var(--hush-danger-ghost)',
+          color: 'var(--hush-danger)',
+          border: '1px solid transparent',
         }
       : active
         ? {
-            background: 'var(--accent)',
-            color: 'white',
-            boxShadow: '0 0 16px rgba(108, 92, 231, 0.3)',
+            background: 'var(--hush-amber)',
+            color: 'var(--hush-black)',
           }
         : {
-            background: 'var(--bg-elevated)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border)',
+            background: 'var(--hush-surface)',
+            color: 'var(--hush-text)',
+            border: '1px solid var(--hush-border)',
           }
     ),
   }),
@@ -49,26 +51,28 @@ const styles = {
     justifyContent: 'center',
     width: '44px',
     height: '44px',
-    border: active ? 'none' : '1px solid var(--border)',
+    border: active ? 'none' : '1px solid var(--hush-border)',
     borderRadius: 'var(--radius-md)',
-    background: active ? 'var(--accent)' : 'var(--bg-elevated)',
-    color: active ? 'white' : 'var(--text-primary)',
+    background: active ? 'var(--hush-amber)' : 'var(--hush-surface)',
+    color: active ? 'var(--hush-black)' : 'var(--hush-text-secondary)',
     cursor: 'pointer',
-    transition: 'all 150ms ease',
+    transition: 'all var(--duration-fast) var(--ease-out)',
   }),
   divider: {
     width: '1px',
     height: '28px',
-    background: 'var(--border)',
+    background: 'var(--hush-border)',
     margin: '0 4px',
   },
   qualityTag: {
-    fontSize: '0.7rem',
+    fontSize: '0.65rem',
     fontFamily: 'var(--font-mono)',
-    padding: '2px 6px',
-    background: 'rgba(108, 92, 231, 0.15)',
+    fontWeight: 500,
+    padding: '2px 7px',
     borderRadius: '4px',
-    color: 'var(--accent)',
+    background: 'var(--hush-amber-ghost)',
+    color: 'var(--hush-amber)',
+    letterSpacing: '0.02em',
   },
 };
 
@@ -106,7 +110,7 @@ export default function Controls({
         </svg>
         {!IS_SCREEN_SHARE_SUPPORTED
           ? 'Not Supported'
-          : isScreenSharing ? 'Stop Share' : 'Share Screen'}
+          : isScreenSharing ? 'Stop' : 'Share'}
         {isScreenSharing && (
           <span style={styles.qualityTag}>{QUALITY_PRESETS[quality]?.label || quality}</span>
         )}

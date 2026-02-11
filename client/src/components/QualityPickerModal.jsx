@@ -5,26 +5,28 @@ const styles = {
     position: 'fixed',
     inset: 0,
     background: 'rgba(0, 0, 0, 0.6)',
-    backdropFilter: 'blur(4px)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
   },
   card: {
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '24px',
-    width: '340px',
+    background: 'var(--hush-surface)',
+    border: '1px solid var(--hush-border)',
+    borderRadius: 'var(--radius-xl)',
+    padding: '28px',
+    width: '380px',
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
+    animation: 'modal-enter var(--duration-slow) var(--ease-spring)',
   },
   title: {
-    fontSize: '0.95rem',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
+    fontSize: '1rem',
+    fontWeight: 500,
+    color: 'var(--hush-text)',
     marginBottom: '4px',
   },
   option: (isHovered) => ({
@@ -33,10 +35,10 @@ const styles = {
     justifyContent: 'space-between',
     padding: '14px 16px',
     borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border)',
-    background: isHovered ? 'var(--bg-secondary)' : 'var(--bg-primary)',
+    border: '1px solid var(--hush-border)',
+    background: isHovered ? 'var(--hush-elevated)' : 'var(--hush-black)',
     cursor: 'pointer',
-    transition: 'background 150ms ease',
+    transition: 'all var(--duration-fast) var(--ease-out)',
   }),
   optionLeft: {
     display: 'flex',
@@ -45,12 +47,12 @@ const styles = {
   },
   optionLabel: {
     fontSize: '0.9rem',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
+    fontWeight: 500,
+    color: 'var(--hush-text)',
   },
   optionDetail: {
     fontSize: '0.75rem',
-    color: 'var(--text-muted)',
+    color: 'var(--hush-text-muted)',
     fontFamily: 'var(--font-mono)',
   },
   cancelBtn: {
@@ -58,10 +60,10 @@ const styles = {
     padding: '8px',
     background: 'none',
     border: 'none',
-    color: 'var(--text-muted)',
+    color: 'var(--hush-text-muted)',
     fontSize: '0.8rem',
     cursor: 'pointer',
-    fontFamily: 'var(--font-body)',
+    fontFamily: 'var(--font-sans)',
   },
 };
 
@@ -79,7 +81,7 @@ function OptionRow({ label, detail, onClick }) {
         <div style={styles.optionLabel}>{label}</div>
         <div style={styles.optionDetail}>{detail}</div>
       </div>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--hush-text-muted)" strokeWidth="2">
         <polyline points="9 18 15 12 9 6" />
       </svg>
     </div>
@@ -87,7 +89,6 @@ function OptionRow({ label, detail, onClick }) {
 }
 
 export default function QualityPickerModal({ nativeWidth, nativeHeight, onSelect, onCancel }) {
-  // Dismiss on Escape key
   useEffect(() => {
     const handleKey = (e) => {
       if (e.key === 'Escape') onCancel();
@@ -99,7 +100,7 @@ export default function QualityPickerModal({ nativeWidth, nativeHeight, onSelect
   return (
     <div style={styles.overlay} onClick={onCancel}>
       <div style={styles.card} onClick={(e) => e.stopPropagation()}>
-        <div style={styles.title}>Choose stream quality</div>
+        <div style={styles.title}>choose stream quality</div>
 
         <OptionRow
           label="Source"
@@ -114,7 +115,7 @@ export default function QualityPickerModal({ nativeWidth, nativeHeight, onSelect
         />
 
         <button style={styles.cancelBtn} onClick={onCancel}>
-          Cancel
+          cancel
         </button>
       </div>
     </div>

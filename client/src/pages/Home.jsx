@@ -20,24 +20,27 @@ const styles = {
     textAlign: 'center',
   },
   logoTitle: {
-    fontSize: '2.2rem',
-    fontWeight: 700,
+    fontFamily: 'var(--font-sans)',
+    fontSize: '2.4rem',
+    fontWeight: 300,
     letterSpacing: '-0.03em',
-    background: 'linear-gradient(135deg, #e8e8f0 0%, #6c5ce7 100%)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
+    color: 'var(--hush-text)',
+    textTransform: 'lowercase',
+  },
+  logoAccent: {
+    color: 'var(--hush-amber)',
   },
   logoSub: {
     marginTop: '8px',
-    color: 'var(--text-secondary)',
+    color: 'var(--hush-text-secondary)',
     fontSize: '0.9rem',
-    fontWeight: 300,
+    fontWeight: 400,
   },
   tabs: {
     display: 'flex',
     gap: '2px',
     marginBottom: '24px',
-    background: 'var(--bg-secondary)',
+    background: 'var(--hush-surface)',
     padding: '3px',
     borderRadius: 'var(--radius-md)',
   },
@@ -46,13 +49,13 @@ const styles = {
     padding: '10px',
     border: 'none',
     borderRadius: 'var(--radius-sm)',
-    background: active ? 'var(--bg-elevated)' : 'transparent',
-    color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-    fontFamily: 'var(--font-body)',
+    background: active ? 'var(--hush-elevated)' : 'transparent',
+    color: active ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
+    fontFamily: 'var(--font-sans)',
     fontSize: '0.85rem',
     fontWeight: 500,
     cursor: 'pointer',
-    transition: 'all 150ms ease',
+    transition: 'all var(--duration-fast) var(--ease-out)',
   }),
   form: {
     display: 'flex',
@@ -63,14 +66,14 @@ const styles = {
     display: 'block',
     marginBottom: '4px',
     fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--hush-text-secondary)',
     fontWeight: 500,
   },
   error: {
     padding: '10px 14px',
-    background: 'var(--danger-subtle)',
+    background: 'var(--hush-danger-ghost)',
     borderRadius: 'var(--radius-md)',
-    color: 'var(--danger)',
+    color: 'var(--hush-danger)',
     fontSize: '0.85rem',
   },
   e2eNote: {
@@ -78,42 +81,41 @@ const styles = {
     alignItems: 'center',
     gap: '8px',
     padding: '10px 14px',
-    background: 'var(--accent-subtle)',
+    background: 'var(--hush-encrypted-ghost)',
     borderRadius: 'var(--radius-md)',
     fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--hush-text-secondary)',
     marginTop: '8px',
   },
   footer: {
     marginTop: '32px',
     textAlign: 'center',
     fontSize: '0.75rem',
-    color: 'var(--text-muted)',
+    color: 'var(--hush-text-muted)',
   },
   footerLink: {
-    color: 'var(--accent)',
+    color: 'var(--hush-amber-dim)',
     textDecoration: 'none',
   },
 };
 
 export default function Home() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState('create'); // 'create' | 'join'
+  const [mode, setMode] = useState('create');
   const [roomName, setRoomName] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('hush_displayName') || '');
   const [error, setError] = useState('');
-  const [poolFull, setPoolFull] = useState(null); // Pool-full response from server
+  const [poolFull, setPoolFull] = useState(null);
   const [loading, setLoading] = useState(false);
   const [e2eSupported] = useState(isE2ESupported);
   const [serverStatus, setServerStatus] = useState(null);
 
-  // Fetch server status on mount
   useEffect(() => {
     fetch(`${API_URL}/api/status`)
       .then((r) => r.json())
       .then(setServerStatus)
-      .catch(() => {}); // Fail silently
+      .catch(() => {});
   }, []);
 
   const handleSubmit = async (e) => {
@@ -123,7 +125,6 @@ export default function Home() {
     setLoading(true);
 
     try {
-      // Save display name for next time
       localStorage.setItem('hush_displayName', displayName);
 
       const endpoint = mode === 'create' ? '/api/rooms/create' : '/api/rooms/join';
@@ -137,7 +138,6 @@ export default function Home() {
       const data = await res.json();
 
       if (!res.ok) {
-        // Handle pool-full with dedicated UI
         if (data.error === 'FREE_POOL_FULL') {
           setPoolFull(data);
           return;
@@ -145,7 +145,6 @@ export default function Home() {
         throw new Error(data.error || 'Something went wrong');
       }
 
-      // Store auth token
       sessionStorage.setItem('hush_token', data.token);
       sessionStorage.setItem('hush_peerId', data.peerId);
       sessionStorage.setItem('hush_roomName', data.roomName);
@@ -158,7 +157,6 @@ export default function Home() {
     }
   };
 
-  // Capacity bar for free pool
   const freePool = serverStatus?.pools?.free;
   const capacityPercent = freePool
     ? Math.round((freePool.active / freePool.max) * 100)
@@ -168,8 +166,10 @@ export default function Home() {
     <div style={styles.page}>
       <div style={styles.container}>
         <div style={styles.logo}>
-          <div style={styles.logoTitle}>Hush</div>
-          <div style={styles.logoSub}>Stream without limits. Privacy by default.</div>
+          <div style={styles.logoTitle}>
+            <span style={styles.logoAccent}>h</span>ush
+          </div>
+          <div style={styles.logoSub}>share your screen. keep your privacy.</div>
         </div>
 
         <div style={styles.tabs}>
@@ -177,13 +177,13 @@ export default function Home() {
             style={styles.tab(mode === 'create')}
             onClick={() => { setMode('create'); setError(''); }}
           >
-            Create Room
+            create room
           </button>
           <button
             style={styles.tab(mode === 'join')}
             onClick={() => { setMode('join'); setError(''); }}
           >
-            Join Room
+            join
           </button>
         </div>
 
@@ -231,19 +231,23 @@ export default function Home() {
 
           {error && <div style={styles.error}>{error}</div>}
 
-          {/* Pool-full transparent message */}
           {poolFull && (
             <div style={{
               padding: '16px',
-              background: 'var(--bg-elevated)',
+              background: 'var(--hush-elevated)',
               borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--hush-border)',
             }}>
-              <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '8px' }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>
                 {poolFull.message}
               </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                Posti free: {poolFull.pools?.active ?? '?'}/{poolFull.pools?.max ?? '?'} occupati
+              <div style={{
+                fontSize: '0.75rem',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--hush-text-secondary)',
+                marginBottom: '12px',
+              }}>
+                {poolFull.pools?.active ?? '?'}/{poolFull.pools?.max ?? '?'} slots used
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <button
@@ -251,7 +255,7 @@ export default function Home() {
                   onClick={() => { setPoolFull(null); handleSubmit(new Event('submit')); }}
                   style={{ width: '100%', fontSize: '0.8rem' }}
                 >
-                  Riprova
+                  try again
                 </button>
                 <a
                   href="https://github.com/hush-app/hush#self-hosting-docker"
@@ -260,7 +264,7 @@ export default function Home() {
                   className="btn btn-secondary"
                   style={{ width: '100%', fontSize: '0.8rem', textDecoration: 'none', textAlign: 'center' }}
                 >
-                  Self-hosting (gratis, illimitato)
+                  self-host (free, unlimited)
                 </a>
               </div>
             </div>
@@ -272,40 +276,49 @@ export default function Home() {
             disabled={loading}
             style={{ marginTop: '8px', width: '100%', padding: '12px' }}
           >
-            {loading ? 'Connecting...' : mode === 'create' ? 'Create & Enter' : 'Join Room'}
+            {loading ? 'connecting...' : mode === 'create' ? 'create room' : 'join'}
           </button>
         </form>
 
-        {/* Server capacity indicator — fully transparent */}
         {freePool && (
           <div style={{
             marginTop: '16px',
-            padding: '10px 14px',
-            background: 'var(--bg-secondary)',
+            padding: '12px 14px',
+            background: 'var(--hush-surface)',
             borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--border)',
+            border: '1px solid var(--hush-border)',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                Stanze free attive
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                color: 'var(--hush-text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+              }}>
+                free pool
               </span>
-              <span style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+              <span style={{
+                fontSize: '0.7rem',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--hush-text-secondary)',
+              }}>
                 {freePool.active}/{freePool.max}
               </span>
             </div>
             <div style={{
               width: '100%',
-              height: '4px',
-              background: 'var(--bg-primary)',
+              height: '3px',
+              background: 'var(--hush-black)',
               borderRadius: '2px',
               overflow: 'hidden',
             }}>
               <div style={{
                 width: `${capacityPercent}%`,
                 height: '100%',
-                background: capacityPercent > 80 ? 'var(--warning)' : 'var(--live)',
+                background: capacityPercent > 80 ? 'var(--hush-amber)' : 'var(--hush-live)',
                 borderRadius: '2px',
-                transition: 'width 300ms ease',
+                transition: 'width 400ms var(--ease-out)',
               }} />
             </div>
           </div>
@@ -313,17 +326,17 @@ export default function Home() {
 
         <div style={styles.e2eNote}>
           <span className="badge badge-e2e">
-            {e2eSupported ? 'E2E Ready' : 'E2E Unavailable'}
+            {e2eSupported ? 'e2e encrypted' : 'e2e unavailable'}
           </span>
           <span>
             {e2eSupported
-              ? 'End-to-end encryption available in this browser'
-              : 'Use Chrome/Edge for E2E encryption. DTLS/SRTP still active.'}
+              ? 'End-to-end encryption available'
+              : 'Use Chrome/Edge for E2E. DTLS/SRTP still active.'}
           </span>
         </div>
 
         <div style={styles.footer}>
-          Hush is open source and self-hostable.{' '}
+          hush is open source and self-hostable.{' '}
           <a href="https://github.com/hush-app/hush" style={styles.footerLink}>
             GitHub
           </a>

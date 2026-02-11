@@ -1,44 +1,55 @@
 /* ── Hush Design System ─────────────────────── */
 
 :root {
-  /* Core palette — deep, dark, trustworthy */
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-elevated: #1a1a26;
-  --bg-hover: #22222f;
+  /* ── Core Surfaces ── */
+  --hush-black:        #08080c;
+  --hush-surface:      #101018;
+  --hush-elevated:     #181824;
+  --hush-hover:        #20202e;
 
-  /* Borders */
-  --border: #2a2a3a;
-  --border-focus: #4a4a6a;
+  /* ── Signature Amber ── */
+  --hush-amber:        #d4a053;
+  --hush-amber-bright: #e8b866;
+  --hush-amber-dim:    #a07a3a;
+  --hush-amber-glow:   rgba(212, 160, 83, 0.15);
+  --hush-amber-ghost:  rgba(212, 160, 83, 0.08);
 
-  /* Text */
-  --text-primary: #e8e8f0;
-  --text-secondary: #8888a0;
-  --text-muted: #55556a;
+  /* ── Borders ── */
+  --hush-border:       #1e1e2e;
+  --hush-border-hover: #2e2e42;
+  --hush-border-focus: #3e3e56;
 
-  /* Accent — electric but not aggressive */
-  --accent: #6c5ce7;
-  --accent-hover: #7c6cf7;
-  --accent-subtle: rgba(108, 92, 231, 0.12);
+  /* ── Text Hierarchy (4 levels) ── */
+  --hush-text:         #e4e4ec;
+  --hush-text-secondary: #8888a0;
+  --hush-text-muted:   #555568;
+  --hush-text-ghost:   #3a3a4e;
 
-  /* Status */
-  --live: #00d68f;
-  --live-glow: rgba(0, 214, 143, 0.3);
-  --danger: #ff4757;
-  --danger-subtle: rgba(255, 71, 87, 0.12);
-  --warning: #ffa502;
+  /* ── Status Colors (functional only) ── */
+  --hush-live:         #34d399;
+  --hush-live-glow:    rgba(52, 211, 153, 0.25);
+  --hush-danger:       #ef4444;
+  --hush-danger-ghost: rgba(239, 68, 68, 0.10);
+  --hush-encrypted:    #818cf8;
+  --hush-encrypted-ghost: rgba(129, 140, 248, 0.10);
 
-  /* Fonts */
-  --font-body: 'Outfit', -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  /* ── Typography ── */
+  --font-sans:  'Sora', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:  'JetBrains Mono', 'SF Mono', Consolas, monospace;
 
-  /* Spacing */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  /* ── Spacing & Radius ── */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-xl:   20px;
+  --radius-full: 9999px;
 
-  /* Transitions */
-  --transition: 150ms ease;
+  /* ── Motion ── */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast:   120ms;
+  --duration-normal: 200ms;
+  --duration-slow:   350ms;
 }
 
 /* ── Reset ─────────────────────────────────────── */
@@ -57,9 +68,9 @@ html, body, #root {
 }
 
 body {
-  font-family: var(--font-body);
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  font-family: var(--font-sans);
+  background: var(--hush-black);
+  color: var(--hush-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -67,13 +78,23 @@ body {
 /* ── Typography ────────────────────────────────── */
 
 h1, h2, h3 {
-  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
-h1 { font-size: 2rem; }
-h2 { font-size: 1.4rem; }
-h3 { font-size: 1.1rem; }
+h1 {
+  font-size: 2rem;
+  font-weight: 300;
+}
+
+h2 {
+  font-size: 1.4rem;
+  font-weight: 300;
+}
+
+h3 {
+  font-size: 1.1rem;
+  font-weight: 500;
+}
 
 code, .mono {
   font-family: var(--font-mono);
@@ -90,11 +111,11 @@ code, .mono {
   padding: 10px 20px;
   border: none;
   border-radius: var(--radius-md);
-  font-family: var(--font-body);
+  font-family: var(--font-sans);
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--transition);
+  transition: all var(--duration-fast) var(--ease-out);
   user-select: none;
 }
 
@@ -103,41 +124,55 @@ code, .mono {
 }
 
 .btn-primary {
-  background: var(--accent);
-  color: white;
+  background: var(--hush-amber);
+  color: var(--hush-black);
 }
 
 .btn-primary:hover {
-  background: var(--accent-hover);
-  box-shadow: 0 0 20px rgba(108, 92, 231, 0.3);
+  background: var(--hush-amber-bright);
+  box-shadow: 0 0 24px var(--hush-amber-glow);
 }
 
 .btn-secondary {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
+  background: var(--hush-surface);
+  color: var(--hush-text);
+  border: 1px solid var(--hush-border);
 }
 
 .btn-secondary:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-focus);
+  background: var(--hush-elevated);
+  border-color: var(--hush-border-hover);
 }
 
 .btn-danger {
-  background: var(--danger-subtle);
-  color: var(--danger);
+  background: var(--hush-danger-ghost);
+  color: var(--hush-danger);
   border: 1px solid transparent;
 }
 
 .btn-danger:hover {
-  border-color: var(--danger);
+  border-color: var(--hush-danger);
+  background: rgba(239, 68, 68, 0.15);
 }
 
 .btn-icon {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   padding: 0;
-  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--hush-surface);
+  border: 1px solid var(--hush-border);
+  color: var(--hush-text-secondary);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.btn-icon:hover {
+  color: var(--hush-text);
+  border-color: var(--hush-border-hover);
+  background: var(--hush-elevated);
 }
 
 .btn:disabled {
@@ -150,71 +185,79 @@ code, .mono {
 
 .input {
   width: 100%;
-  padding: 10px 14px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
+  padding: 11px 14px;
+  background: var(--hush-black);
+  border: 1px solid var(--hush-border);
   border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-family: var(--font-body);
+  color: var(--hush-text);
+  font-family: var(--font-sans);
   font-size: 0.9rem;
   outline: none;
-  transition: border-color var(--transition);
+  transition: border-color var(--duration-normal) var(--ease-out);
 }
 
 .input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
+  border-color: var(--hush-amber-dim);
+  box-shadow: 0 0 0 3px var(--hush-amber-ghost);
 }
 
 .input::placeholder {
-  color: var(--text-muted);
+  color: var(--hush-text-ghost);
 }
 
 /* ── Cards ─────────────────────────────────────── */
 
 .card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
+  background: var(--hush-surface);
+  border: 1px solid var(--hush-border);
   border-radius: var(--radius-lg);
-  padding: 24px;
+  padding: 20px;
+  transition: border-color var(--duration-normal) var(--ease-out);
+}
+
+.card:hover {
+  border-color: var(--hush-border-hover);
 }
 
 /* ── Status indicators ─────────────────────────── */
 
 .live-dot {
-  width: 8px;
-  height: 8px;
-  background: var(--live);
+  width: 7px;
+  height: 7px;
+  background: var(--hush-live);
   border-radius: 50%;
-  box-shadow: 0 0 8px var(--live-glow);
-  animation: pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 8px var(--hush-live-glow);
+  animation: hush-pulse 2.5s ease-in-out infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+@keyframes hush-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  border-radius: 100px;
-  font-size: 0.75rem;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
   font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .badge-live {
-  background: rgba(0, 214, 143, 0.1);
-  color: var(--live);
-  border: 1px solid rgba(0, 214, 143, 0.2);
+  background: rgba(52, 211, 153, 0.1);
+  color: var(--hush-live);
+  border: 1px solid rgba(52, 211, 153, 0.2);
 }
 
 .badge-e2e {
-  background: var(--accent-subtle);
-  color: var(--accent);
-  border: 1px solid rgba(108, 92, 231, 0.2);
+  background: var(--hush-encrypted-ghost);
+  color: var(--hush-encrypted);
+  border: 1px solid rgba(129, 140, 248, 0.15);
+  font-family: var(--font-mono);
 }
 
 /* ── Layout utilities ──────────────────────────── */
@@ -231,7 +274,7 @@ code, .mono {
 /* ── Scrollbar ─────────────────────────────────── */
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -239,42 +282,46 @@ code, .mono {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--hush-border-hover);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--border-focus);
+  background: var(--hush-border-focus);
 }
 
 /* ── Video containers ──────────────────────────── */
 
 .video-container {
   position: relative;
-  background: var(--bg-primary);
+  background: #000;
   border-radius: var(--radius-md);
   overflow: hidden;
-  border: 1px solid var(--border);
+  /* NO border — video containers are windows, not cards */
 }
 
 .video-container video {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000;
+  display: block;
 }
 
 .video-label {
   position: absolute;
-  bottom: 8px;
-  left: 8px;
-  padding: 4px 10px;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: rgba(8, 8, 12, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-radius: var(--radius-sm);
   font-size: 0.75rem;
-  color: var(--text-primary);
   font-weight: 500;
+  color: var(--hush-text);
 }
 
 /* ── Toasts / notifications ────────────────────── */
@@ -284,21 +331,34 @@ code, .mono {
   top: 16px;
   right: 16px;
   padding: 12px 20px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--hush-elevated);
+  border: 1px solid var(--hush-border);
   border-radius: var(--radius-md);
   font-size: 0.85rem;
   z-index: 1000;
-  animation: slideIn 200ms ease;
+  animation: slide-in-right var(--duration-normal) var(--ease-out);
 }
 
-@keyframes slideIn {
+@keyframes slide-in-right {
   from {
     opacity: 0;
-    transform: translateX(20px);
+    transform: translateX(16px);
   }
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+/* ── Modal ─────────────────────────────────────── */
+
+@keyframes modal-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
   }
 }
