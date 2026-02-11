@@ -3,3 +3,7 @@ dist/
 .env
 *.log
 .DS_Store
+
+# claude-mem generated files (keep root CLAUDE.md)
+**/CLAUDE.md
+!CLAUDE.md
