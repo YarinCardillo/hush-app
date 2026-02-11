@@ -178,5 +178,9 @@ self.onrtctransform = async (event) => {
     ? createEncryptPipeline(key, skipBytes)
     : createDecryptPipeline(key, skipBytes);
 
-  readable.pipeThrough(pipeline).pipeTo(writable);
+  readable.pipeThrough(pipeline).pipeTo(writable).catch(err => {
+    console.error(`[e2e-worker] Pipeline error (${operation} ${kind}):`, err);
+  });
+
+  console.log(`[e2e-worker] Pipeline setup complete for ${operation} ${kind}`);
 };

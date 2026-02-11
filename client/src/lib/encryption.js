@@ -215,6 +215,16 @@ export async function applyEncryptionTransform(sender, keyBytes, kind) {
       keyBytes: new Uint8Array(keyBytes),
     });
     console.log(`[e2e] Encryption active for ${kind}`);
+
+    // Verify transform is still set after a delay
+    setTimeout(() => {
+      if (sender.transform) {
+        console.log(`[e2e] Transform still active for ${kind}`);
+      } else {
+        console.error(`[e2e] Transform was cleared for ${kind}!`);
+      }
+    }, 1000);
+
     return;
   }
 
