@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { API_URL } from '../utils/constants';
+import { API_URL, APP_VERSION } from '../utils/constants';
 import { isE2ESupported } from '../lib/encryption';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your', 'privacy.'];
@@ -166,6 +166,25 @@ const styles = {
     fontSize: '0.75rem',
     color: 'var(--hush-text-muted)',
   },
+  footerMeta: {
+    marginTop: '6px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    fontSize: '0.65rem',
+    fontFamily: 'var(--font-mono)',
+    color: 'var(--hush-text-ghost)',
+    letterSpacing: '0.02em',
+  },
+  statusDot: (online) => ({
+    display: 'inline-block',
+    width: 5,
+    height: 5,
+    borderRadius: '50%',
+    background: online ? 'var(--hush-live)' : 'var(--hush-danger)',
+    flexShrink: 0,
+  }),
   footerLink: {
     color: 'var(--hush-amber-dim)',
     textDecoration: 'none',
@@ -183,6 +202,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [e2eSupported] = useState(isE2ESupported);
   const [serverStatus, setServerStatus] = useState(null);
+  const [serverOnline, setServerOnline] = useState(null);
 
   const spotlightRef = useRef(null);
   const rafRef = useRef(null);
@@ -190,8 +210,13 @@ export default function Home() {
   useEffect(() => {
     fetch(`${API_URL}/api/status`)
       .then((r) => r.json())
-      .then(setServerStatus)
-      .catch(() => {});
+      .then((data) => {
+        setServerStatus(data);
+        setServerOnline(true);
+      })
+      .catch(() => {
+        setServerOnline(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -500,10 +525,24 @@ export default function Home() {
           </div>
 
           <div style={styles.footer}>
-            hush is open source and self-hostable.{' '}
-            <a href="https://github.com/YarinCardillo/hush-app" style={styles.footerLink}>
-              GitHub
-            </a>
+            <div>
+              hush is open source and self-hostable.{' '}
+              <a href="https://github.com/YarinCardillo/hush-app" style={styles.footerLink}>
+                GitHub
+              </a>
+            </div>
+            <div style={styles.footerMeta}>
+              <span>v{APP_VERSION}</span>
+              {serverOnline !== null && (
+                <>
+                  <span style={{ opacity: 0.3 }}>·</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={styles.statusDot(serverOnline)} />
+                    {serverOnline ? 'online' : 'offline'}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </motion.div>
       </div>

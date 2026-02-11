@@ -1,12 +1,23 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import Home from './pages/Home';
-import Room from './pages/Room';
+
+const Home = lazy(() => import('./pages/Home'));
+const Room = lazy(() => import('./pages/Room'));
+
+const fallback = (
+  <div style={{
+    height: '100%',
+    background: 'var(--hush-black)',
+  }} />
+);
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/room/:roomName" element={<Room />} />
-    </Routes>
+    <Suspense fallback={fallback}>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/room/:roomName" element={<Room />} />
+      </Routes>
+    </Suspense>
   );
 }
