@@ -7,6 +7,7 @@ import { useDevices } from '../hooks/useDevices';
 import { DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
 import { estimateUploadSpeed, getRecommendedQuality } from '../lib/bandwidthEstimator';
 import { isE2ESupported, deriveKeyFromFragment } from '../lib/encryption';
+import logoWordmark from '../assets/logo-wordmark.svg';
 import StreamView from '../components/StreamView';
 import ScreenShareCard from '../components/ScreenShareCard';
 import Controls from '../components/Controls';
@@ -538,30 +539,12 @@ export default function Room() {
     <div style={styles.page}>
       <div style={styles.header}>
         <div style={styles.headerLeft}>
-          <span
-            style={{
-              position: 'relative',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '1.1rem',
-              fontWeight: 200,
-              color: 'var(--hush-text)',
-              letterSpacing: '-0.03em',
-              userSelect: 'none',
-            }}
-          >
-            hush
-            <span
-              style={{
-                position: 'absolute',
-                top: '-1px',
-                left: '53%',
-                width: '5px',
-                height: '5px',
-                borderRadius: '50%',
-                background: 'var(--hush-amber)',
-              }}
-            />
-          </span>
+          <img
+            src={logoWordmark}
+            alt="hush"
+            style={{ height: '22px', userSelect: 'none' }}
+            draggable={false}
+          />
           <span style={styles.roomTitle}>{decodeURIComponent(roomName)}</span>
           <span className="badge badge-live">
             <span className="live-dot" />

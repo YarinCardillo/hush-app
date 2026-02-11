@@ -175,6 +175,52 @@ export function useMediasoup() {
 
       recvTransportRef.current = recvTransport;
 
+      // Pre-warm send transport: trigger DTLS handshake eagerly.
+      // Without this, the first produce() call (e.g., screen share) triggers
+      // a cold DTLS handshake, during which getDisplayMedia tracks can die
+      // with "InvalidStateError: track ended".
+      try {
+        const warmupCtx = new AudioContext();
+        const osc = warmupCtx.createOscillator();
+        osc.frequency.value = 0;
+        const warmupDest = warmupCtx.createMediaStreamDestination();
+        osc.connect(warmupDest);
+        osc.start();
+        const silentTrack = warmupDest.stream.getAudioTracks()[0];
+
+        const warmupProducer = await sendTransport.produce({
+          track: silentTrack,
+          appData: { source: '_warmup' },
+        });
+
+        // Wait for DTLS to complete
+        if (sendTransport.connectionState !== 'connected') {
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('warmup timeout')), 15000);
+            const onState = (state) => {
+              if (state === 'connected' || state === 'failed') {
+                clearTimeout(timeout);
+                sendTransport.off('connectionstatechange', onState);
+                if (state === 'connected') resolve();
+                else reject(new Error('DTLS failed'));
+              }
+            };
+            sendTransport.on('connectionstatechange', onState);
+          });
+        }
+
+        warmupProducer.close();
+        silentTrack.stop();
+        warmupCtx.close();
+        try {
+          await socketRequest('closeProducer', { producerId: warmupProducer.id });
+        } catch { /* server may already know */ }
+
+        console.log('[mediasoup] Send transport pre-warmed');
+      } catch (warmupErr) {
+        console.warn('[mediasoup] Send transport warmup failed:', warmupErr.message);
+      }
+
       setIsReady(true);
       console.log('[mediasoup] Device initialized');
     } catch (err) {
