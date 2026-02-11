@@ -2,12 +2,15 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { connectSocket, disconnectSocket, socketRequest } from '../lib/socket';
 import { useMediasoup } from '../hooks/useMediasoup';
+import { useBreakpoint } from '../hooks/useBreakpoint';
+import { useDevices } from '../hooks/useDevices';
 import { QUALITY_PRESETS, DEFAULT_QUALITY, MEDIA_SOURCES } from '../utils/constants';
 import { estimateUploadSpeed, getRecommendedQuality } from '../lib/bandwidthEstimator';
 import StreamView from '../components/StreamView';
 import Controls from '../components/Controls';
 import QualitySelector from '../components/QualitySelector';
 import QualityPickerModal from '../components/QualityPickerModal';
+import DevicePickerModal from '../components/DevicePickerModal';
 
 const styles = {
   page: {
@@ -61,15 +64,33 @@ const styles = {
     alignContent: 'center',
     justifyItems: 'center',
   },
-  sidebar: {
-    width: '260px',
+  sidebar: (isMobile) => ({
+    ...(isMobile
+      ? {
+          position: 'fixed',
+          top: '48px',
+          right: 0,
+          bottom: 0,
+          width: '280px',
+          zIndex: 50,
+          boxShadow: '-4px 0 24px rgba(0,0,0,0.4)',
+        }
+      : {
+          width: '260px',
+          flexShrink: 0,
+          borderLeft: '1px solid var(--hush-border)',
+        }),
     background: 'var(--hush-surface)',
-    borderLeft: '1px solid var(--hush-border)',
     display: 'flex',
     flexDirection: 'column',
-    flexShrink: 0,
     overflow: 'auto',
     padding: '16px',
+  }),
+  sidebarOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.5)',
+    zIndex: 49,
   },
   sidebarSection: {
     marginBottom: '20px',
@@ -129,8 +150,11 @@ const styles = {
   },
 };
 
-function getGridStyle(count) {
+function getGridStyle(count, breakpoint) {
   if (count === 0) return {};
+  if (breakpoint === 'mobile') {
+    return { gridTemplateColumns: '1fr' };
+  }
   if (count === 1) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' };
   if (count === 2) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr' };
   if (count <= 4) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' };
@@ -141,6 +165,8 @@ function getGridStyle(count) {
 export default function Room() {
   const navigate = useNavigate();
   const { roomName } = useParams();
+  const breakpoint = useBreakpoint();
+  const isMobile = breakpoint === 'mobile';
   const [connected, setConnected] = useState(false);
   const [quality, setQuality] = useState(DEFAULT_QUALITY);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -148,6 +174,8 @@ export default function Room() {
   const [isWebcamOn, setIsWebcamOn] = useState(false);
   const [showQualityPanel, setShowQualityPanel] = useState(false);
   const [pendingCapture, setPendingCapture] = useState(null);
+  const [showMicPicker, setShowMicPicker] = useState(false);
+  const [showWebcamPicker, setShowWebcamPicker] = useState(false);
 
   const {
     isReady,
@@ -167,6 +195,18 @@ export default function Room() {
     setPeers,
   } = useMediasoup();
 
+  const {
+    audioDevices,
+    videoDevices,
+    selectedMicId,
+    selectedWebcamId,
+    selectMic,
+    selectWebcam,
+    hasSavedMic,
+    hasSavedWebcam,
+    requestPermission,
+  } = useDevices();
+
   useEffect(() => {
     const token = sessionStorage.getItem('hush_token');
     if (!token) {
@@ -180,14 +220,28 @@ export default function Room() {
       setConnected(true);
       console.log('[room] Connected');
 
-      await initDevice();
+      // Reset local media state (stale after reconnect)
+      setIsScreenSharing(false);
+      setIsMicOn(false);
+      setIsWebcamOn(false);
+      setPendingCapture(null);
 
-      const { peers: existingPeers } = await socketRequest('getPeers');
-      setPeers(existingPeers);
+      try {
+        await initDevice();
 
-      for (const peer of existingPeers) {
-        for (const producer of peer.producers) {
-          await consumeProducer(producer.id, peer.id);
+        const { peers: existingPeers } = await socketRequest('getPeers');
+        setPeers(existingPeers);
+
+        for (const peer of existingPeers) {
+          for (const producer of peer.producers) {
+            await consumeProducer(producer.id, peer.id);
+          }
+        }
+      } catch (err) {
+        console.error('[room] Reconnection failed:', err);
+        if (err.message === 'Room not found') {
+          sessionStorage.removeItem('hush_token');
+          navigate('/');
         }
       }
     });
@@ -222,27 +276,38 @@ export default function Room() {
       const capture = await captureScreen();
       if (!capture) return;
 
-      const result = await produceScreen(capture.stream, quality);
-      if (!result) return;
-
-      setIsScreenSharing(true);
-      result.stream.getVideoTracks()[0]?.addEventListener('ended', () => {
-        setIsScreenSharing(false);
-      });
-
+      // Show quality picker BEFORE producing
       setPendingCapture(capture);
     }
   };
 
   const handleQualityPick = async (qualityKey) => {
+    const capture = pendingCapture;
     setPendingCapture(null);
-    if (qualityKey !== quality) {
-      setQuality(qualityKey);
-      await changeQuality(qualityKey);
+    if (!capture) return;
+
+    // Verify the captured track is still alive
+    const videoTrack = capture.stream.getVideoTracks()[0];
+    if (!videoTrack || videoTrack.readyState !== 'live') {
+      console.error('[room] Captured track died before quality selection');
+      capture.stream.getTracks().forEach((t) => t.stop());
+      return;
     }
+
+    setQuality(qualityKey);
+    const result = await produceScreen(capture.stream, qualityKey);
+    if (!result) return;
+
+    setIsScreenSharing(true);
+    result.stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+      setIsScreenSharing(false);
+    });
   };
 
   const handleCaptureCancelled = () => {
+    if (pendingCapture?.stream) {
+      pendingCapture.stream.getTracks().forEach((t) => t.stop());
+    }
     setPendingCapture(null);
   };
 
@@ -254,10 +319,21 @@ export default function Room() {
         }
       }
       setIsMicOn(false);
+    } else if (!hasSavedMic) {
+      // First time: request permission to get device labels, then show picker
+      await requestPermission('audio');
+      setShowMicPicker(true);
     } else {
-      await startMic();
+      await startMic(selectedMicId);
       setIsMicOn(true);
     }
+  };
+
+  const handleMicDevicePick = async (deviceId) => {
+    setShowMicPicker(false);
+    selectMic(deviceId);
+    await startMic(deviceId);
+    setIsMicOn(true);
   };
 
   const handleWebcam = async () => {
@@ -268,10 +344,47 @@ export default function Room() {
         }
       }
       setIsWebcamOn(false);
+    } else if (!hasSavedWebcam) {
+      await requestPermission('video');
+      setShowWebcamPicker(true);
     } else {
-      await startWebcam();
+      await startWebcam(selectedWebcamId);
       setIsWebcamOn(true);
     }
+  };
+
+  const handleWebcamDevicePick = async (deviceId) => {
+    setShowWebcamPicker(false);
+    selectWebcam(deviceId);
+    await startWebcam(deviceId);
+    setIsWebcamOn(true);
+  };
+
+  const handleMicDeviceSwitch = async () => {
+    // Stop current mic, show picker, user picks new device → starts new mic
+    if (isMicOn) {
+      for (const [id, producer] of producers.entries()) {
+        if (producer.appData?.source === MEDIA_SOURCES.MIC) {
+          await stopProducer(id);
+        }
+      }
+      setIsMicOn(false);
+    }
+    await requestPermission('audio');
+    setShowMicPicker(true);
+  };
+
+  const handleWebcamDeviceSwitch = async () => {
+    if (isWebcamOn) {
+      for (const [id, producer] of producers.entries()) {
+        if (producer.appData?.source === MEDIA_SOURCES.WEBCAM) {
+          await stopProducer(id);
+        }
+      }
+      setIsWebcamOn(false);
+    }
+    await requestPermission('video');
+    setShowWebcamPicker(true);
   };
 
   const handleSwitchScreen = async () => {
@@ -370,7 +483,7 @@ export default function Room() {
   }
 
   const streamCount = allStreams.length;
-  const gridStyle = getGridStyle(streamCount);
+  const gridStyle = getGridStyle(streamCount, breakpoint);
 
   return (
     <div style={styles.page}>
@@ -448,29 +561,37 @@ export default function Room() {
         </div>
 
         {showQualityPanel && (
-          <div style={styles.sidebar}>
-            <div style={styles.sidebarSection}>
-              <div style={styles.sidebarLabel}>Stream Quality</div>
-              <QualitySelector
-                currentQuality={quality}
-                onSelect={handleQualityChange}
+          <>
+            {isMobile && (
+              <div
+                style={styles.sidebarOverlay}
+                onClick={() => setShowQualityPanel(false)}
               />
-            </div>
-
-            <div style={styles.sidebarSection}>
-              <div style={styles.sidebarLabel}>Participants ({peers.length + 1})</div>
-              <div style={styles.peerItem}>
-                <div style={styles.peerDot(isScreenSharing)} />
-                <span>You</span>
+            )}
+            <div style={styles.sidebar(isMobile)}>
+              <div style={styles.sidebarSection}>
+                <div style={styles.sidebarLabel}>Stream Quality</div>
+                <QualitySelector
+                  currentQuality={quality}
+                  onSelect={handleQualityChange}
+                />
               </div>
-              {peers.map((peer) => (
-                <div key={peer.id} style={styles.peerItem}>
-                  <div style={styles.peerDot(peer.producers?.length > 0)} />
-                  <span>{peer.displayName}</span>
+
+              <div style={styles.sidebarSection}>
+                <div style={styles.sidebarLabel}>Participants ({peers.length + 1})</div>
+                <div style={styles.peerItem}>
+                  <div style={styles.peerDot(isScreenSharing)} />
+                  <span>You</span>
                 </div>
-              ))}
+                {peers.map((peer) => (
+                  <div key={peer.id} style={styles.peerItem}>
+                    <div style={styles.peerDot(peer.producers?.length > 0)} />
+                    <span>{peer.displayName}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          </>
         )}
       </div>
 
@@ -487,16 +608,39 @@ export default function Room() {
         />
       )}
 
+      {showMicPicker && (
+        <DevicePickerModal
+          title="choose microphone"
+          devices={audioDevices}
+          selectedDeviceId={selectedMicId}
+          onSelect={handleMicDevicePick}
+          onCancel={() => setShowMicPicker(false)}
+        />
+      )}
+
+      {showWebcamPicker && (
+        <DevicePickerModal
+          title="choose webcam"
+          devices={videoDevices}
+          selectedDeviceId={selectedWebcamId}
+          onSelect={handleWebcamDevicePick}
+          onCancel={() => setShowWebcamPicker(false)}
+        />
+      )}
+
       <Controls
         isReady={isReady}
         isScreenSharing={isScreenSharing}
         isMicOn={isMicOn}
         isWebcamOn={isWebcamOn}
         quality={quality}
+        isMobile={isMobile}
         onScreenShare={handleScreenShare}
         onSwitchScreen={handleSwitchScreen}
         onMic={handleMic}
         onWebcam={handleWebcam}
+        onMicDeviceSwitch={handleMicDeviceSwitch}
+        onWebcamDeviceSwitch={handleWebcamDeviceSwitch}
         onLeave={handleLeave}
       />
     </div>

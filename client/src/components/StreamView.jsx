@@ -10,6 +10,7 @@ const styles = {
     aspectRatio: isFullscreen ? 'auto' : '16 / 9',
     width: '100%',
     maxWidth: '100%',
+    maxHeight: isFullscreen ? '100%' : '75vh',
   }),
   video: {
     width: '100%',

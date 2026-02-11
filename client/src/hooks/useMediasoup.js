@@ -58,6 +58,22 @@ export function useMediasoup() {
   // ─── Initialize Device ──────────────────────────────
   const initDevice = useCallback(async () => {
     try {
+      // Close stale state from previous session (handles page reload)
+      if (sendTransportRef.current) {
+        sendTransportRef.current.close();
+        sendTransportRef.current = null;
+      }
+      if (recvTransportRef.current) {
+        recvTransportRef.current.close();
+        recvTransportRef.current = null;
+      }
+      producersRef.current.clear();
+      consumersRef.current.clear();
+      setProducers(new Map());
+      setConsumers(new Map());
+      setIsReady(false);
+      cleanupMicPipeline();
+
       const { rtpCapabilities } = await socketRequest('getRouterRtpCapabilities');
 
       const device = new Device();
@@ -349,11 +365,14 @@ export function useMediasoup() {
   }, []);
 
   // ─── Webcam ─────────────────────────────────────────
-  const startWebcam = useCallback(async () => {
+  const startWebcam = useCallback(async (deviceId = null) => {
     if (!sendTransportRef.current) throw new Error('Transport not ready');
 
+    const videoConstraints = { width: 640, height: 480, frameRate: 30 };
+    if (deviceId) videoConstraints.deviceId = { exact: deviceId };
+
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480, frameRate: 30 },
+      video: videoConstraints,
     });
 
     const track = stream.getVideoTracks()[0];
@@ -371,15 +390,18 @@ export function useMediasoup() {
   }, []);
 
   // ─── Microphone ─────────────────────────────────────
-  const startMic = useCallback(async () => {
+  const startMic = useCallback(async (deviceId = null) => {
     if (!sendTransportRef.current) throw new Error('Transport not ready');
 
+    const audioConstraints = {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    };
+    if (deviceId) audioConstraints.deviceId = { exact: deviceId };
+
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
+      audio: audioConstraints,
     });
 
     // Build Web Audio noise gate pipeline:
