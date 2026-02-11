@@ -215,30 +215,31 @@ export default function Room() {
       const capture = await captureScreen();
       if (!capture) return;
 
-      // Step 2: Show quality picker modal
+      // Step 2: Produce immediately at current quality (no delay = no track death)
+      const result = await produceScreen(capture.stream, quality);
+      if (!result) return;
+
+      setIsScreenSharing(true);
+      result.stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        setIsScreenSharing(false);
+      });
+
+      // Step 3: Show quality picker so user can adjust if desired
       setPendingCapture(capture);
     }
   };
 
   const handleQualityPick = async (qualityKey) => {
-    if (!pendingCapture) return;
-    setQuality(qualityKey);
-    const result = await produceScreen(pendingCapture.stream, qualityKey);
     setPendingCapture(null);
-    if (result) {
-      setIsScreenSharing(true);
-      // Sync UI when user stops via browser chrome (native "Stop sharing" button)
-      result.stream.getVideoTracks()[0]?.addEventListener('ended', () => {
-        setIsScreenSharing(false);
-      });
+    if (qualityKey !== quality) {
+      setQuality(qualityKey);
+      await changeQuality(qualityKey);
     }
   };
 
   const handleCaptureCancelled = () => {
-    if (pendingCapture) {
-      pendingCapture.stream.getTracks().forEach((t) => t.stop());
-      setPendingCapture(null);
-    }
+    // Stream is already running — just dismiss the modal
+    setPendingCapture(null);
   };
 
   const handleMic = async () => {
