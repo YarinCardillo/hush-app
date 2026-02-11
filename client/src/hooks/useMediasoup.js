@@ -41,6 +41,14 @@ export function useMediasoup() {
         }
       });
 
+      sendTransport.on('connectionstatechange', (state) => {
+        console.log(`[mediasoup] Send transport state: ${state}`);
+        if (state === 'failed') {
+          console.error('[mediasoup] Send transport ICE failed — check firewall (ports 40000-40100 UDP/TCP)');
+          setError('Media upload failed: cannot reach server media ports.');
+        }
+      });
+
       sendTransport.on('produce', async ({ kind, rtpParameters, appData }, callback, errback) => {
         try {
           const { producerId } = await socketRequest('produce', {
@@ -70,6 +78,14 @@ export function useMediasoup() {
           callback();
         } catch (err) {
           errback(err);
+        }
+      });
+
+      recvTransport.on('connectionstatechange', (state) => {
+        console.log(`[mediasoup] Recv transport state: ${state}`);
+        if (state === 'failed') {
+          console.error('[mediasoup] Recv transport ICE failed — check firewall (ports 40000-40100 UDP/TCP)');
+          setError('Media download failed: cannot reach server media ports.');
         }
       });
 
@@ -292,6 +308,13 @@ export function useMediasoup() {
 
       // Resume consumer (was created paused on server)
       await socketRequest('resumeConsumer', { consumerId: consumer.id });
+
+      console.log(`[mediasoup] Consumer ${consumer.id} ready:`, {
+        kind: response.kind,
+        trackState: consumer.track?.readyState,
+        paused: consumer.paused,
+        source: response.appData?.source,
+      });
 
       consumersRef.current.set(consumer.id, {
         consumer,
