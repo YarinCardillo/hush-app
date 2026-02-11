@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 110" fill="none">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300&amp;display=swap');
+  </style>
+  
+  <!-- Full wordmark -->
+  <text 
+    x="170" y="82" 
+    font-family="'Sora', sans-serif" 
+    font-weight="300" 
+    font-size="82" 
+    fill="#e4e4ec" 
+    letter-spacing="-3"
+    text-anchor="middle"
+  >hush</text>
+  
+  <!-- Amber dot above the "u" -->
+  <circle cx="151" cy="16" r="7.5" fill="#d4a053"/>
+</svg>
