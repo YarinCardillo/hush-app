@@ -305,13 +305,19 @@ export default function Room() {
     }
 
     setQuality(qualityKey);
-    const result = await produceScreen(capture.stream, qualityKey);
-    if (!result) return;
 
-    setIsScreenSharing(true);
-    result.stream.getVideoTracks()[0]?.addEventListener('ended', () => {
-      setIsScreenSharing(false);
-    });
+    try {
+      const result = await produceScreen(capture.stream, qualityKey);
+      if (!result) return;
+
+      setIsScreenSharing(true);
+      result.stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        setIsScreenSharing(false);
+      });
+    } catch (err) {
+      console.error('[room] Screen share failed:', err);
+      capture.stream.getTracks().forEach((t) => t.stop());
+    }
   };
 
   const handleCaptureCancelled = () => {

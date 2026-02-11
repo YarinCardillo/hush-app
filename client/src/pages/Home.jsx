@@ -59,14 +59,20 @@ const styles = {
   logoTitle: {
     fontFamily: 'var(--font-sans)',
     fontSize: '2.4rem',
-    fontWeight: 300,
+    fontWeight: 200,
     letterSpacing: '-0.03em',
     color: 'var(--hush-text)',
     textTransform: 'lowercase',
   },
-  logoAccent: {
-    color: 'var(--hush-amber)',
-  },
+  logoDot: (left) => ({
+    position: 'absolute',
+    top: '-3px',
+    left: left != null ? `${left}px` : '38%',
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    background: 'var(--hush-amber)',
+  }),
   logoGlow: {
     position: 'absolute',
     inset: '-30px',
@@ -206,6 +212,8 @@ export default function Home() {
 
   const spotlightRef = useRef(null);
   const rafRef = useRef(null);
+  const wordmarkRef = useRef(null);
+  const [dotLeft, setDotLeft] = useState(null);
 
   useEffect(() => {
     fetch(`${API_URL}/api/status`)
@@ -223,6 +231,23 @@ export default function Home() {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    const measure = () => {
+      const el = wordmarkRef.current;
+      if (!el) return;
+      const textNode = el.firstChild;
+      if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return;
+      const range = document.createRange();
+      range.setStart(textNode, 1);
+      range.setEnd(textNode, 2);
+      const uRect = range.getBoundingClientRect();
+      const parentRect = el.getBoundingClientRect();
+      const uCenter = uRect.left + uRect.width / 2 - parentRect.left;
+      setDotLeft(uCenter - 5);
+    };
+    document.fonts.ready.then(measure);
   }, []);
 
   const handleMouseMove = useCallback((e) => {
@@ -314,8 +339,14 @@ export default function Home() {
           transition={{ duration: 0.4 }}
         >
           <div style={styles.logoInner}>
-            <div style={styles.logoTitle}>
-              <span style={styles.logoAccent}>h</span>ush
+            <div style={{ ...styles.logoTitle, position: 'relative' }} ref={wordmarkRef}>
+              hush
+              <motion.div
+                style={styles.logoDot(dotLeft)}
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.4, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              />
             </div>
             <motion.div
               style={styles.logoGlow}
