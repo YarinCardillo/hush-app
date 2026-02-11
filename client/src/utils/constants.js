@@ -30,6 +30,10 @@ export const MEDIA_SOURCES = {
   SCREEN_AUDIO: 'screen-audio',
 };
 
+export function isScreenShareSource(source) {
+  return source === MEDIA_SOURCES.SCREEN || source === MEDIA_SOURCES.SCREEN_AUDIO;
+}
+
 export const IS_SCREEN_SHARE_SUPPORTED =
   typeof navigator !== 'undefined' &&
   !!navigator.mediaDevices?.getDisplayMedia;

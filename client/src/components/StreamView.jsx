@@ -54,6 +54,27 @@ const styles = {
     textTransform: 'uppercase',
     letterSpacing: '0.1em',
   },
+  unwatchBtn: (isVisible) => ({
+    position: 'absolute',
+    top: '10px',
+    right: '10px',
+    width: '32px',
+    height: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(8, 8, 12, 0.7)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
+    border: 'none',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--hush-text)',
+    cursor: 'pointer',
+    transition: 'opacity var(--duration-fast) var(--ease-out)',
+    zIndex: 2,
+    opacity: isVisible ? 1 : 0,
+    pointerEvents: isVisible ? 'auto' : 'none',
+  }),
   fullscreenBtn: (isActive) => ({
     position: 'absolute',
     top: '10px',
@@ -76,7 +97,7 @@ const styles = {
   }),
 };
 
-export default function StreamView({ track, audioTrack, label, source, isLocal }) {
+export default function StreamView({ track, audioTrack, label, source, isLocal, onUnwatch }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const containerRef = useRef(null);
@@ -230,6 +251,19 @@ export default function StreamView({ track, audioTrack, label, source, isLocal }
       </div>
 
       {isLocal && <div style={styles.localBadge}>You</div>}
+
+      {!isLocal && onUnwatch && (
+        <button
+          style={styles.unwatchBtn(isHovered)}
+          onClick={(e) => { e.stopPropagation(); onUnwatch(); }}
+          title="Stop watching"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

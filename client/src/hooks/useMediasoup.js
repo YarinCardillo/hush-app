@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Device } from 'mediasoup-client';
 import { getSocket, socketRequest } from '../lib/socket';
-import { QUALITY_PRESETS, DEFAULT_QUALITY, MEDIA_SOURCES } from '../utils/constants';
+import { QUALITY_PRESETS, DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
 
 export function useMediasoup() {
   const [isReady, setIsReady] = useState(false);
@@ -20,6 +20,12 @@ export function useMediasoup() {
   const recvTransportRef = useRef(null);
   const producersRef = useRef(new Map());
   const consumersRef = useRef(new Map());
+
+  // ─── Click-to-Watch Screen Shares ──────────────────
+  const [availableScreens, setAvailableScreens] = useState(new Map());
+  const [watchedScreens, setWatchedScreens] = useState(new Set());
+  const availableScreensRef = useRef(new Map());
+  const watchedScreensRef = useRef(new Set());
 
   // ─── Noise Gate Refs ──────────────────────────────
   const micPipelineRef = useRef(null);
@@ -69,8 +75,12 @@ export function useMediasoup() {
       }
       producersRef.current.clear();
       consumersRef.current.clear();
+      availableScreensRef.current.clear();
+      watchedScreensRef.current.clear();
       setProducers(new Map());
       setConsumers(new Map());
+      setAvailableScreens(new Map());
+      setWatchedScreens(new Set());
       setIsReady(false);
       cleanupMicPipeline();
 
@@ -573,10 +583,39 @@ export function useMediasoup() {
 
     const handleNewProducer = ({ producerId, peerId, kind, appData }) => {
       console.log(`[mediasoup] New producer from ${peerId}: ${kind} (${appData?.source})`);
-      consumeProducer(producerId, peerId);
+
+      if (isScreenShareSource(appData?.source)) {
+        availableScreensRef.current.set(producerId, { producerId, peerId, kind, appData });
+        setAvailableScreens(new Map(availableScreensRef.current));
+
+        // Auto-consume screen-audio if user is already watching this peer's screen
+        if (appData?.source === MEDIA_SOURCES.SCREEN_AUDIO) {
+          for (const [videoId, info] of availableScreensRef.current.entries()) {
+            if (
+              info.peerId === peerId &&
+              info.appData?.source === MEDIA_SOURCES.SCREEN &&
+              watchedScreensRef.current.has(videoId)
+            ) {
+              consumeProducer(producerId, peerId);
+              break;
+            }
+          }
+        }
+      } else {
+        consumeProducer(producerId, peerId);
+      }
     };
 
     const handleProducerClosed = ({ producerId }) => {
+      if (availableScreensRef.current.has(producerId)) {
+        availableScreensRef.current.delete(producerId);
+        setAvailableScreens(new Map(availableScreensRef.current));
+      }
+      if (watchedScreensRef.current.has(producerId)) {
+        watchedScreensRef.current.delete(producerId);
+        setWatchedScreens(new Set(watchedScreensRef.current));
+      }
+
       for (const [consumerId, data] of consumersRef.current.entries()) {
         if (data.consumer.producerId === producerId) {
           data.consumer.close();
@@ -603,6 +642,16 @@ export function useMediasoup() {
     const handlePeerLeft = ({ peerId, displayName }) => {
       console.log(`[room] ${displayName} left`);
       setPeers((prev) => prev.filter((p) => p.id !== peerId));
+
+      // Clean up their available/watched screens
+      for (const [producerId, info] of availableScreensRef.current.entries()) {
+        if (info.peerId === peerId) {
+          availableScreensRef.current.delete(producerId);
+          watchedScreensRef.current.delete(producerId);
+        }
+      }
+      setAvailableScreens(new Map(availableScreensRef.current));
+      setWatchedScreens(new Set(watchedScreensRef.current));
 
       // Clean up their consumers
       for (const [consumerId, data] of consumersRef.current.entries()) {
@@ -644,6 +693,59 @@ export function useMediasoup() {
     };
   }, []);
 
+  // ─── Click-to-Watch Functions ──────────────────────
+  const addAvailableScreen = useCallback((producerId, peerId, kind, appData) => {
+    availableScreensRef.current.set(producerId, { producerId, peerId, kind, appData });
+    setAvailableScreens(new Map(availableScreensRef.current));
+  }, []);
+
+  const watchScreen = useCallback(async (producerId) => {
+    const screenInfo = availableScreensRef.current.get(producerId);
+    if (!screenInfo || screenInfo.appData?.source !== MEDIA_SOURCES.SCREEN) return;
+
+    const { peerId } = screenInfo;
+
+    await consumeProducer(producerId, peerId);
+
+    // Consume paired screen-audio from the same peer
+    for (const [audioId, info] of availableScreensRef.current.entries()) {
+      if (info.peerId === peerId && info.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO) {
+        await consumeProducer(audioId, peerId);
+        break;
+      }
+    }
+
+    watchedScreensRef.current.add(producerId);
+    setWatchedScreens(new Set(watchedScreensRef.current));
+  }, [consumeProducer]);
+
+  const unwatchScreen = useCallback((producerId) => {
+    const screenInfo = availableScreensRef.current.get(producerId);
+    if (!screenInfo) return;
+
+    const { peerId } = screenInfo;
+
+    // Close screen video consumer
+    for (const [consumerId, data] of consumersRef.current.entries()) {
+      if (data.consumer.producerId === producerId) {
+        data.consumer.close();
+        consumersRef.current.delete(consumerId);
+      }
+    }
+
+    // Close paired screen-audio consumer from same peer
+    for (const [consumerId, data] of consumersRef.current.entries()) {
+      if (data.peerId === peerId && data.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO) {
+        data.consumer.close();
+        consumersRef.current.delete(consumerId);
+      }
+    }
+
+    setConsumers(new Map(consumersRef.current));
+    watchedScreensRef.current.delete(producerId);
+    setWatchedScreens(new Set(watchedScreensRef.current));
+  }, []);
+
   return {
     isReady,
     error,
@@ -661,6 +763,12 @@ export function useMediasoup() {
     consumeProducer,
     setPeers,
     sendTransport: sendTransportRef.current,
+    // Click-to-watch
+    availableScreens,
+    watchedScreens,
+    addAvailableScreen,
+    watchScreen,
+    unwatchScreen,
     // Noise gate
     noiseGateEnabled,
     noiseGateThreshold,

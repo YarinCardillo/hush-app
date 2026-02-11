@@ -4,9 +4,10 @@ import { connectSocket, disconnectSocket, socketRequest } from '../lib/socket';
 import { useMediasoup } from '../hooks/useMediasoup';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDevices } from '../hooks/useDevices';
-import { QUALITY_PRESETS, DEFAULT_QUALITY, MEDIA_SOURCES } from '../utils/constants';
+import { QUALITY_PRESETS, DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
 import { estimateUploadSpeed, getRecommendedQuality } from '../lib/bandwidthEstimator';
 import StreamView from '../components/StreamView';
+import ScreenShareCard from '../components/ScreenShareCard';
 import Controls from '../components/Controls';
 import QualitySelector from '../components/QualitySelector';
 import QualityPickerModal from '../components/QualityPickerModal';
@@ -193,6 +194,11 @@ export default function Room() {
     stopProducer,
     consumeProducer,
     setPeers,
+    availableScreens,
+    watchedScreens,
+    addAvailableScreen,
+    watchScreen,
+    unwatchScreen,
   } = useMediasoup();
 
   const {
@@ -234,7 +240,11 @@ export default function Room() {
 
         for (const peer of existingPeers) {
           for (const producer of peer.producers) {
-            await consumeProducer(producer.id, peer.id);
+            if (isScreenShareSource(producer.appData?.source)) {
+              addAvailableScreen(producer.id, peer.id, producer.kind, producer.appData);
+            } else {
+              await consumeProducer(producer.id, peer.id);
+            }
           }
         }
       } catch (err) {
@@ -259,7 +269,7 @@ export default function Room() {
     return () => {
       disconnectSocket();
     };
-  }, [navigate, initDevice, setPeers, consumeProducer]);
+  }, [navigate, initDevice, setPeers, consumeProducer, addAvailableScreen]);
 
   const handleScreenShare = async () => {
     if (isScreenSharing) {
@@ -466,6 +476,7 @@ export default function Room() {
 
       allStreams.push({
         id,
+        producerId: data.consumer.producerId,
         type: 'remote',
         track: data.consumer.track,
         audioTrack,
@@ -482,8 +493,21 @@ export default function Room() {
     }
   }
 
-  const streamCount = allStreams.length;
-  const gridStyle = getGridStyle(streamCount, breakpoint);
+  // Derive unwatched remote screen shares
+  const unwatchedScreens = [];
+  for (const [producerId, info] of availableScreens.entries()) {
+    if (info.appData?.source === MEDIA_SOURCES.SCREEN && !watchedScreens.has(producerId)) {
+      const peer = peers.find((p) => p.id === info.peerId);
+      unwatchedScreens.push({
+        producerId,
+        peerId: info.peerId,
+        peerName: peer?.displayName || 'Remote',
+      });
+    }
+  }
+
+  const totalCards = allStreams.length + unwatchedScreens.length;
+  const gridStyle = getGridStyle(totalCards, breakpoint);
 
   return (
     <div style={styles.page}>
@@ -532,7 +556,7 @@ export default function Room() {
 
       <div style={styles.main}>
         <div style={{ ...styles.streamsArea, ...gridStyle }}>
-          {streamCount === 0 ? (
+          {totalCards === 0 ? (
             <div style={styles.empty}>
               <div style={styles.emptyIcon}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--hush-text-ghost)" strokeWidth="1.5">
@@ -547,16 +571,30 @@ export default function Room() {
               </div>
             </div>
           ) : (
-            allStreams.map((stream) => (
-              <StreamView
-                key={stream.id}
-                track={stream.track}
-                audioTrack={stream.audioTrack}
-                label={stream.label}
-                source={stream.source}
-                isLocal={stream.type === 'local'}
-              />
-            ))
+            <>
+              {allStreams.map((stream) => (
+                <StreamView
+                  key={stream.id}
+                  track={stream.track}
+                  audioTrack={stream.audioTrack}
+                  label={stream.label}
+                  source={stream.source}
+                  isLocal={stream.type === 'local'}
+                  onUnwatch={
+                    stream.type === 'remote' && stream.source === MEDIA_SOURCES.SCREEN
+                      ? () => unwatchScreen(stream.producerId)
+                      : undefined
+                  }
+                />
+              ))}
+              {unwatchedScreens.map((screen) => (
+                <ScreenShareCard
+                  key={screen.producerId}
+                  peerName={screen.peerName}
+                  onWatch={() => watchScreen(screen.producerId)}
+                />
+              ))}
+            </>
           )}
         </div>
 
