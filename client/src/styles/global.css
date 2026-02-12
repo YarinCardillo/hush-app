@@ -233,6 +233,11 @@ code, .mono {
   50% { opacity: 0.4; transform: scale(0.85); }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

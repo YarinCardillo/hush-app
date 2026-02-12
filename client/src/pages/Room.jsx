@@ -206,6 +206,7 @@ export default function Room() {
     setPeers,
     availableScreens,
     watchedScreens,
+    loadingScreens,
     addAvailableScreen,
     watchScreen,
     unwatchScreen,
@@ -628,6 +629,7 @@ export default function Room() {
                 <ScreenShareCard
                   key={screen.producerId}
                   peerName={screen.peerName}
+                  isLoading={loadingScreens.has(screen.producerId)}
                   onWatch={() => watchScreen(screen.producerId)}
                 />
               ))}

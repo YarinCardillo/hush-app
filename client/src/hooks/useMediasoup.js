@@ -29,8 +29,10 @@ export function useMediasoup() {
   // ─── Click-to-Watch Screen Shares ──────────────────
   const [availableScreens, setAvailableScreens] = useState(new Map());
   const [watchedScreens, setWatchedScreens] = useState(new Set());
+  const [loadingScreens, setLoadingScreens] = useState(new Set());
   const availableScreensRef = useRef(new Map());
   const watchedScreensRef = useRef(new Set());
+  const loadingScreensRef = useRef(new Set());
 
   // ─── Noise Gate Refs ──────────────────────────────
   const micPipelineRef = useRef(null);
@@ -105,6 +107,7 @@ export function useMediasoup() {
     requestAnimationFrame(() => {
       setAvailableScreens(new Map(availableScreensRef.current));
       setWatchedScreens(new Set(watchedScreensRef.current));
+      setLoadingScreens(new Set(loadingScreensRef.current));
       pendingScreensUpdateRef.current = false;
     });
   }, []);
@@ -883,6 +886,7 @@ export function useMediasoup() {
         return consumer;
       } catch (err) {
         console.error("[mediasoup] Consume error:", err);
+        throw err;
       }
     },
     [scheduleConsumersUpdate],
@@ -1037,21 +1041,34 @@ export function useMediasoup() {
 
       const { peerId } = screenInfo;
 
-      await consumeProducer(producerId, peerId);
-
-      // Consume paired screen-audio from the same peer
-      for (const [audioId, info] of availableScreensRef.current.entries()) {
-        if (
-          info.peerId === peerId &&
-          info.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO
-        ) {
-          await consumeProducer(audioId, peerId);
-          break;
-        }
-      }
-
-      watchedScreensRef.current.add(producerId);
+      // Mark as loading immediately for UI feedback
+      loadingScreensRef.current.add(producerId);
       scheduleScreensUpdate();
+
+      try {
+        await consumeProducer(producerId, peerId);
+
+        // Consume paired screen-audio from the same peer
+        for (const [audioId, info] of availableScreensRef.current.entries()) {
+          if (
+            info.peerId === peerId &&
+            info.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO
+          ) {
+            await consumeProducer(audioId, peerId);
+            break;
+          }
+        }
+
+        // Only mark as watched if consume succeeded
+        watchedScreensRef.current.add(producerId);
+      } catch (err) {
+        console.error("[mediasoup] watchScreen failed:", err);
+        // Don't add to watchedScreens - card will remain clickable
+      } finally {
+        // Always clear loading state
+        loadingScreensRef.current.delete(producerId);
+        scheduleScreensUpdate();
+      }
     },
     [consumeProducer, scheduleScreensUpdate],
   );
@@ -1109,6 +1126,7 @@ export function useMediasoup() {
     // Click-to-watch
     availableScreens,
     watchedScreens,
+    loadingScreens,
     addAvailableScreen,
     watchScreen,
     unwatchScreen,
