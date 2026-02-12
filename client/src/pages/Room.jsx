@@ -13,6 +13,7 @@ import Controls from '../components/Controls';
 import QualitySelector from '../components/QualitySelector';
 import QualityPickerModal from '../components/QualityPickerModal';
 import DevicePickerModal from '../components/DevicePickerModal';
+import Chat from '../components/Chat';
 
 const styles = {
   page: {
@@ -184,6 +185,7 @@ export default function Room() {
   const [showQualityPicker, setShowQualityPicker] = useState(false);
   const [showMicPicker, setShowMicPicker] = useState(false);
   const [showWebcamPicker, setShowWebcamPicker] = useState(false);
+  const [showChatPanel, setShowChatPanel] = useState(false);
 
   const {
     isReady,
@@ -277,6 +279,19 @@ export default function Room() {
       disconnectSocket();
     };
   }, [navigate, initDevice, setPeers, consumeProducer, addAvailableScreen, roomName]);
+
+  // Ensure only one sidebar is open at a time
+  useEffect(() => {
+    if (showChatPanel && showQualityPanel) {
+      setShowQualityPanel(false);
+    }
+  }, [showChatPanel, showQualityPanel]);
+
+  useEffect(() => {
+    if (showQualityPanel && showChatPanel) {
+      setShowChatPanel(false);
+    }
+  }, [showQualityPanel, showChatPanel]);
 
   const handleScreenShare = async () => {
     if (isScreenSharing) {
@@ -543,6 +558,16 @@ export default function Room() {
         <div style={styles.headerRight}>
           <button
             style={styles.participantCount}
+            title="Chat"
+            onClick={() => setShowChatPanel(!showChatPanel)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            Chat
+          </button>
+          <button
+            style={styles.participantCount}
             title="Room panel"
             onClick={() => setShowQualityPanel(!showQualityPanel)}
           >
@@ -633,6 +658,23 @@ export default function Room() {
                   />
                 </div>
               )}
+            </div>
+          </>
+        )}
+
+        {showChatPanel && (
+          <>
+            {isMobile && (
+              <div
+                style={styles.sidebarOverlay}
+                onClick={() => setShowChatPanel(false)}
+              />
+            )}
+            <div style={styles.sidebar(isMobile)}>
+              <div style={styles.sidebarSection}>
+                <div style={styles.sidebarLabel}>Chat</div>
+                <Chat currentPeerId={sessionStorage.getItem('hush_peerId')} />
+              </div>
             </div>
           </>
         )}
