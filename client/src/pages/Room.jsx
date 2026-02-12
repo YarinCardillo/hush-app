@@ -186,6 +186,7 @@ export default function Room() {
   const [showMicPicker, setShowMicPicker] = useState(false);
   const [showWebcamPicker, setShowWebcamPicker] = useState(false);
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
 
   const {
     isReady,
@@ -268,6 +269,10 @@ export default function Room() {
     socket.on('disconnect', () => {
       setConnected(false);
       console.log('[room] Disconnected');
+    });
+
+    socket.on('messageReceived', (message) => {
+      setChatMessages((prev) => [...prev, message]);
     });
 
     estimateUploadSpeed().then((speed) => {
@@ -673,7 +678,10 @@ export default function Room() {
             <div style={styles.sidebar(isMobile)}>
               <div style={styles.sidebarSection}>
                 <div style={styles.sidebarLabel}>Chat</div>
-                <Chat currentPeerId={sessionStorage.getItem('hush_peerId')} />
+                <Chat
+                  currentPeerId={sessionStorage.getItem('hush_peerId')}
+                  messages={chatMessages}
+                />
               </div>
             </div>
           </>

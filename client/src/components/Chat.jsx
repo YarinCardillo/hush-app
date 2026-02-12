@@ -134,8 +134,7 @@ const styles = {
   },
 };
 
-export default function Chat({ currentPeerId }) {
-  const [messages, setMessages] = useState([]);
+export default function Chat({ currentPeerId, messages }) {
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef(null);
@@ -149,22 +148,6 @@ export default function Chat({ currentPeerId }) {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  // Socket event listeners
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-
-    const handleMessageReceived = (message) => {
-      setMessages((prev) => [...prev, message]);
-    };
-
-    socket.on('messageReceived', handleMessageReceived);
-
-    return () => {
-      socket.off('messageReceived', handleMessageReceived);
-    };
-  }, []);
 
   const handleSend = async () => {
     const trimmed = inputText.trim();
