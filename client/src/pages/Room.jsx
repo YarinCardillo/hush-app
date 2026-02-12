@@ -272,7 +272,11 @@ export default function Room() {
     });
 
     socket.on('messageReceived', (message) => {
-      setChatMessages((prev) => [...prev, message]);
+      setChatMessages((prev) => {
+        const updated = [...prev, message];
+        // Keep only last 200 messages to prevent memory issues
+        return updated.length > 200 ? updated.slice(-200) : updated;
+      });
     });
 
     estimateUploadSpeed().then((speed) => {
