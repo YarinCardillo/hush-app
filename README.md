@@ -31,14 +31,25 @@ Hush is a web-based screen sharing tool that lets you stream your screen to frie
 
 Hush is and will always be **free and open source**. The hosted instance at gethush.live has resource limits because servers cost money. Here's how it breaks down:
 
-| | Free | Supporter (3-5€/mo) | Self-host |
+| | Free | Supporter (future) | Self-host |
 |---|---|---|---|
-| Account required | No | Yes | No |
-| Rooms | Temporary (die when empty) | Persistent | Your choice |
-| Max participants | 4 | 10 | Unlimited |
-| Screen shares | 1 per room | 3 per room | Unlimited |
-| Max quality | 1080p | No limit (4K+) | No limit |
-| Cost | Free | 3-5€/month | Free (you pay hosting) |
+| **Account required** | No | Yes | No |
+| **Room features** | Same as supporter | Same as free | Your choice |
+| **Max participants** | 8 per room | 8 per room | Unlimited |
+| **Screen shares** | Everyone can stream | Everyone can stream | Unlimited |
+| **Max quality** | Source (4K+) | Source (4K+) | No limit |
+| **Concurrent rooms** | 30 globally | Unlimited | Unlimited |
+| **Room persistence** | Temporary | Persistent (like Discord) | Your choice |
+| **Access guarantee** | When free pool full, wait | Always create rooms | Always create rooms |
+| **Cost** | Free | 3-5€/month (future) | Free (you pay hosting) |
+
+### The Model
+
+**Free tier** gives you full-featured rooms (8 people, source quality, everyone can stream), but the hosted instance can only support **30 concurrent free rooms**. When all 30 are occupied, you'll need to wait for one to free up, become a supporter, or self-host.
+
+**Supporter tier** (future) pays for **convenience over self-hosting**: guaranteed access even when free pool is full, persistent rooms that don't disappear when empty, and supporting the infrastructure. You're not paying for features — you're paying for availability and convenience.
+
+**Self-hosting** gives you complete control and unlimited capacity based on your hardware. The code is identical — no artificial restrictions.
 
 **Important:** When the free pool is full, it means the allocated server resources for free rooms are genuinely exhausted. Supporter rooms use a separate, dedicated resource pool — not the same capacity. This isn't a fake paywall; it's real resource allocation. The code is open source — [verify it yourself](server/src/rooms/resourcePool.js).
 
@@ -196,7 +207,7 @@ All configuration via environment variables:
 - [ ] TURN server integration (coturn)
 - [ ] Stripe/LemonSqueezy supporter payments
 - [ ] Persistent rooms for supporters
-- [ ] Text chat per room
+- [x] Text chat per room
 - [ ] Recording (local, client-side)
 - [ ] Mobile-optimized UI
 - [ ] Room invitations via link
