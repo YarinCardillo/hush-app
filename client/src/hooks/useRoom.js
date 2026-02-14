@@ -9,6 +9,10 @@ import {
   ExternalE2EEKeyProvider,
 } from 'livekit-client';
 import { getMatrixClient } from '../lib/matrixClient';
+
+// Import E2EE worker for LiveKit encryption
+// @ts-ignore - Vite will resolve this URL correctly
+import E2EEWorker from 'livekit-client/e2ee-worker?worker';
 import {
   QUALITY_PRESETS,
   DEFAULT_QUALITY,
@@ -46,6 +50,8 @@ export function useRoom() {
   const loadingScreensRef = useRef(new Set());
   const e2eeKeyProviderRef = useRef(null);
   const currentRoomNameRef = useRef(null);
+  const isRoomCreatorRef = useRef(false);
+  const keyBytesRef = useRef(null);
 
   // ─── Noise Gate Refs ──────────────────────────────────
   const audioContextRef = useRef(null);
@@ -191,6 +197,8 @@ export function useRoom() {
         setIsE2EEEnabled(false);
         setE2eeKey(null);
         currentRoomNameRef.current = roomName;
+        isRoomCreatorRef.current = false;
+        keyBytesRef.current = null;
 
         // Get Matrix user ID for participantIdentity
         const matrixClient = getMatrixClient();
@@ -220,8 +228,62 @@ export function useRoom() {
 
         const { token } = await response.json();
 
-        // Create LiveKit room with dynacast and adaptive streaming
-        const room = new Room({
+        // ─── Prepare E2EE Before Room Creation ────────────────
+        let keyProvider = null;
+        let worker = null;
+        let keyBytes = null;
+        let isRoomCreator = false;
+
+        try {
+          // Check sessionStorage for existing key
+          const storedKey = sessionStorage.getItem('hush_livekit_e2ee_key');
+
+          if (storedKey) {
+            // Decode stored base64 key
+            const keyString = atob(storedKey);
+            keyBytes = new Uint8Array(keyString.length);
+            for (let i = 0; i < keyString.length; i++) {
+              keyBytes[i] = keyString.charCodeAt(i);
+            }
+            console.log('[livekit] Using stored E2EE key from sessionStorage');
+          } else {
+            // Generate new random 32-byte key for room creator
+            keyBytes = new Uint8Array(32);
+            crypto.getRandomValues(keyBytes);
+
+            // Store in sessionStorage as base64
+            const keyBase64 = btoa(String.fromCharCode(...keyBytes));
+            sessionStorage.setItem('hush_livekit_e2ee_key', keyBase64);
+            isRoomCreator = true;
+            isRoomCreatorRef.current = true;
+
+            console.log('[livekit] Generated new random E2EE key (room creator)');
+          }
+
+          // Store keyBytes in ref for ParticipantConnected handler access
+          keyBytesRef.current = keyBytes;
+
+          // Create external key provider
+          keyProvider = new ExternalE2EEKeyProvider();
+          e2eeKeyProviderRef.current = keyProvider;
+
+          // Set the shared key for encryption/decryption
+          await keyProvider.setKey(keyBytes);
+
+          // Create E2EE worker
+          worker = new E2EEWorker();
+
+          console.log('[livekit] E2EE key provider and worker initialized');
+        } catch (e2eeErr) {
+          console.error('[livekit] E2EE initialization failed:', e2eeErr);
+          // Non-fatal: continue without E2EE
+          keyProvider = null;
+          worker = null;
+          keyBytes = null;
+        }
+
+        // Create LiveKit room with dynacast, adaptive streaming, and E2EE
+        const roomOptions = {
           dynacast: true,
           adaptiveStream: true,
           // Disable auto-subscribe for video to enable click-to-watch
@@ -232,12 +294,22 @@ export function useRoom() {
               frameRate: 60,
             },
           },
-        });
+        };
+
+        // Add E2EE options if initialized successfully
+        if (keyProvider && worker) {
+          roomOptions.e2ee = {
+            keyProvider,
+            worker,
+          };
+        }
+
+        const room = new Room(roomOptions);
 
         // ─── Event Listeners ──────────────────────────────
 
         // ParticipantConnected
-        room.on(RoomEvent.ParticipantConnected, (participant) => {
+        room.on(RoomEvent.ParticipantConnected, async (participant) => {
           console.log(
             `[livekit] Participant connected: ${participant.identity}`,
           );
@@ -248,6 +320,18 @@ export function useRoom() {
               displayName: participant.name || participant.identity,
             },
           ]);
+
+          // If room creator with E2EE enabled, send key to new participant
+          if (isRoomCreatorRef.current && keyBytesRef.current) {
+            await sendE2EEKey(
+              participant.identity,
+              keyBytesRef.current,
+              roomName,
+            );
+            console.log(
+              `[livekit] E2EE key sent to new participant: ${participant.identity}`,
+            );
+          }
         });
 
         // ParticipantDisconnected
@@ -362,50 +446,13 @@ export function useRoom() {
           import.meta.env.VITE_LIVEKIT_URL || 'ws://localhost:7880';
         await room.connect(livekitUrl, token);
 
-        // ─── Enable E2EE ──────────────────────────────────────
-        try {
-          let keyBytes;
-          let isRoomCreator = false;
-
-          // Check sessionStorage for existing key
-          const storedKey = sessionStorage.getItem('hush_livekit_e2ee_key');
-
-          if (storedKey) {
-            // Decode stored base64 key
-            const keyString = atob(storedKey);
-            keyBytes = new Uint8Array(keyString.length);
-            for (let i = 0; i < keyString.length; i++) {
-              keyBytes[i] = keyString.charCodeAt(i);
-            }
-            console.log('[livekit] Using stored E2EE key from sessionStorage');
-          } else {
-            // Generate new random 32-byte key for room creator
-            keyBytes = new Uint8Array(32);
-            crypto.getRandomValues(keyBytes);
-
-            // Store in sessionStorage as base64
-            const keyBase64 = btoa(String.fromCharCode(...keyBytes));
-            sessionStorage.setItem('hush_livekit_e2ee_key', keyBase64);
-            isRoomCreator = true;
-
-            console.log('[livekit] Generated new random E2EE key (room creator)');
-          }
-
-          // Create external key provider
-          const keyProvider = new ExternalE2EEKeyProvider();
-          e2eeKeyProviderRef.current = keyProvider;
-
-          // Set the shared key for encryption/decryption
-          await keyProvider.setKey(keyBytes);
-
-          // Enable E2EE on the room
-          await room.setE2EEEnabled(true);
-          room.e2eeManager?.setKeyProvider(keyProvider);
-
+        // ─── Update E2EE State After Connection ───────────────
+        if (keyProvider && keyBytes) {
           setIsE2EEEnabled(true);
           setE2eeKey(keyBytes);
 
           console.log('[livekit] E2EE enabled with Matrix key distribution');
+          console.log('[livekit] room.e2eeManager:', room.e2eeManager);
 
           // If room creator, send key to any existing participants
           if (isRoomCreator) {
@@ -414,9 +461,7 @@ export function useRoom() {
               await sendE2EEKey(participant.identity, keyBytes, roomName);
             }
           }
-        } catch (e2eeErr) {
-          console.error('[livekit] E2EE initialization failed:', e2eeErr);
-          // Non-fatal: continue without E2EE
+        } else {
           setIsE2EEEnabled(false);
         }
 
@@ -464,6 +509,8 @@ export function useRoom() {
       roomRef.current = null;
       e2eeKeyProviderRef.current = null;
       currentRoomNameRef.current = null;
+      isRoomCreatorRef.current = false;
+      keyBytesRef.current = null;
 
       localTracksRef.current.clear();
       remoteTracksRef.current.clear();
