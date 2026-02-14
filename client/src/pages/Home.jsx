@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { API_URL, APP_VERSION } from '../utils/constants';
+import { useMatrixAuth } from '../hooks/useMatrixAuth';
+import { getMatrixClient } from '../lib/matrixClient';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your', 'privacy.'];
 
@@ -187,6 +189,7 @@ const styles = {
 
 export default function Home() {
   const navigate = useNavigate();
+  const { loginAsGuest, isLoading: matrixLoading, error: matrixError } = useMatrixAuth();
   const [mode, setMode] = useState('create');
   const [roomName, setRoomName] = useState('');
   const [password, setPassword] = useState('');
@@ -267,12 +270,131 @@ export default function Home() {
     try {
       localStorage.setItem('hush_displayName', displayName);
 
+      // Step 1: Authenticate with Matrix as guest
+      await loginAsGuest();
+
+      if (matrixError) {
+        throw new Error(`Matrix authentication failed: ${matrixError}`);
+      }
+
+      // Step 2: Create or join Matrix room with E2EE
+      const client = getMatrixClient();
+      let matrixRoomId;
+      let effectiveRoomName = roomName; // Track actual room name used (may have suffix)
+
+      if (mode === 'create') {
+        let actualRoomName = roomName;
+        let createResponse;
+        let retryAttempts = 0;
+        const maxRetries = 3;
+
+        // Try to create room, handling collisions with stale encrypted rooms
+        while (retryAttempts < maxRetries) {
+          try {
+            createResponse = await client.createRoom({
+              name: actualRoomName,
+              room_alias_name: actualRoomName,
+              visibility: 'public',
+              preset: 'public_chat',
+            });
+
+            // createRoom returns { room_id: string }
+            matrixRoomId = createResponse.room_id;
+            console.log('[home] Created room:', {
+              room_id: createResponse.room_id,
+              alias: actualRoomName,
+              retryAttempt: retryAttempts
+            });
+
+            // Wait for room to appear in client's room list (sync may take a moment)
+            let attempts = 0;
+            const maxAttempts = 50;
+            while (!client.getRoom(matrixRoomId) && attempts < maxAttempts) {
+              console.log(`[home] Waiting for created room sync... attempt ${attempts + 1}/${maxAttempts}`);
+              await new Promise(resolve => setTimeout(resolve, 100));
+              attempts++;
+            }
+
+            const roomInClient = client.getRoom(matrixRoomId);
+            if (!roomInClient) {
+              console.error('[home] Created room not in client after', attempts, 'attempts');
+              console.error('[home] Available rooms:', client.getRooms().map(r => r.roomId));
+              throw new Error('Failed to create Matrix room: room not found after creation');
+            }
+
+            // Check if room has encryption enabled (indicates stale encrypted room)
+            const encryptionState = roomInClient.currentState.getStateEvents('m.room.encryption', '');
+            if (encryptionState) {
+              console.warn('[home] Room has encryption enabled (stale room detected), retrying with unique alias');
+              throw new Error('ROOM_ENCRYPTED');
+            }
+
+            console.log('[home] Created room successfully synced to client');
+            break; // Success - exit retry loop
+
+          } catch (err) {
+            console.error('[home] Room creation attempt failed:', err);
+
+            // Check if error is due to alias collision or encrypted room
+            const isCollision = err.errcode === 'M_ROOM_IN_USE' ||
+                               err.message === 'ROOM_ENCRYPTED' ||
+                               (err.data && err.data.errcode === 'M_ROOM_IN_USE');
+
+            if (isCollision && retryAttempts < maxRetries - 1) {
+              // Generate random 4-character hex suffix
+              const suffix = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+              actualRoomName = `${roomName}-${suffix}`;
+              retryAttempts++;
+              console.log(`[home] Retrying with unique alias: ${actualRoomName}`);
+              continue;
+            }
+
+            // If not a collision or max retries exceeded, rethrow
+            throw err;
+          }
+        }
+
+        // Store actual room name used (may have suffix) for join path and display
+        sessionStorage.setItem('hush_actualRoomName', actualRoomName);
+        effectiveRoomName = actualRoomName;
+      } else {
+        const serverName = import.meta.env.VITE_MATRIX_SERVER_NAME || 'localhost';
+        const roomAlias = `#${roomName}:${serverName}`;
+        const joinResponse = await client.joinRoom(roomAlias);
+        console.log('[home] Join response:', { roomId: joinResponse.roomId, room_id: joinResponse.room_id });
+
+        // joinRoom returns Room object with roomId property
+        matrixRoomId = joinResponse.roomId;
+        console.log('[home] Using roomId:', matrixRoomId);
+
+        // Wait for room to appear in client's room list
+        let attempts = 0;
+        const maxAttempts = 50;
+        while (!client.getRoom(matrixRoomId) && attempts < maxAttempts) {
+          console.log(`[home] Waiting for room sync... attempt ${attempts + 1}/${maxAttempts}`);
+          await new Promise(resolve => setTimeout(resolve, 100));
+          attempts++;
+        }
+
+        const roomInClient = client.getRoom(matrixRoomId);
+        if (!roomInClient) {
+          console.error('[home] Room not in client after', attempts, 'attempts');
+          console.error('[home] Available rooms:', client.getRooms().map(r => r.roomId));
+          throw new Error('Failed to join Matrix room: room not found after join');
+        }
+        console.log('[home] Room successfully synced to client');
+      }
+
+      // Store Matrix room ID
+      sessionStorage.setItem('hush_matrixRoomId', matrixRoomId);
+
+      // Step 3: Call existing API for JWT/mediasoup (temporary, removed in Milestone B)
       const endpoint = mode === 'create' ? '/api/rooms/create' : '/api/rooms/join';
 
       const res = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomName, password, displayName }),
+        body: JSON.stringify({ roomName: effectiveRoomName, password, displayName }),
       });
 
       const data = await res.json();
@@ -441,7 +563,9 @@ export default function Home() {
               />
             </div>
 
-            {error && <div style={styles.error}>{error}</div>}
+            {(error || matrixError) && (
+              <div style={styles.error}>{error || matrixError?.message}</div>
+            )}
 
             {poolFull && (
               <div style={{
@@ -490,10 +614,10 @@ export default function Home() {
               <button
                 className="btn btn-primary"
                 type="submit"
-                disabled={loading}
+                disabled={loading || matrixLoading}
                 style={styles.ctaButton}
               >
-                {loading ? 'connecting...' : mode === 'create' ? 'create room' : 'join'}
+                {loading || matrixLoading ? 'connecting...' : mode === 'create' ? 'create room' : 'join'}
               </button>
             </div>
           </form>

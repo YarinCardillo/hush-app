@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { getSocket } from '../lib/socket';
+import { getMatrixClient } from '../lib/matrixClient';
+import { RoomEvent, EventType } from 'matrix-js-sdk';
 
 const styles = {
   container: {
@@ -134,11 +135,62 @@ const styles = {
   },
 };
 
-export default function Chat({ currentPeerId, messages }) {
+export default function Chat({ currentPeerId }) {
+  const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
+
+  // Load existing messages and listen for new ones
+  useEffect(() => {
+    if (!matrixRoomId) return;
+
+    const client = getMatrixClient();
+    const room = client.getRoom(matrixRoomId);
+
+    if (!room) {
+      console.warn('[chat] Room not found:', matrixRoomId);
+      return;
+    }
+
+    // Load existing messages from room timeline
+    const timeline = room.getLiveTimeline();
+    const events = timeline.getEvents();
+    const existingMessages = events
+      .filter(e => e.getType() === EventType.RoomMessage)
+      .map(e => ({
+        id: e.getId(),
+        sender: e.getSender(),
+        displayName: e.sender?.name || e.getSender(),
+        content: e.getContent().body,
+        timestamp: e.getTs()
+      }));
+    setMessages(existingMessages);
+
+    // Listen for new messages
+    const handleTimelineEvent = (event, room, toStartOfTimeline) => {
+      if (toStartOfTimeline) return; // Ignore backfill
+      if (event.getType() !== EventType.RoomMessage) return;
+      if (event.getRoomId() !== matrixRoomId) return;
+
+      const newMsg = {
+        id: event.getId(),
+        sender: event.getSender(),
+        displayName: event.sender?.name || event.getSender(),
+        content: event.getContent().body,
+        timestamp: event.getTs()
+      };
+      setMessages(prev => [...prev, newMsg]);
+    };
+
+    client.on(RoomEvent.Timeline, handleTimelineEvent);
+
+    return () => {
+      client.off(RoomEvent.Timeline, handleTimelineEvent);
+    };
+  }, [matrixRoomId]);
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = () => {
@@ -151,26 +203,27 @@ export default function Chat({ currentPeerId, messages }) {
 
   const handleSend = async () => {
     const trimmed = inputText.trim();
-    if (!trimmed || isSending) return;
+    if (!trimmed || isSending || !matrixRoomId) return;
 
     setIsSending(true);
-    const socket = getSocket();
 
     try {
-      await new Promise((resolve, reject) => {
-        socket.emit('sendMessage', { text: trimmed }, (response) => {
-          if (response?.error) {
-            reject(new Error(response.error));
-          } else {
-            resolve();
-          }
-        });
+      const client = getMatrixClient();
+      const room = client.getRoom(matrixRoomId);
+
+      if (!room) {
+        throw new Error('Room not found in Matrix client store');
+      }
+
+      await client.sendMessage(matrixRoomId, {
+        msgtype: 'm.text',
+        body: trimmed
       });
 
       setInputText('');
       inputRef.current?.focus();
     } catch (err) {
-      console.error('[chat] Send failed:', err);
+      console.error('[chat] Send failed:', err.message);
     } finally {
       setIsSending(false);
     }
@@ -209,16 +262,20 @@ export default function Chat({ currentPeerId, messages }) {
             </div>
           ) : (
             messages.map((msg) => {
-              const isOwn = msg.peerId === currentPeerId;
+              // Get current user's Matrix ID from matrixClient
+              const client = getMatrixClient();
+              const currentUserId = client.getUserId();
+              const isOwn = msg.sender === currentUserId;
+
               return (
-                <div key={msg.messageId} style={styles.message(isOwn)}>
+                <div key={msg.id} style={styles.message(isOwn)}>
                   <div style={styles.messageHeader}>
                     <span style={styles.senderName(isOwn)}>
                       {isOwn ? 'You' : msg.displayName}
                     </span>
                     <span style={styles.timestamp}>{formatTime(msg.timestamp)}</span>
                   </div>
-                  <div style={styles.messageText}>{msg.text}</div>
+                  <div style={styles.messageText}>{msg.content}</div>
                 </div>
               );
             })

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { connectSocket, disconnectSocket, socketRequest } from '../lib/socket';
-import { useMediasoup } from '../hooks/useMediasoup';
+import { Track } from 'livekit-client';
+import { useRoom } from '../hooks/useRoom';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDevices } from '../hooks/useDevices';
 import { DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
@@ -186,31 +186,31 @@ export default function Room() {
   const [showMicPicker, setShowMicPicker] = useState(false);
   const [showWebcamPicker, setShowWebcamPicker] = useState(false);
   const [showChatPanel, setShowChatPanel] = useState(false);
-  const [chatMessages, setChatMessages] = useState([]);
 
   const {
     isReady,
     error,
-    producers,
-    consumers,
-    peers,
-    initDevice,
-    captureScreen,
-    produceScreen,
+    localTracks,
+    remoteTracks,
+    participants,
+    e2eeKey,
+    connectRoom,
+    disconnectRoom,
+    publishScreen,
+    unpublishScreen,
     switchScreenSource,
     changeQuality,
-    startWebcam,
-    startMic,
-    stopProducer,
-    consumeProducer,
-    setPeers,
+    publishWebcam,
+    unpublishWebcam,
+    publishMic,
+    unpublishMic,
     availableScreens,
     watchedScreens,
     loadingScreens,
-    addAvailableScreen,
     watchScreen,
     unwatchScreen,
-  } = useMediasoup();
+    sendE2EEKey,
+  } = useRoom();
 
   const {
     audioDevices,
@@ -231,64 +231,30 @@ export default function Room() {
       return;
     }
 
-    const socket = connectSocket(token);
+    const displayName = sessionStorage.getItem('hush_displayName') || 'Anonymous';
 
-    socket.on('connect', async () => {
+    // Connect to LiveKit room
+    connectRoom(roomName, displayName).then(() => {
       setConnected(true);
-      console.log('[room] Connected');
-
-      // Reset local media state (stale after reconnect)
-      setIsScreenSharing(false);
-      setIsMicOn(false);
-      setIsWebcamOn(false);
-      setShowQualityPicker(false);
-
-      try {
-        await initDevice();
-
-        const { peers: existingPeers } = await socketRequest('getPeers');
-        setPeers(existingPeers);
-
-        for (const peer of existingPeers) {
-          for (const producer of peer.producers) {
-            if (isScreenShareSource(producer.appData?.source)) {
-              addAvailableScreen(producer.id, peer.id, producer.kind, producer.appData);
-            } else {
-              await consumeProducer(producer.id, peer.id);
-            }
-          }
-        }
-      } catch (err) {
-        console.error('[room] Reconnection failed:', err);
-        if (err.message === 'Room not found') {
-          sessionStorage.removeItem('hush_token');
-          navigate('/');
-        }
+      console.log('[room] Connected to LiveKit room');
+    }).catch((err) => {
+      console.error('[room] Connection failed:', err);
+      if (err.message === 'Room not found') {
+        sessionStorage.removeItem('hush_token');
+        navigate('/');
       }
     });
 
-    socket.on('disconnect', () => {
-      setConnected(false);
-      console.log('[room] Disconnected');
-    });
-
-    socket.on('messageReceived', (message) => {
-      setChatMessages((prev) => {
-        const updated = [...prev, message];
-        // Keep only last 200 messages to prevent memory issues
-        return updated.length > 200 ? updated.slice(-200) : updated;
-      });
-    });
-
+    // Estimate upload speed for quality recommendation
     estimateUploadSpeed().then((speed) => {
       const rec = getRecommendedQuality(speed);
       setQuality(rec.key);
     });
 
     return () => {
-      disconnectSocket();
+      disconnectRoom();
     };
-  }, [navigate, initDevice, setPeers, consumeProducer, addAvailableScreen, roomName]);
+  }, [navigate, connectRoom, disconnectRoom, roomName]);
 
   // Ensure only one sidebar is open at a time
   useEffect(() => {
@@ -303,16 +269,23 @@ export default function Room() {
     }
   }, [showQualityPanel, showChatPanel]);
 
+  // Send E2EE key to new participants when they join
+  useEffect(() => {
+    if (!e2eeKey || participants.length === 0) return;
+
+    // Send key to all current participants
+    // This handles the case when the room creator connects after joiners
+    const roomName = sessionStorage.getItem('hush_roomName');
+    if (!roomName) return;
+
+    participants.forEach((participant) => {
+      sendE2EEKey(participant.id, e2eeKey, roomName);
+    });
+  }, [participants.length, e2eeKey, sendE2EEKey]);
+
   const handleScreenShare = async () => {
     if (isScreenSharing) {
-      for (const [id, producer] of producers.entries()) {
-        if (
-          producer.appData?.source === MEDIA_SOURCES.SCREEN ||
-          producer.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO
-        ) {
-          await stopProducer(id);
-        }
-      }
+      await unpublishScreen();
       setIsScreenSharing(false);
     } else {
       setShowQualityPicker(true);
@@ -325,43 +298,32 @@ export default function Room() {
 
     console.log('[room] handleQualityPick:', qualityKey);
 
-    const capture = await captureScreen();
-    if (!capture) {
-      console.warn('[room] captureScreen returned null (user cancelled or track dead)');
-      return;
-    }
-
     try {
-      const result = await produceScreen(capture.stream, qualityKey);
-      if (!result) {
-        console.error('[room] produceScreen returned null — track likely died during produce');
+      const stream = await publishScreen(qualityKey);
+      if (!stream) {
+        console.warn('[room] publishScreen returned null (user cancelled)');
         return;
       }
 
       setIsScreenSharing(true);
-      result.stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
         setIsScreenSharing(false);
       });
     } catch (err) {
       console.error('[room] Screen share failed:', err);
-      capture.stream.getTracks().forEach((t) => t.stop());
     }
   };
 
   const handleMic = async () => {
     if (isMicOn) {
-      for (const [id, producer] of producers.entries()) {
-        if (producer.appData?.source === MEDIA_SOURCES.MIC) {
-          await stopProducer(id);
-        }
-      }
+      await unpublishMic();
       setIsMicOn(false);
     } else if (!hasSavedMic) {
       // First time: request permission to get device labels, then show picker
       await requestPermission('audio');
       setShowMicPicker(true);
     } else {
-      await startMic(selectedMicId);
+      await publishMic(selectedMicId);
       setIsMicOn(true);
     }
   };
@@ -369,23 +331,19 @@ export default function Room() {
   const handleMicDevicePick = async (deviceId) => {
     setShowMicPicker(false);
     selectMic(deviceId);
-    await startMic(deviceId);
+    await publishMic(deviceId);
     setIsMicOn(true);
   };
 
   const handleWebcam = async () => {
     if (isWebcamOn) {
-      for (const [id, producer] of producers.entries()) {
-        if (producer.appData?.source === MEDIA_SOURCES.WEBCAM) {
-          await stopProducer(id);
-        }
-      }
+      await unpublishWebcam();
       setIsWebcamOn(false);
     } else if (!hasSavedWebcam) {
       await requestPermission('video');
       setShowWebcamPicker(true);
     } else {
-      await startWebcam(selectedWebcamId);
+      await publishWebcam(selectedWebcamId);
       setIsWebcamOn(true);
     }
   };
@@ -393,18 +351,14 @@ export default function Room() {
   const handleWebcamDevicePick = async (deviceId) => {
     setShowWebcamPicker(false);
     selectWebcam(deviceId);
-    await startWebcam(deviceId);
+    await publishWebcam(deviceId);
     setIsWebcamOn(true);
   };
 
   const handleMicDeviceSwitch = async () => {
     // Stop current mic, show picker, user picks new device → starts new mic
     if (isMicOn) {
-      for (const [id, producer] of producers.entries()) {
-        if (producer.appData?.source === MEDIA_SOURCES.MIC) {
-          await stopProducer(id);
-        }
-      }
+      await unpublishMic();
       setIsMicOn(false);
     }
     await requestPermission('audio');
@@ -413,11 +367,7 @@ export default function Room() {
 
   const handleWebcamDeviceSwitch = async () => {
     if (isWebcamOn) {
-      for (const [id, producer] of producers.entries()) {
-        if (producer.appData?.source === MEDIA_SOURCES.WEBCAM) {
-          await stopProducer(id);
-        }
-      }
+      await unpublishWebcam();
       setIsWebcamOn(false);
     }
     await requestPermission('video');
@@ -441,7 +391,7 @@ export default function Room() {
   };
 
   const handleLeave = () => {
-    disconnectSocket();
+    disconnectRoom();
     sessionStorage.removeItem('hush_token');
     sessionStorage.removeItem('hush_peerId');
     sessionStorage.removeItem('hush_roomName');
@@ -451,97 +401,95 @@ export default function Room() {
   const allStreams = [];
   const pairedAudioTracks = new Set();
 
-  for (const [id, producer] of producers.entries()) {
-    if (producer.kind === 'video') {
+  // Render local tracks (screen share, webcam)
+  for (const [trackSid, info] of localTracks.entries()) {
+    if (info.track.kind === 'video') {
       let audioTrack = null;
 
-      if (producer.appData?.source === MEDIA_SOURCES.SCREEN) {
-        for (const [, p] of producers.entries()) {
-          if (p.appData?.source === MEDIA_SOURCES.SCREEN_AUDIO && p.track) {
-            audioTrack = p.track;
+      // Pair screen video with screen audio
+      if (info.source === MEDIA_SOURCES.SCREEN) {
+        for (const [, localInfo] of localTracks.entries()) {
+          if (localInfo.source === MEDIA_SOURCES.SCREEN_AUDIO) {
+            audioTrack = localInfo.track.mediaStreamTrack;
             break;
           }
         }
       }
 
       allStreams.push({
-        id,
+        id: trackSid,
         type: 'local',
-        track: producer.track,
+        track: info.track.mediaStreamTrack,
         audioTrack,
-        label: producer.appData?.source === MEDIA_SOURCES.SCREEN ? 'Your Screen' : 'Your Webcam',
-        source: producer.appData?.source,
+        label: info.source === MEDIA_SOURCES.SCREEN ? 'Your Screen' : 'Your Webcam',
+        source: info.source,
       });
     }
   }
 
-  // Debug: log all consumers
-  console.log('[Room] All consumers:', Array.from(consumers.entries()).map(([id, d]) => ({
-    id,
-    kind: d.consumer.kind,
-    source: d.appData?.source,
-    peerId: d.peerId,
-    trackState: d.consumer.track?.readyState,
+  // Debug: log all remote tracks
+  console.log('[Room] All remote tracks:', Array.from(remoteTracks.entries()).map(([sid, info]) => ({
+    sid,
+    kind: info.kind,
+    source: info.source,
+    participantId: info.participant.identity,
+    trackState: info.track.mediaStreamTrack?.readyState,
   })));
 
-  for (const [id, data] of consumers.entries()) {
-    if (data.consumer.kind === 'video') {
-      const videoPeerId = data.peerId;
-      const videoSource = data.appData?.source;
+  // Render remote tracks
+  for (const [trackSid, info] of remoteTracks.entries()) {
+    if (info.kind === 'video') {
+      const participantId = info.participant.identity;
+      const videoSource = info.source;
 
-      const pairedAudioSource = videoSource === MEDIA_SOURCES.SCREEN
-        ? MEDIA_SOURCES.SCREEN_AUDIO
-        : MEDIA_SOURCES.MIC;
+      // Determine paired audio source
+      const pairedAudioSource = videoSource === Track.Source.ScreenShare
+        ? Track.Source.ScreenShareAudio
+        : Track.Source.Microphone;
 
       let audioTrack = null;
-      for (const [audioId, audioData] of consumers.entries()) {
+      for (const [audioSid, audioInfo] of remoteTracks.entries()) {
         if (
-          audioData.consumer.kind === 'audio' &&
-          audioData.appData?.source === pairedAudioSource &&
-          audioData.peerId === videoPeerId
+          audioInfo.kind === 'audio' &&
+          audioInfo.source === pairedAudioSource &&
+          audioInfo.participant.identity === participantId
         ) {
-          audioTrack = audioData.consumer.track;
-          pairedAudioTracks.add(audioId);
-          console.log('[Room] Paired audio:', { videoId: id, audioId, source: pairedAudioSource });
+          audioTrack = audioInfo.track.mediaStreamTrack;
+          pairedAudioTracks.add(audioSid);
+          console.log('[Room] Paired audio:', { videoSid: trackSid, audioSid, source: pairedAudioSource });
           break;
         }
       }
-      if (!audioTrack && videoSource === MEDIA_SOURCES.SCREEN) {
-        console.log('[Room] No audio found for screen share from peer:', videoPeerId);
+      if (!audioTrack && videoSource === Track.Source.ScreenShare) {
+        console.log('[Room] No audio found for screen share from participant:', participantId);
       }
 
-      const peer = peers.find((p) =>
-        p.producers?.some((pr) => pr.id === data.consumer.producerId)
-      );
-
       allStreams.push({
-        id,
-        producerId: data.consumer.producerId,
+        id: trackSid,
         type: 'remote',
-        track: data.consumer.track,
+        track: info.track.mediaStreamTrack,
         audioTrack,
-        label: peer?.displayName || 'Remote',
-        source: data.appData?.source || 'unknown',
+        label: info.participant.name || info.participant.identity,
+        source: videoSource === Track.Source.ScreenShare ? MEDIA_SOURCES.SCREEN : MEDIA_SOURCES.WEBCAM,
       });
     }
   }
 
   const orphanAudioConsumers = [];
-  for (const [id, data] of consumers.entries()) {
-    if (data.consumer.kind === 'audio' && !pairedAudioTracks.has(id)) {
-      orphanAudioConsumers.push({ id, track: data.consumer.track });
+  for (const [trackSid, info] of remoteTracks.entries()) {
+    if (info.kind === 'audio' && !pairedAudioTracks.has(trackSid)) {
+      orphanAudioConsumers.push({ id: trackSid, track: info.track.mediaStreamTrack });
     }
   }
 
   // Derive unwatched remote screen shares
   const unwatchedScreens = [];
-  for (const [producerId, info] of availableScreens.entries()) {
-    if (info.appData?.source === MEDIA_SOURCES.SCREEN && !watchedScreens.has(producerId)) {
-      const peer = peers.find((p) => p.id === info.peerId);
+  for (const [trackSid, info] of availableScreens.entries()) {
+    if (info.source === Track.Source.ScreenShare && !watchedScreens.has(trackSid)) {
       unwatchedScreens.push({
-        producerId,
-        peerId: info.peerId,
-        peerName: peer?.displayName || 'Remote',
+        producerId: trackSid,
+        peerId: info.participantId,
+        peerName: info.participantName,
       });
     }
   }
@@ -587,7 +535,7 @@ export default function Room() {
               <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
-            {peers.length + 1}
+            {participants.length + 1}
           </button>
         </div>
       </div>
@@ -620,7 +568,7 @@ export default function Room() {
                   isLocal={stream.type === 'local'}
                   onUnwatch={
                     stream.type === 'remote' && stream.source === MEDIA_SOURCES.SCREEN
-                      ? () => unwatchScreen(stream.producerId)
+                      ? () => unwatchScreen(stream.id)
                       : undefined
                   }
                 />
@@ -647,15 +595,15 @@ export default function Room() {
             )}
             <div style={styles.sidebar(isMobile)}>
               <div style={styles.sidebarSection}>
-                <div style={styles.sidebarLabel}>Participants ({peers.length + 1})</div>
+                <div style={styles.sidebarLabel}>Participants ({participants.length + 1})</div>
                 <div style={styles.peerItem}>
                   <div style={styles.peerDot(isScreenSharing)} />
                   <span>You</span>
                 </div>
-                {peers.map((peer) => (
-                  <div key={peer.id} style={styles.peerItem}>
-                    <div style={styles.peerDot(peer.producers?.length > 0)} />
-                    <span>{peer.displayName}</span>
+                {participants.map((participant) => (
+                  <div key={participant.id} style={styles.peerItem}>
+                    <div style={styles.peerDot(true)} />
+                    <span>{participant.displayName}</span>
                   </div>
                 ))}
               </div>
@@ -686,7 +634,6 @@ export default function Room() {
                 <div style={styles.sidebarLabel}>Chat</div>
                 <Chat
                   currentPeerId={sessionStorage.getItem('hush_peerId')}
-                  messages={chatMessages}
                 />
               </div>
             </div>

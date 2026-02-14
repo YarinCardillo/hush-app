@@ -6,9 +6,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/socket.io': {
-        target: 'http://localhost:3001',
+      '/api': 'http://localhost:80',
+      '/_matrix': 'http://localhost:80',
+      '/livekit': {
+        target: 'http://localhost:80',
         ws: true,
       },
     },
