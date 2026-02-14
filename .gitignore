@@ -4,6 +4,11 @@ dist/
 *.log
 .DS_Store
 
+# Synapse homeserver data
+synapse/homeserver.yaml
+synapse/data/
+synapse/*.signing.key
+
 # claude-mem generated files
 **/CLAUDE.md
 CLAUDE.md
@@ -11,3 +16,9 @@ CLAUDE.md
 # Claude Code local settings
 .claude/
 design-system.md
+ARCHITECTURE.md
+FEEDBACK.md
+orchestra.sh
+PLAN.md
+TROUBLESHOOTING.md
+.orchestra/
