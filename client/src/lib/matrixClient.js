@@ -4,6 +4,7 @@ let matrixClient = null;
 
 /**
  * Creates and initializes a Matrix client instance.
+ * Rust crypto (v40+) manages its own IndexedDB storage internally.
  *
  * @param {Object} options - Matrix client configuration options
  * @param {string} options.baseUrl - Homeserver URL (optional, defaults to env var or origin/_matrix)

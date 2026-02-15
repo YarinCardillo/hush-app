@@ -155,6 +155,15 @@ export default function Chat({ currentPeerId }) {
       return;
     }
 
+    // Diagnostic: Log crypto status when Chat mounts (v40+)
+    const cryptoReady = !!client.getCrypto();
+    console.log('[chat] Component mounted with crypto status:', {
+      cryptoEnabled: cryptoReady,
+      roomId: matrixRoomId,
+      deviceId: client.getDeviceId(),
+      userId: client.getUserId()
+    });
+
     // Load existing messages from room timeline
     const timeline = room.getLiveTimeline();
     const events = timeline.getEvents();
@@ -172,8 +181,19 @@ export default function Chat({ currentPeerId }) {
     // Listen for new messages
     const handleTimelineEvent = (event, room, toStartOfTimeline) => {
       if (toStartOfTimeline) return; // Ignore backfill
-      if (event.getType() !== EventType.RoomMessage) return;
       if (event.getRoomId() !== matrixRoomId) return;
+
+      // Diagnostic: Log all message-related event types
+      const eventType = event.getType();
+      console.log('[chat] Timeline event received:', {
+        type: eventType,
+        isEncrypted: eventType === 'm.room.encrypted',
+        isMessage: eventType === EventType.RoomMessage,
+        sender: event.getSender(),
+        eventId: event.getId()
+      });
+
+      if (eventType !== EventType.RoomMessage) return;
 
       const newMsg = {
         id: event.getId(),

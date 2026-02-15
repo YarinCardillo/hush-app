@@ -80,6 +80,17 @@ export function useMatrixAuth() {
         await authenticatedClient.setDisplayName(displayName);
       }
 
+      // Initialize Rust crypto for E2EE support (matrix-js-sdk v40+)
+      if (authenticatedClient) {
+        try {
+          await authenticatedClient.initRustCrypto();
+          console.log('[useMatrixAuth] Rust crypto initialized successfully');
+        } catch (cryptoErr) {
+          console.error('[useMatrixAuth] Crypto initialization failed:', cryptoErr);
+          // Non-fatal: continue without E2EE if crypto init fails
+        }
+      }
+
       // Start sync and wait for initial sync to complete
       if (authenticatedClient) {
         // Create a promise that resolves when sync reaches PREPARED or SYNCING state
@@ -142,8 +153,19 @@ export function useMatrixAuth() {
         deviceId: response.device_id,
       });
 
-      // Start sync
+      // Initialize Rust crypto module for E2EE support (matrix-js-sdk v40+)
       const authenticatedClient = getMatrixClient();
+      if (authenticatedClient) {
+        try {
+          await authenticatedClient.initRustCrypto();
+          console.log('[useMatrixAuth] Rust crypto initialized successfully');
+        } catch (cryptoErr) {
+          console.error('[useMatrixAuth] Crypto initialization failed:', cryptoErr);
+          // Non-fatal: continue without E2EE if crypto init fails
+        }
+      }
+
+      // Start sync
       if (authenticatedClient) {
         await authenticatedClient.startClient({ initialSyncLimit: 20 });
       }
@@ -195,6 +217,17 @@ export function useMatrixAuth() {
       const authenticatedClient = getMatrixClient();
       if (authenticatedClient && displayName) {
         await authenticatedClient.setDisplayName(displayName);
+      }
+
+      // Initialize Rust crypto for E2EE support (matrix-js-sdk v40+)
+      if (authenticatedClient) {
+        try {
+          await authenticatedClient.initRustCrypto();
+          console.log('[useMatrixAuth] Rust crypto initialized successfully');
+        } catch (cryptoErr) {
+          console.error('[useMatrixAuth] Crypto initialization failed:', cryptoErr);
+          // Non-fatal: continue without E2EE if crypto init fails
+        }
       }
 
       // Start sync

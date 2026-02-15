@@ -282,6 +282,14 @@ export default function Home() {
       let matrixRoomId;
       let effectiveRoomName = roomName; // Track actual room name used (may have suffix)
 
+      // Verify crypto is ready before room operations (v40+)
+      const cryptoReady = !!client.getCrypto();
+      console.log('[home] Crypto status before room operations:', {
+        cryptoEnabled: cryptoReady,
+        deviceId: client.getDeviceId(),
+        userId: client.getUserId()
+      });
+
       if (mode === 'create') {
         let actualRoomName = roomName;
         let createResponse;
@@ -360,6 +368,12 @@ export default function Home() {
       } else {
         const serverName = import.meta.env.VITE_MATRIX_SERVER_NAME || 'localhost';
         const roomAlias = `#${roomName}:${serverName}`;
+
+        console.log('[home] Joining room with crypto enabled:', {
+          roomAlias,
+          cryptoReady
+        });
+
         const joinResponse = await client.joinRoom(roomAlias);
         console.log('[home] Join response:', { roomId: joinResponse.roomId, room_id: joinResponse.room_id });
 
