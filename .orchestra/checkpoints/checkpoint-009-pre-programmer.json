@@ -1,0 +1,104 @@
+{
+  "version": 2,
+  "project_name": "hush-matrix-refactor",
+  "created_at": "2026-02-12T14:34:19Z",
+  "updated_at": "2026-02-12T19:04:00Z",
+  "current_phase": "implementation",
+  "iteration": 9,
+  "next_actor": "programmer",
+  "next_action": "implement_task_A3.3",
+  "current_task": {
+    "id": "A3.3",
+    "title": "Test chat persistence and encryption",
+    "description": "Create a test script to verify that the Matrix chat integration is working correctly. The script should test two key aspects:\n\n1. **Chat persistence**: Messages sent in a room persist across page refresh (stored in Matrix, not ephemeral Socket.io)\n2. **Room encryption**: Rooms are created with E2EE enabled (m.room.encryption state event exists)\n\nCreate scripts/test-chat.sh that:\n\n1. Starts Synapse (if not running) and waits for health\n2. Registers a guest user via Matrix API\n3. Creates a room with encryption enabled\n4. Sends a test message to the room\n5. Fetches the room timeline and verifies the message exists\n6. Verifies m.room.encryption state event exists in the room\n\nThe script should use curl for HTTP requests to the Matrix Client-Server API endpoints:\n- POST /_matrix/client/v3/register?kind=guest\n- POST /_matrix/client/v3/createRoom\n- GET /_matrix/client/v3/rooms/{roomId}/state/m.room.encryption\n- PUT /_matrix/client/v3/rooms/{roomId}/send/m.room.message/{txnId}\n- GET /_matrix/client/v3/rooms/{roomId}/messages\n\nUse the same patterns established in scripts/test-synapse.sh (colors, test counters, exit codes).",
+    "acceptance_criteria": [
+      "scripts/test-chat.sh exists and is executable (chmod +x)",
+      "Script registers a guest user and captures access_token",
+      "Script creates a room with encryption preset (preset: private_chat or initial_state with m.room.encryption)",
+      "Script sends a test message using PUT /rooms/{roomId}/send/m.room.message/{txnId}",
+      "Script fetches room timeline with GET /rooms/{roomId}/messages and verifies test message exists",
+      "Script fetches m.room.encryption state event and verifies algorithm is m.megolm.v1.aes-sha2",
+      "Script uses color-coded output (green for pass, red for fail) like test-synapse.sh",
+      "Script exits with code 0 on all tests passing, non-zero on any failure",
+      "Script works with localhost:8008 (direct Synapse) or configurable MATRIX_URL"
+    ],
+    "files_to_create": [
+      "scripts/test-chat.sh"
+    ],
+    "files_to_modify": [],
+    "feedback_ref": null
+  },
+  "task_queue": [],
+  "completed_tasks": [
+    {
+      "id": "A1.1",
+      "title": "Add Synapse + PostgreSQL to docker-compose",
+      "completed_at": "2026-02-12T15:42:00Z",
+      "review_notes": "All acceptance criteria met. PostgreSQL 16-alpine with proper healthcheck, Synapse with depends_on condition: service_healthy, homeserver.yaml template with E2EE enabled, executable setup script, environment variables for all secrets."
+    },
+    {
+      "id": "A1.2",
+      "title": "Add reverse proxy config (Caddy) to docker-compose",
+      "completed_at": "2026-02-12T15:50:00Z",
+      "review_notes": "All 7 acceptance criteria verified. Caddyfile properly routes /_matrix/* to synapse:8008 and /* to hush:3001. WebSocket headers preserved via header_up directives. CORS configured with wildcard origin and OPTIONS preflight handling. Caddy service in docker-compose with ports 80/443, depends_on synapse and hush. Direct hush port exposure removed. Caddy volumes declared for persistence."
+    },
+    {
+      "id": "A1.3",
+      "title": "Verify Synapse health check and guest registration",
+      "completed_at": "2026-02-12T15:58:00Z",
+      "review_notes": "All 6 acceptance criteria verified. Docker healthcheck uses curl to /health endpoint with 30s interval, 10s timeout, 5 retries, 60s start_period. Test script implements 3 functions: test_health_check (120s polling), test_client_versions (JSON validation), test_guest_registration (handles both 200 and 403 responses). Color-coded output, test counters, proper exit codes. Script is executable (-rwxr-xr-x)."
+    },
+    {
+      "id": "A2.1",
+      "title": "Install matrix-js-sdk and create matrixClient.js",
+      "completed_at": "2026-02-12T16:10:00Z",
+      "review_notes": "All 6 acceptance criteria verified: (1) matrix-js-sdk ^40.3.0-rc.0 in client/package.json line 12; (2) client/src/lib/matrixClient.js exists with module-level singleton (matrixClient = null); (3) exports createMatrixClient, getMatrixClient, destroyMatrixClient; (4) 3-tier homeserver URL fallback: options.baseUrl || VITE_MATRIX_HOMESERVER_URL || origin/_matrix; (5) client/.env.example created with VITE_MATRIX_HOMESERVER_URL; (6) build succeeds with no errors. Clean implementation following socket.js singleton pattern."
+    },
+    {
+      "id": "A2.2",
+      "title": "Create useMatrixAuth hook",
+      "completed_at": "2026-02-12T16:25:00Z",
+      "review_notes": "All 9 acceptance criteria verified: (1) client/src/hooks/useMatrixAuth.js exists; (2) Named export useMatrixAuth(); (3) Returns all 10 fields including 4 functions and 6 state values; (4) loginAsGuest reads localStorage 'hush_displayName' and calls registerGuest with initial_device_display_name; (5) After registration, stores credentials, recreates authenticated client, starts sync with initialSyncLimit 20; (6) logout calls destroyMatrixClient and clears userId/accessToken/deviceId; (7) isAuthenticated = userId !== null && accessToken !== null; (8) Error state captures failures in try-catch blocks; (9) All 4 functions wrapped in useCallback. Clean implementation following useDevices.js pattern. Future-use login/register functions properly implemented."
+    },
+    {
+      "id": "A2.3",
+      "title": "Update Home.jsx for Matrix auth",
+      "completed_at": "2026-02-12T17:00:00Z",
+      "review_notes": "All 10 acceptance criteria verified: (1) useMatrixAuth hook imported at line 5; (2) getMatrixClient imported at line 6; (3) loginAsGuest() called at line 274 before API calls; (4) createRoom() called for 'create' mode with E2EE (m.megolm.v1.aes-sha2) at lines 285-297; (5) joinRoom() called for 'join' mode with room alias at lines 298-302; (6) matrixRoomId stored in sessionStorage at line 306; (7) Existing API calls preserved at lines 308-329 with comment noting temporary nature; (8) matrixError displayed in error div at lines 483-485; (9) Both loading states reflected in button at lines 534 and 537; (10) Build succeeded (2.27s, 8 chunks). Minor note: lines 276-278 have redundant matrixError check (errors thrown by loginAsGuest are caught by outer try-catch), but does not affect functionality."
+    },
+    {
+      "id": "A2.4",
+      "title": "Create Matrix-to-JWT bridge for Socket.io",
+      "completed_at": "2026-02-12T17:00:00Z",
+      "review_notes": "SKIPPED - Task unnecessary. The existing /api/rooms/create and /api/rooms/join endpoints already generate JWTs for Socket.io/mediasoup. The client already calls these endpoints in handleSubmit (Home.jsx lines 308-329), stores the JWT in sessionStorage (line 327), and uses it for Socket.io auth. No additional bridge layer needed."
+    },
+    {
+      "id": "A3.1",
+      "title": "Rewrite Chat.jsx for Matrix timeline",
+      "completed_at": "2026-02-12T17:58:00Z",
+      "review_notes": "All 10 acceptance criteria verified: (1) getMatrixClient imported at line 2; (2) RoomEvent and EventType imported at line 3; (3) matrixRoomId retrieved from sessionStorage at line 144; (4) Existing messages loaded from getLiveTimeline() at lines 159-170 with EventType.RoomMessage filtering; (5) RoomEvent.Timeline listener added at line 188; (6) Cleanup function at lines 190-192; (7) sendMessage uses client.sendMessage() at lines 212-215; (8) All Socket.io code removed from Chat.jsx and Room.jsx (chatMessages state, messageReceived listener, messages prop); (9) Message objects include id, sender, displayName, content, timestamp at lines 163-169; (10) Build succeeds. Note: currentPeerId prop still passed to Chat but unused - minor dead code, harmless."
+    },
+    {
+      "id": "A3.2",
+      "title": "Remove Socket.io chat events from server",
+      "completed_at": "2026-02-12T19:04:00Z",
+      "review_notes": "All 11 acceptance criteria verified: (1) messageTimestamps Map declaration removed - grep returns no matches; (2) socket.on('sendMessage', ...) handler removed - grep returns no matches; (3) messageTimestamps.delete(peerId) removed - grep returns no matches; (4) All mediasoup handlers preserved (getRouterRtpCapabilities line 35, createWebRtcTransport line 47, connectTransport line 82, produce line 97, consume line 142, resumeConsumer line 201, closeProducer line 217, updateProducerAppData line 237); (5) getPeers handler preserved (line 261); (6) e2eKeyExchange handler preserved (line 272); (7) peerJoined and peerLeft events preserved (lines 295, 300); (8-10) No references to messageTimestamps, sendMessage, or messageReceived remain; (11) Server syntax check passes. Clean removal of all chat code."
+    }
+  ],
+  "last_architect_output": "Iteration 8 -> Reviewed task A3.2 (Remove Socket.io chat events from server). All 11 acceptance criteria verified: grep confirms zero matches for messageTimestamps, sendMessage, and messageReceived in socketHandlers.js. All mediasoup handlers preserved at correct line numbers (35, 47, 82, 97, 142, 201, 217, 237). Other handlers preserved: getPeers (261), e2eKeyExchange (272), peerJoined/peerLeft (295, 300). Node syntax check passes. Task A3.2 APPROVED. Phase A3 (Chat Migration) nearly complete. Advancing to final task A3.3: Create test script to verify chat persistence and E2EE encryption state events.",
+  "last_programmer_output": "Task A3.2 completed successfully. Removed all Socket.io chat messaging code from server/src/signaling/socketHandlers.js: (1) Removed messageTimestamps Map declaration (was lines 5-7): deleted comment '// Rate limiting: track recent message timestamps per peer' and 'const messageTimestamps = new Map();'; (2) Removed entire sendMessage event handler (was lines 274-322): deleted complete socket.on('sendMessage', ...) block including input validation (text type check, empty/length validation), rate limiting logic (5 messages per 5 seconds with timestamp tracking), message object construction (messageId, peerId, displayName, text, timestamp), and io.in(roomName).emit('messageReceived', message) broadcast; (3) Removed messageTimestamps cleanup from disconnect handler (was line 352): deleted 'messageTimestamps.delete(peerId);' call, removed corresponding comment '// Clean up rate limit tracking'. All mediasoup handlers preserved: getRouterRtpCapabilities (lines 35-43), createWebRtcTransport (lines 47-79), connectTransport (lines 82-94), produce (lines 97-139), consume (lines 142-198), resumeConsumer (lines 201-214), closeProducer (lines 217-233), updateProducerAppData (lines 237-258). All other handlers preserved: getPeers (lines 261-268), e2eKeyExchange (lines 270-283), peerJoined/peerLeft events (lines 295, 300). Verification: grep confirms zero matches for 'messageTimestamps', 'sendMessage', and 'messageReceived' in the file. Node syntax check passes with no errors (node --check). File now contains only mediasoup WebRTC signaling handlers and media E2E key exchange, with all chat messaging responsibility transferred to Matrix protocol. All 11 acceptance criteria met.",
+  "files_created": [
+    ".orchestra/PLAN.md",
+    "synapse/homeserver.yaml.template",
+    "synapse/MATRIX_SERVER_NAME.log.config",
+    "scripts/generate-synapse-config.sh",
+    "synapse/README.md",
+    "caddy/Caddyfile",
+    "scripts/test-synapse.sh",
+    "client/src/lib/matrixClient.js",
+    "client/.env.example",
+    "client/src/hooks/useMatrixAuth.js"
+  ],
+  "feedback_resolved": [],
+  "status": "running"
+}

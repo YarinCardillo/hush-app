@@ -1,0 +1,239 @@
+{
+  "version": 2,
+  "project_name": "hush-matrix-refactor",
+  "created_at": "2026-02-12T14:34:19Z",
+  "updated_at": "2026-02-13T17:40:59Z",
+  "current_phase": "bugfix",
+  "iteration": 34,
+  "next_actor": "architect",
+  "next_action": "manual_browser_testing_BUG-002_fix",
+  "current_task": {
+    "id": "B-CHECKPOINT-FINAL-2",
+    "title": "Manual Browser Testing - Verify BUG-002 Fix",
+    "description": "BUG-002 code fix has been implemented. The user must now manually test in the browser to verify:\n\n1. Open two browser windows/tabs\n2. In window 1: Create a room (e.g., 'testroom')\n3. In window 2: Join the same room by name ('testroom')\n4. Verify both users enter the same room\n5. Verify media controls (mic, camera, screen share) work for both users\n6. Verify chat messages sync between both users\n\nIf the fix works, mark BUG-002 as resolved in FEEDBACK.md.\nIf issues remain, document them in FEEDBACK.md.",
+    "acceptance_criteria": [
+      "User creates room in browser 1",
+      "User joins same room by name in browser 2",
+      "No 404 errors in console for room join",
+      "Both users see each other in the room",
+      "Media controls work for both users",
+      "Chat messages sync between users"
+    ],
+    "files_to_create": [],
+    "files_to_modify": [],
+    "files_to_delete": [],
+    "feedback_ref": "BUG-002"
+  },
+  "task_queue": [],
+  "completed_tasks": [
+    {
+      "id": "A1.1",
+      "title": "Add Synapse + PostgreSQL to docker-compose",
+      "completed_at": "2026-02-12T15:42:00Z",
+      "review_notes": "All acceptance criteria met."
+    },
+    {
+      "id": "A1.2",
+      "title": "Add reverse proxy config (Caddy) to docker-compose",
+      "completed_at": "2026-02-12T15:50:00Z",
+      "review_notes": "All 7 acceptance criteria verified."
+    },
+    {
+      "id": "A1.3",
+      "title": "Verify Synapse health check and guest registration",
+      "completed_at": "2026-02-12T15:58:00Z",
+      "review_notes": "All 6 acceptance criteria verified."
+    },
+    {
+      "id": "A2.1",
+      "title": "Install matrix-js-sdk and create matrixClient.js",
+      "completed_at": "2026-02-12T16:10:00Z",
+      "review_notes": "All 6 acceptance criteria verified."
+    },
+    {
+      "id": "A2.2",
+      "title": "Create useMatrixAuth hook",
+      "completed_at": "2026-02-12T16:25:00Z",
+      "review_notes": "All 9 acceptance criteria verified."
+    },
+    {
+      "id": "A2.3",
+      "title": "Update Home.jsx for Matrix auth",
+      "completed_at": "2026-02-12T17:00:00Z",
+      "review_notes": "All 10 acceptance criteria verified."
+    },
+    {
+      "id": "A2.4",
+      "title": "Create Matrix-to-JWT bridge for Socket.io",
+      "completed_at": "2026-02-12T17:00:00Z",
+      "review_notes": "SKIPPED - Task unnecessary."
+    },
+    {
+      "id": "A3.1",
+      "title": "Rewrite Chat.jsx for Matrix timeline",
+      "completed_at": "2026-02-12T17:58:00Z",
+      "review_notes": "All 10 acceptance criteria verified."
+    },
+    {
+      "id": "A3.2",
+      "title": "Remove Socket.io chat events from server",
+      "completed_at": "2026-02-12T19:04:00Z",
+      "review_notes": "All 11 acceptance criteria verified."
+    },
+    {
+      "id": "A3.3",
+      "title": "Test chat persistence and encryption",
+      "completed_at": "2026-02-12T19:15:00Z",
+      "review_notes": "All 9 acceptance criteria verified."
+    },
+    {
+      "id": "A-CHECKPOINT",
+      "title": "Milestone A Checkpoint - Integration Verification",
+      "completed_at": "2026-02-12T16:30:00Z",
+      "review_notes": "MILESTONE A APPROVED."
+    },
+    {
+      "id": "B1.1",
+      "title": "Add LiveKit Server + Redis to docker-compose",
+      "completed_at": "2026-02-12T16:35:00Z",
+      "review_notes": "All 9 acceptance criteria verified."
+    },
+    {
+      "id": "B1.2",
+      "title": "Create LiveKit token service endpoint",
+      "completed_at": "2026-02-12T16:40:00Z",
+      "review_notes": "All 10 acceptance criteria verified."
+    },
+    {
+      "id": "B1.3",
+      "title": "Update reverse proxy for LiveKit routing",
+      "completed_at": "2026-02-12T17:45:00Z",
+      "review_notes": "All 6 acceptance criteria verified."
+    },
+    {
+      "id": "B2.1",
+      "title": "Create useRoom hook for LiveKit",
+      "completed_at": "2026-02-12T19:55:00Z",
+      "review_notes": "All 11 acceptance criteria verified."
+    },
+    {
+      "id": "B2.2",
+      "title": "Preserve noise gate with LiveKit",
+      "completed_at": "2026-02-12T20:25:00Z",
+      "review_notes": "All 8 acceptance criteria verified."
+    },
+    {
+      "id": "B2.3",
+      "title": "Update UI components for LiveKit tracks",
+      "completed_at": "2026-02-12T21:10:00Z",
+      "review_notes": "All 11 acceptance criteria verified."
+    },
+    {
+      "id": "B2.4",
+      "title": "Remove mediasoup from client",
+      "completed_at": "2026-02-12T22:35:00Z",
+      "review_notes": "All 8 acceptance criteria verified."
+    },
+    {
+      "id": "B3.1",
+      "title": "Remove mediasoup and Socket.io from server",
+      "completed_at": "2026-02-13T01:37:00Z",
+      "review_notes": "All 15 acceptance criteria verified."
+    },
+    {
+      "id": "B3.2",
+      "title": "Simplify server REST endpoints and remove Socket.io auth",
+      "completed_at": "2026-02-13T01:48:00Z",
+      "review_notes": "All 5 acceptance criteria verified."
+    },
+    {
+      "id": "B3.2-fix",
+      "title": "CRITICAL: Fix broken mediasoup import in roomManager.js",
+      "completed_at": "2026-02-13T02:55:00Z",
+      "review_notes": "All 6 acceptance criteria verified."
+    },
+    {
+      "id": "B3.3",
+      "title": "Delete room manager code",
+      "completed_at": "2026-02-13T02:55:00Z",
+      "review_notes": "SKIPPED - roomManager.js still required."
+    },
+    {
+      "id": "B4.1",
+      "title": "Enable LiveKit E2EE in client",
+      "completed_at": "2026-02-13T02:51:00Z",
+      "review_notes": "All 6 acceptance criteria verified."
+    },
+    {
+      "id": "B4.2",
+      "title": "Implement Matrix key distribution for E2EE",
+      "completed_at": "2026-02-13T03:05:00Z",
+      "review_notes": "All 7/8 acceptance criteria verified."
+    },
+    {
+      "id": "B4.3",
+      "title": "Clean up dead e2eEnabled code in roomManager",
+      "completed_at": "2026-02-13T03:10:00Z",
+      "review_notes": "All 4 acceptance criteria verified."
+    },
+    {
+      "id": "B-CHECKPOINT-FIX",
+      "title": "Fix Matrix Integration Bugs Found in Manual Testing",
+      "completed_at": "2026-02-13T15:20:00Z",
+      "review_notes": "All 5 acceptance criteria verified."
+    },
+    {
+      "id": "B-CHECKPOINT",
+      "title": "Milestone B Checkpoint - Partial Success (WebRTC issue identified)",
+      "completed_at": "2026-02-13T18:05:00Z",
+      "review_notes": "Partial success: 5/10 criteria pass."
+    },
+    {
+      "id": "B-WEBRTC-FIX",
+      "title": "Fix LiveKit WebRTC ICE Configuration for Local Docker Development",
+      "completed_at": "2026-02-13T18:08:00Z",
+      "review_notes": "ICE configuration updated correctly."
+    },
+    {
+      "id": "BUG-001",
+      "title": "Fix LiveKit 'could not find any available nodes' Error",
+      "completed_at": "2026-02-13T18:17:00Z",
+      "review_notes": "All 4 programmatically verifiable criteria passed. User confirmed solved in FEEDBACK.md."
+    },
+    {
+      "id": "B-CHECKPOINT-FINAL",
+      "title": "Milestone B Final Checkpoint - Manual Browser Testing",
+      "completed_at": "2026-02-13T17:30:00Z",
+      "review_notes": "BUG-001 confirmed resolved by user. BUG-002 discovered during testing: room joining fails due to missing room alias."
+    },
+    {
+      "id": "BUG-002",
+      "title": "Fix Matrix Room Joining - Add Room Alias on Creation",
+      "completed_at": "2026-02-13T18:34:00Z",
+      "review_notes": "Code fix verified: room_alias_name: roomName added to createRoom() in Home.jsx:287. Build passes. Awaiting user browser test confirmation."
+    }
+  ],
+  "last_architect_output": "Iteration 34: BUG-002 Code Fix Verified - Awaiting User Testing\n\nVERIFICATION:\n- Confirmed Home.jsx:287 now includes `room_alias_name: roomName`\n- Client build passes (verified by programmer)\n- Fix aligns with root cause: missing room alias prevented joiners from resolving #roomName:localhost\n\nNEXT STEP: User must test in browser:\n1. Open two browser windows\n2. Create room 'testroom' in window 1\n3. Join 'testroom' in window 2\n4. Verify no 404 errors and both users enter same room\n\nIf successful, mark BUG-002 resolved in FEEDBACK.md and Milestone B is COMPLETE.",
+  "last_programmer_output": "Task BUG-002 completed: Fixed Matrix room joining by adding room_alias_name parameter to createRoom() call in Home.jsx:287. When a room is created, Matrix now assigns an alias (#roomName:localhost) that allows other users to join using the room name. The fix was a single-line addition: 'room_alias_name: roomName' in the createRoom options object. Client build verified successful with no errors.",
+  "files_created": [
+    ".orchestra/PLAN.md",
+    "synapse/homeserver.yaml.template",
+    "synapse/MATRIX_SERVER_NAME.log.config",
+    "scripts/generate-synapse-config.sh",
+    "synapse/README.md",
+    "caddy/Caddyfile",
+    "scripts/test-synapse.sh",
+    "client/src/lib/matrixClient.js",
+    "client/.env.example",
+    "client/src/hooks/useMatrixAuth.js",
+    "scripts/test-chat.sh",
+    "livekit/livekit.yaml",
+    "server/src/livekit/tokenService.js",
+    "client/src/hooks/useRoom.js",
+    "scripts/checkpoint-B-test.md"
+  ],
+  "feedback_resolved": [
+    "BUG-001"
+  ],
+  "status": "running"
+}

@@ -1,0 +1,128 @@
+{
+  "version": 2,
+  "project_name": "hush-matrix-refactor",
+  "created_at": "2026-02-12T14:34:19Z",
+  "updated_at": "2026-02-12T15:42:00Z",
+  "current_phase": "implementation",
+  "iteration": 2,
+  "next_actor": "programmer",
+  "next_action": "implement_task_A1.2",
+  "current_task": {
+    "id": "A1.2",
+    "title": "Add reverse proxy config (Caddy) to docker-compose",
+    "description": "Add Caddy as a reverse proxy to route traffic appropriately. Caddy will be the single entry point for external traffic.\n\nRouting requirements:\n1. Route /_matrix/* to synapse:8008 (Matrix homeserver APIs)\n2. Route / (everything else) to hush:3001 (the Hush client/server)\n3. Configure CORS headers for Matrix client access\n4. Use Caddy's automatic HTTPS (disabled for localhost development)\n\nNotes:\n- The Hush service currently exposes port 3001 - Caddy will proxy to it\n- Synapse is on port 8008 internally\n- For local dev, use http://localhost as the site address\n- Ensure WebSocket upgrade headers are passed through for Socket.io",
+    "acceptance_criteria": [
+      "caddy/Caddyfile exists with routing configuration",
+      "docker-compose.yml contains caddy service",
+      "/_matrix/* routes to synapse:8008",
+      "/ routes to hush:3001",
+      "WebSocket upgrade headers (Connection, Upgrade) are preserved",
+      "Caddy depends on synapse and hush services",
+      "Port 80 (and optionally 443) exposed on caddy service"
+    ],
+    "files_to_create": [
+      "caddy/Caddyfile"
+    ],
+    "files_to_modify": [
+      "docker-compose.yml"
+    ],
+    "feedback_ref": null
+  },
+  "task_queue": [
+    {
+      "id": "A1.3",
+      "title": "Verify Synapse health check and guest registration",
+      "description": "Add health check for Synapse in docker-compose. Create test script to verify /_matrix/client/versions and guest registration work.",
+      "files_to_create": [
+        "scripts/test-synapse.sh"
+      ],
+      "files_to_modify": [
+        "docker-compose.yml"
+      ]
+    },
+    {
+      "id": "A2.1",
+      "title": "Install matrix-js-sdk and create matrixClient.js",
+      "description": "Install matrix-js-sdk in the client. Create client/src/lib/matrixClient.js singleton.",
+      "files_to_create": [
+        "client/src/lib/matrixClient.js"
+      ],
+      "files_to_modify": [
+        "client/package.json"
+      ]
+    },
+    {
+      "id": "A2.2",
+      "title": "Create useMatrixAuth hook",
+      "description": "Create client/src/hooks/useMatrixAuth.js for login, register, and guest access.",
+      "files_to_create": [
+        "client/src/hooks/useMatrixAuth.js"
+      ],
+      "files_to_modify": []
+    },
+    {
+      "id": "A2.3",
+      "title": "Update Home.jsx for Matrix auth",
+      "description": "Update Home.jsx to use Matrix auth. Room creation uses matrixClient.createRoom() with E2EE.",
+      "files_to_create": [],
+      "files_to_modify": [
+        "client/src/pages/Home.jsx"
+      ]
+    },
+    {
+      "id": "A2.4",
+      "title": "Create Matrix-to-JWT bridge for Socket.io",
+      "description": "Create temporary bridge layer: after Matrix auth, generate internal JWT for Socket.io (mediasoup still needs it). This is temporary glue removed in Milestone B.",
+      "files_to_create": [],
+      "files_to_modify": [
+        "server/src/auth/auth.js"
+      ]
+    },
+    {
+      "id": "A3.1",
+      "title": "Rewrite Chat.jsx for Matrix timeline",
+      "description": "Rewrite Chat.jsx to use matrix-js-sdk room timeline. Listen to RoomEvent.Timeline, use client.sendEvent() for outgoing. Messages are E2EE via Megolm.",
+      "files_to_create": [],
+      "files_to_modify": [
+        "client/src/components/Chat.jsx"
+      ]
+    },
+    {
+      "id": "A3.2",
+      "title": "Remove Socket.io chat events from server",
+      "description": "Remove sendMessage and messageReceived Socket.io events from socketHandlers.js. Remove server-side chat rate limiting. Keep mediasoup handlers intact.",
+      "files_to_create": [],
+      "files_to_modify": [
+        "server/src/signaling/socketHandlers.js"
+      ]
+    },
+    {
+      "id": "A3.3",
+      "title": "Test chat persistence and encryption",
+      "description": "Verify chat persists across page refresh. Verify m.room.encryption state event exists in room.",
+      "files_to_create": [
+        "scripts/test-chat.sh"
+      ],
+      "files_to_modify": []
+    }
+  ],
+  "completed_tasks": [
+    {
+      "id": "A1.1",
+      "title": "Add Synapse + PostgreSQL to docker-compose",
+      "completed_at": "2026-02-12T15:42:00Z",
+      "review_notes": "All acceptance criteria met. PostgreSQL 16-alpine with proper healthcheck, Synapse with depends_on condition: service_healthy, homeserver.yaml template with E2EE enabled, executable setup script, environment variables for all secrets."
+    }
+  ],
+  "last_architect_output": "Iteration 1 → Reviewed task A1.1 implementation. All 7 acceptance criteria verified and passed. docker-compose.yml has postgres (with pg_isready healthcheck) and synapse (with depends_on condition: service_healthy). Template enables guest access, registration, and E2EE via encryption_enabled_by_default_for_room_type: all. Setup script is executable and generates signing keys + secrets. Moving A1.1 to completed, assigning A1.2: Add Caddy reverse proxy.",
+  "last_programmer_output": "Task A1.1 completed successfully. Added PostgreSQL 16-alpine and Synapse services to docker-compose.yml with proper networking, health checks, and dependencies. Created synapse/homeserver.yaml.template with all required settings: guest access enabled, registration enabled, E2EE support via encryption_enabled_by_default_for_room_type: all, PostgreSQL database configuration. Created executable scripts/generate-synapse-config.sh that generates ed25519 signing keys, macaroon secret, and form secret, then populates homeserver.yaml from template. Updated .env.example with Matrix and PostgreSQL environment variables. Updated .gitignore to exclude generated secrets and data. Created synapse/README.md with setup documentation. All acceptance criteria met: postgres has healthcheck with pg_isready, synapse depends_on postgres with condition: service_healthy, environment variables used for all sensitive values, volumes configured for data persistence.",
+  "files_created": [
+    ".orchestra/PLAN.md",
+    "synapse/homeserver.yaml.template",
+    "synapse/MATRIX_SERVER_NAME.log.config",
+    "scripts/generate-synapse-config.sh",
+    "synapse/README.md"
+  ],
+  "feedback_resolved": [],
+  "status": "running"
+}

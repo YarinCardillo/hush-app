@@ -1,0 +1,118 @@
+{
+  "version": 2,
+  "project_name": "hush-matrix-refactor",
+  "created_at": "2026-02-12T14:34:19Z",
+  "updated_at": "2026-02-12T16:52:00Z",
+  "current_phase": "implementation",
+  "iteration": 6,
+  "next_actor": "architect",
+  "next_action": "review_task_A2.3",
+  "current_task": {
+    "id": "A2.3",
+    "title": "Update Home.jsx for Matrix auth",
+    "description": "Update Home.jsx to integrate Matrix authentication and room creation.\n\nCurrent Flow (lines 261-299):\n1. User submits form with displayName, roomName, password\n2. localStorage.setItem('hush_displayName', displayName) at line 268\n3. POST to /api/rooms/create or /api/rooms/join\n4. Server returns { token, peerId, roomName }\n5. Store token/peerId/roomName in sessionStorage\n6. Navigate to /room/{roomName}\n\nNew Flow:\n1. User submits form (same UI, no changes to form fields)\n2. localStorage.setItem('hush_displayName', displayName) - keep this\n3. Call loginAsGuest() from useMatrixAuth hook to register Matrix guest\n4. After Matrix auth succeeds, call matrixClient.createRoom() for 'create' mode OR matrixClient.joinRoom() for 'join' mode\n5. Store Matrix roomId in sessionStorage (replace hush_roomName with hush_matrixRoomId)\n6. Keep the existing /api/rooms/create and /api/rooms/join calls - we still need the JWT for mediasoup/Socket.io (temporary, removed in Milestone B)\n7. Navigate to /room/{roomName}\n\nMatrix Room Creation:\n```javascript\nconst client = getMatrixClient();\nconst room = await client.createRoom({\n  name: roomName,\n  visibility: 'private',\n  preset: 'private_chat',\n  initial_state: [\n    {\n      type: 'm.room.encryption',\n      state_key: '',\n      content: { algorithm: 'm.megolm.v1.aes-sha2' }\n    }\n  ]\n});\n// room.room_id is the Matrix room ID\n```\n\nMatrix Room Join:\n```javascript\nconst client = getMatrixClient();\n// Matrix room alias format: #roomName:servername\nconst roomAlias = `#${roomName}:${import.meta.env.VITE_MATRIX_SERVER_NAME || 'localhost'}`;\nconst room = await client.joinRoom(roomAlias);\n```\n\nKey Points:\n- Import useMatrixAuth hook and getMatrixClient from their respective modules\n- Matrix auth happens BEFORE the existing API calls\n- If Matrix auth fails, show error and don't proceed\n- The password field is for the Hush room (server-side), not Matrix auth\n- Error handling: catch Matrix errors separately and show user-friendly messages",
+    "acceptance_criteria": [
+      "useMatrixAuth hook is imported and used in Home.jsx",
+      "getMatrixClient is imported from lib/matrixClient.js",
+      "handleSubmit calls loginAsGuest() before any API calls",
+      "After loginAsGuest(), createRoom() is called for 'create' mode with E2EE enabled",
+      "After loginAsGuest(), joinRoom() is called for 'join' mode using room alias",
+      "Matrix room_id is stored in sessionStorage as 'hush_matrixRoomId'",
+      "Existing /api/rooms/create and /api/rooms/join calls remain (for JWT/mediasoup)",
+      "Error from Matrix auth is displayed using existing error state",
+      "Loading state reflects both Matrix and API operations",
+      "Build succeeds with no errors"
+    ],
+    "files_to_create": [],
+    "files_to_modify": [
+      "client/src/pages/Home.jsx"
+    ],
+    "feedback_ref": null
+  },
+  "task_queue": [
+    {
+      "id": "A2.4",
+      "title": "Create Matrix-to-JWT bridge for Socket.io",
+      "description": "Create temporary bridge layer: after Matrix auth, generate internal JWT for Socket.io (mediasoup still needs it). This is temporary glue removed in Milestone B.",
+      "files_to_create": [],
+      "files_to_modify": [
+        "server/src/auth/auth.js"
+      ]
+    },
+    {
+      "id": "A3.1",
+      "title": "Rewrite Chat.jsx for Matrix timeline",
+      "description": "Rewrite Chat.jsx to use matrix-js-sdk room timeline. Listen to RoomEvent.Timeline, use client.sendEvent() for outgoing. Messages are E2EE via Megolm.",
+      "files_to_create": [],
+      "files_to_modify": [
+        "client/src/components/Chat.jsx"
+      ]
+    },
+    {
+      "id": "A3.2",
+      "title": "Remove Socket.io chat events from server",
+      "description": "Remove sendMessage and messageReceived Socket.io events from socketHandlers.js. Remove server-side chat rate limiting. Keep mediasoup handlers intact.",
+      "files_to_create": [],
+      "files_to_modify": [
+        "server/src/signaling/socketHandlers.js"
+      ]
+    },
+    {
+      "id": "A3.3",
+      "title": "Test chat persistence and encryption",
+      "description": "Verify chat persists across page refresh. Verify m.room.encryption state event exists in room.",
+      "files_to_create": [
+        "scripts/test-chat.sh"
+      ],
+      "files_to_modify": []
+    }
+  ],
+  "completed_tasks": [
+    {
+      "id": "A1.1",
+      "title": "Add Synapse + PostgreSQL to docker-compose",
+      "completed_at": "2026-02-12T15:42:00Z",
+      "review_notes": "All acceptance criteria met. PostgreSQL 16-alpine with proper healthcheck, Synapse with depends_on condition: service_healthy, homeserver.yaml template with E2EE enabled, executable setup script, environment variables for all secrets."
+    },
+    {
+      "id": "A1.2",
+      "title": "Add reverse proxy config (Caddy) to docker-compose",
+      "completed_at": "2026-02-12T15:50:00Z",
+      "review_notes": "All 7 acceptance criteria verified. Caddyfile properly routes /_matrix/* to synapse:8008 and /* to hush:3001. WebSocket headers preserved via header_up directives. CORS configured with wildcard origin and OPTIONS preflight handling. Caddy service in docker-compose with ports 80/443, depends_on synapse and hush. Direct hush port exposure removed. Caddy volumes declared for persistence."
+    },
+    {
+      "id": "A1.3",
+      "title": "Verify Synapse health check and guest registration",
+      "completed_at": "2026-02-12T15:58:00Z",
+      "review_notes": "All 6 acceptance criteria verified. Docker healthcheck uses curl to /health endpoint with 30s interval, 10s timeout, 5 retries, 60s start_period. Test script implements 3 functions: test_health_check (120s polling), test_client_versions (JSON validation), test_guest_registration (handles both 200 and 403 responses). Color-coded output, test counters, proper exit codes. Script is executable (-rwxr-xr-x)."
+    },
+    {
+      "id": "A2.1",
+      "title": "Install matrix-js-sdk and create matrixClient.js",
+      "completed_at": "2026-02-12T16:10:00Z",
+      "review_notes": "All 6 acceptance criteria verified: (1) matrix-js-sdk ^40.3.0-rc.0 in client/package.json line 12; (2) client/src/lib/matrixClient.js exists with module-level singleton (matrixClient = null); (3) exports createMatrixClient, getMatrixClient, destroyMatrixClient; (4) 3-tier homeserver URL fallback: options.baseUrl || VITE_MATRIX_HOMESERVER_URL || origin/_matrix; (5) client/.env.example created with VITE_MATRIX_HOMESERVER_URL; (6) build succeeds with no errors. Clean implementation following socket.js singleton pattern."
+    },
+    {
+      "id": "A2.2",
+      "title": "Create useMatrixAuth hook",
+      "completed_at": "2026-02-12T16:25:00Z",
+      "review_notes": "All 9 acceptance criteria verified: (1) client/src/hooks/useMatrixAuth.js exists; (2) Named export useMatrixAuth(); (3) Returns all 10 fields including 4 functions and 6 state values; (4) loginAsGuest reads localStorage 'hush_displayName' and calls registerGuest with initial_device_display_name; (5) After registration, stores credentials, recreates authenticated client, starts sync with initialSyncLimit 20; (6) logout calls destroyMatrixClient and clears userId/accessToken/deviceId; (7) isAuthenticated = userId !== null && accessToken !== null; (8) Error state captures failures in try-catch blocks; (9) All 4 functions wrapped in useCallback. Clean implementation following useDevices.js pattern. Future-use login/register functions properly implemented."
+    }
+  ],
+  "last_architect_output": "Iteration 5 -> Reviewed task A2.2. All 9 acceptance criteria verified: useMatrixAuth.js exists with named export, returns 10 fields (4 memoized functions + 6 state values), loginAsGuest reads displayName from localStorage and calls registerGuest, credentials stored and sync started after auth, logout calls destroyMatrixClient, isAuthenticated derived correctly, error handling in place, all functions use useCallback. Moving A2.2 to completed. Assigning A2.3: Update Home.jsx to integrate Matrix auth before existing API calls. Must call loginAsGuest() first, then createRoom()/joinRoom() based on mode, store matrixRoomId in sessionStorage, keep existing JWT flow for mediasoup compatibility.",
+  "last_programmer_output": "Task A2.3 completed successfully. Modified client/src/pages/Home.jsx to integrate Matrix authentication and room operations into the existing flow: (1) Added imports for useMatrixAuth hook from '../hooks/useMatrixAuth' and getMatrixClient from '../lib/matrixClient', (2) Destructured loginAsGuest, isLoading as matrixLoading, and error as matrixError from useMatrixAuth hook at line 191, (3) Updated handleSubmit function to implement the new 3-step flow: Step 1 - Call await loginAsGuest() immediately after localStorage.setItem('hush_displayName', displayName) and before any API calls, with error check for matrixError; Step 2 - Create or join Matrix room based on mode: for 'create' mode, call client.createRoom() with name, visibility: 'private', preset: 'private_chat', and initial_state containing m.room.encryption with algorithm 'm.megolm.v1.aes-sha2' for E2EE, extracting room.room_id; for 'join' mode, construct room alias as #${roomName}:${serverName} using VITE_MATRIX_SERVER_NAME env var with 'localhost' fallback, call client.joinRoom(roomAlias), extracting room.roomId; store Matrix room ID in sessionStorage as 'hush_matrixRoomId'; Step 3 - Keep existing /api/rooms/create or /api/rooms/join API calls with unchanged request/response handling for JWT/mediasoup compatibility (temporary, removed in Milestone B), (4) Updated error display at line 447 to show either error or matrixError using logical OR operator, (5) Updated submit button disabled state at line 496 to include matrixLoading alongside loading, and updated button text condition to reflect both loading states. Verified clean build with npm run build (2.27s, no errors, 8 chunks). All 10 acceptance criteria met: useMatrixAuth imported and used, getMatrixClient imported, handleSubmit calls loginAsGuest before API calls, createRoom called for 'create' mode with E2EE, joinRoom called for 'join' mode with room alias, matrixRoomId stored in sessionStorage, existing API calls preserved, Matrix errors displayed, loading state reflects both operations, build succeeds.",
+  "files_created": [
+    ".orchestra/PLAN.md",
+    "synapse/homeserver.yaml.template",
+    "synapse/MATRIX_SERVER_NAME.log.config",
+    "scripts/generate-synapse-config.sh",
+    "synapse/README.md",
+    "caddy/Caddyfile",
+    "scripts/test-synapse.sh",
+    "client/src/lib/matrixClient.js",
+    "client/.env.example",
+    "client/src/hooks/useMatrixAuth.js"
+  ],
+  "feedback_resolved": [],
+  "status": "running"
+}
