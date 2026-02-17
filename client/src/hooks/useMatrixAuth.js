@@ -1,9 +1,14 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   createMatrixClient,
   getMatrixClient,
   destroyMatrixClient,
 } from '../lib/matrixClient';
+import {
+  getStoredCredentials,
+  setStoredCredentials,
+  clearStoredCredentials,
+} from '../lib/authStorage';
 
 /** IndexedDB-safe prefix for Rust crypto store. One store per account to avoid "account in the store doesn't match" errors. */
 function cryptoStorePrefix(userId, deviceId) {
@@ -33,6 +38,8 @@ export function useMatrixAuth() {
   const [userId, setUserId] = useState(null);
   const [accessToken, setAccessToken] = useState(null);
   const [deviceId, setDeviceId] = useState(null);
+  const [rehydrationAttempted, setRehydrationAttempted] = useState(false);
+  const [cryptoError, setCryptoError] = useState(null);
 
   const isAuthenticated = userId !== null && accessToken !== null;
 
@@ -86,8 +93,7 @@ export function useMatrixAuth() {
         await authenticatedClient.setDisplayName(displayName);
       }
 
-      // Initialize Rust crypto for E2EE support (matrix-js-sdk v40+). Use per-account store so
-      // multiple users/tabs do not share one IndexedDB and hit "account in the store doesn't match".
+      // Initialize Rust crypto; block app if it fails (no unencrypted use)
       if (authenticatedClient) {
         try {
           const prefix = cryptoStorePrefix(
@@ -96,15 +102,22 @@ export function useMatrixAuth() {
           );
           await authenticatedClient.initRustCrypto({ cryptoDatabasePrefix: prefix });
           console.log('[useMatrixAuth] Rust crypto initialized successfully');
+          setCryptoError(null);
         } catch (cryptoErr) {
           console.error('[useMatrixAuth] Crypto initialization failed:', cryptoErr);
-          // Non-fatal: continue without E2EE if crypto init fails
+          setCryptoError(
+            cryptoErr?.message || 'Encryption unavailable. Hush requires E2EE to function.',
+          );
+          setUserId(null);
+          setAccessToken(null);
+          setDeviceId(null);
+          setIsLoading(false);
+          return;
         }
       }
 
       // Start sync and wait for initial sync to complete
       if (authenticatedClient) {
-        // Create a promise that resolves when sync reaches PREPARED or SYNCING state
         const syncPromise = new Promise((resolve, reject) => {
           const onSync = (state, prevState, data) => {
             if (state === 'PREPARED' || state === 'SYNCING') {
@@ -118,14 +131,25 @@ export function useMatrixAuth() {
           authenticatedClient.on('sync', onSync);
         });
 
-        // Start client and wait for initial sync to complete
         const startPromise = authenticatedClient.startClient({ initialSyncLimit: 20 });
         await Promise.all([startPromise, syncPromise]);
+      }
+
+      if (authenticatedClient) {
+        const baseUrl =
+          authenticatedClient.getHomeserverUrl?.() ||
+          import.meta.env.VITE_MATRIX_HOMESERVER_URL ||
+          window.location.origin;
+        setStoredCredentials({
+          userId: response.user_id,
+          deviceId: response.device_id,
+          accessToken: response.access_token,
+          baseUrl,
+        });
       }
     } catch (err) {
       console.error('[useMatrixAuth] Anonymous registration failed:', err);
       setError(err);
-      // Clear partial state on failure
       setUserId(null);
       setAccessToken(null);
       setDeviceId(null);
@@ -164,7 +188,6 @@ export function useMatrixAuth() {
         deviceId: response.device_id,
       });
 
-      // Initialize Rust crypto with per-account store (see loginAsGuest).
       const authenticatedClient = getMatrixClient();
       if (authenticatedClient) {
         try {
@@ -173,16 +196,35 @@ export function useMatrixAuth() {
             authenticatedClient.getDeviceId(),
           );
           await authenticatedClient.initRustCrypto({ cryptoDatabasePrefix: prefix });
-          console.log('[useMatrixAuth] Rust crypto initialized successfully');
+          setCryptoError(null);
         } catch (cryptoErr) {
           console.error('[useMatrixAuth] Crypto initialization failed:', cryptoErr);
-          // Non-fatal: continue without E2EE if crypto init fails
+          setCryptoError(
+            cryptoErr?.message || 'Encryption unavailable. Hush requires E2EE to function.',
+          );
+          setUserId(null);
+          setAccessToken(null);
+          setDeviceId(null);
+          setIsLoading(false);
+          return;
         }
       }
 
-      // Start sync
       if (authenticatedClient) {
         await authenticatedClient.startClient({ initialSyncLimit: 20 });
+      }
+
+      if (authenticatedClient) {
+        const baseUrl =
+          authenticatedClient.getHomeserverUrl?.() ||
+          import.meta.env.VITE_MATRIX_HOMESERVER_URL ||
+          window.location.origin;
+        setStoredCredentials({
+          userId: response.user_id,
+          deviceId: response.device_id,
+          accessToken: response.access_token,
+          baseUrl,
+        });
       }
     } catch (err) {
       console.error('[useMatrixAuth] Login failed:', err);
@@ -234,7 +276,6 @@ export function useMatrixAuth() {
         await authenticatedClient.setDisplayName(displayName);
       }
 
-      // Initialize Rust crypto with per-account store (see loginAsGuest).
       if (authenticatedClient) {
         try {
           const prefix = cryptoStorePrefix(
@@ -242,16 +283,35 @@ export function useMatrixAuth() {
             authenticatedClient.getDeviceId(),
           );
           await authenticatedClient.initRustCrypto({ cryptoDatabasePrefix: prefix });
-          console.log('[useMatrixAuth] Rust crypto initialized successfully');
+          setCryptoError(null);
         } catch (cryptoErr) {
           console.error('[useMatrixAuth] Crypto initialization failed:', cryptoErr);
-          // Non-fatal: continue without E2EE if crypto init fails
+          setCryptoError(
+            cryptoErr?.message || 'Encryption unavailable. Hush requires E2EE to function.',
+          );
+          setUserId(null);
+          setAccessToken(null);
+          setDeviceId(null);
+          setIsLoading(false);
+          return;
         }
       }
 
-      // Start sync
       if (authenticatedClient) {
         await authenticatedClient.startClient({ initialSyncLimit: 20 });
+      }
+
+      if (authenticatedClient) {
+        const baseUrl =
+          authenticatedClient.getHomeserverUrl?.() ||
+          import.meta.env.VITE_MATRIX_HOMESERVER_URL ||
+          window.location.origin;
+        setStoredCredentials({
+          userId: response.user_id,
+          deviceId: response.device_id,
+          accessToken: response.access_token,
+          baseUrl,
+        });
       }
     } catch (err) {
       console.error('[useMatrixAuth] Registration failed:', err);
@@ -268,13 +328,16 @@ export function useMatrixAuth() {
    * Logout current user and cleanup Matrix client.
    * Calls destroyMatrixClient() which stops sync and clears session.
    */
+  const clearCryptoError = useCallback(() => setCryptoError(null), []);
+
   const logout = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setCryptoError(null);
 
     try {
+      clearStoredCredentials();
       await destroyMatrixClient();
-      // Clear auth state
       setUserId(null);
       setAccessToken(null);
       setDeviceId(null);
@@ -285,6 +348,67 @@ export function useMatrixAuth() {
       setIsLoading(false);
     }
   }, []);
+
+  // Rehydrate from sessionStorage on mount (e.g. after refresh)
+  useEffect(() => {
+    if (userId !== null) {
+      setRehydrationAttempted(true);
+      return;
+    }
+
+    const stored = getStoredCredentials();
+    if (!stored) {
+      setRehydrationAttempted(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        createMatrixClient({
+          baseUrl: stored.baseUrl,
+          userId: stored.userId,
+          accessToken: stored.accessToken,
+          deviceId: stored.deviceId,
+        });
+        const client = getMatrixClient();
+        if (!client || cancelled) {
+          setRehydrationAttempted(true);
+          return;
+        }
+
+        const prefix = cryptoStorePrefix(stored.userId, stored.deviceId);
+        await client.initRustCrypto({ cryptoDatabasePrefix: prefix });
+        if (cancelled) {
+          setRehydrationAttempted(true);
+          return;
+        }
+
+        await client.startClient({ initialSyncLimit: 20 });
+        if (cancelled) {
+          setRehydrationAttempted(true);
+          return;
+        }
+
+        setUserId(stored.userId);
+        setAccessToken(stored.accessToken);
+        setDeviceId(stored.deviceId);
+      } catch (err) {
+        console.error('[useMatrixAuth] Rehydration failed:', err);
+        clearStoredCredentials();
+        if (getMatrixClient()) {
+          destroyMatrixClient().catch(() => {});
+        }
+      } finally {
+        if (!cancelled) setRehydrationAttempted(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   return {
     loginAsGuest,
@@ -297,5 +421,8 @@ export function useMatrixAuth() {
     userId,
     accessToken,
     deviceId,
+    rehydrationAttempted,
+    cryptoError,
+    clearCryptoError,
   };
 }

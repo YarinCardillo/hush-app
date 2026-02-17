@@ -98,6 +98,7 @@ export default function Controls({
   isWebcamOn,
   quality,
   isMobile = false,
+  mediaE2EEUnavailable = false,
   onScreenShare,
   onSwitchScreen,
   onMic,
@@ -107,15 +108,23 @@ export default function Controls({
   onLeave,
 }) {
   const btnSize = isMobile ? '52px' : '44px';
+  const mediaDisabled = mediaE2EEUnavailable;
+  const mediaTitle = mediaE2EEUnavailable ? 'Media encryption unavailable' : undefined;
+
   return (
     <div style={styles.bar}>
       {/* Screen Share */}
       <button
-        style={{ ...styles.btn(isScreenSharing), height: btnSize }}
+        style={{
+          ...styles.btn(isScreenSharing),
+          height: btnSize,
+          ...(mediaDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
+        }}
         onClick={onScreenShare}
-        disabled={!isReady || !IS_SCREEN_SHARE_SUPPORTED}
+        disabled={!isReady || !IS_SCREEN_SHARE_SUPPORTED || mediaDisabled}
         title={
-          !IS_SCREEN_SHARE_SUPPORTED
+          mediaTitle ||
+          (!IS_SCREEN_SHARE_SUPPORTED
             ? 'Screen sharing not supported on this device'
             : isScreenSharing
               ? 'Stop sharing'
@@ -156,10 +165,15 @@ export default function Controls({
       {/* Microphone + device switch */}
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
         <button
-          style={{ ...styles.iconBtn(isMicOn), width: btnSize, height: btnSize }}
+          style={{
+            ...styles.iconBtn(isMicOn),
+            width: btnSize,
+            height: btnSize,
+            ...(mediaDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
+          }}
           onClick={onMic}
-          disabled={!isReady}
-          title={isMicOn ? 'Mute mic' : 'Unmute mic'}
+          disabled={!isReady || mediaDisabled}
+          title={mediaTitle || (isMicOn ? 'Mute mic' : 'Unmute mic')}
         >
           {isMicOn ? (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -194,10 +208,15 @@ export default function Controls({
       {/* Webcam + device switch */}
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
         <button
-          style={{ ...styles.iconBtn(isWebcamOn), width: btnSize, height: btnSize }}
+          style={{
+            ...styles.iconBtn(isWebcamOn),
+            width: btnSize,
+            height: btnSize,
+            ...(mediaDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
+          }}
           onClick={onWebcam}
-          disabled={!isReady}
-          title={isWebcamOn ? 'Turn off camera' : 'Turn on camera'}
+          disabled={!isReady || mediaDisabled}
+          title={mediaTitle || (isWebcamOn ? 'Turn off camera' : 'Turn on camera')}
         >
           {isWebcamOn ? (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

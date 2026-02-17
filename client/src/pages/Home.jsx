@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { API_URL, APP_VERSION } from '../utils/constants';
-import { useMatrixAuth } from '../hooks/useMatrixAuth';
+import { APP_VERSION } from '../utils/constants';
+import { useAuth } from '../contexts/AuthContext';
 import { getMatrixClient } from '../lib/matrixClient';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your', 'privacy.'];
@@ -189,16 +189,19 @@ const styles = {
 
 export default function Home() {
   const navigate = useNavigate();
-  const { loginAsGuest, isLoading: matrixLoading, error: matrixError } = useMatrixAuth();
+  const {
+    loginAsGuest,
+    isLoading: matrixLoading,
+    error: matrixError,
+    cryptoError,
+    clearCryptoError,
+  } = useAuth();
   const [mode, setMode] = useState('create');
   const [roomName, setRoomName] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('hush_displayName') || '');
   const [error, setError] = useState('');
-  const [poolFull, setPoolFull] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [serverStatus, setServerStatus] = useState(null);
-  const [serverOnline, setServerOnline] = useState(null);
 
   const spotlightRef = useRef(null);
   const rafRef = useRef(null);
@@ -213,18 +216,6 @@ export default function Home() {
       setMode('join');
       sessionStorage.removeItem('hush_pendingRoom');
     }
-  }, []);
-
-  useEffect(() => {
-    fetch(`${API_URL}/api/status`)
-      .then((r) => r.json())
-      .then((data) => {
-        setServerStatus(data);
-        setServerOnline(true);
-      })
-      .catch(() => {
-        setServerOnline(false);
-      });
   }, []);
 
   useEffect(() => {
@@ -264,7 +255,6 @@ export default function Home() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setPoolFull(null);
     setLoading(true);
 
     try {
@@ -296,11 +286,18 @@ export default function Home() {
               room_alias_name: actualRoomName,
               visibility: 'private',
               preset: 'trusted_private_chat',
-              initial_state: [{
-                type: 'm.room.encryption',
-                state_key: '',
-                content: { algorithm: 'm.megolm.v1.aes-sha2' },
-              }],
+              initial_state: [
+                {
+                  type: 'm.room.encryption',
+                  state_key: '',
+                  content: { algorithm: 'm.megolm.v1.aes-sha2' },
+                },
+                {
+                  type: 'm.room.guest_access',
+                  state_key: '',
+                  content: { guest_access: 'can_join' },
+                },
+              ],
             });
 
             matrixRoomId = createResponse.room_id;
@@ -364,35 +361,12 @@ export default function Home() {
         }
       }
 
-      // Store Matrix room ID
       sessionStorage.setItem('hush_matrixRoomId', matrixRoomId);
-
-      // Step 3: Call existing API for JWT/mediasoup (temporary, removed in Milestone B)
-      const endpoint = mode === 'create' ? '/api/rooms/create' : '/api/rooms/join';
-
-      const res = await fetch(`${API_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomName: effectiveRoomName, password, displayName }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (data.error === 'FREE_POOL_FULL') {
-          setPoolFull(data);
-          return;
-        }
-        throw new Error(data.error || 'Something went wrong');
-      }
-
-      sessionStorage.setItem('hush_token', data.token);
-      sessionStorage.setItem('hush_peerId', data.peerId);
-      sessionStorage.setItem('hush_roomName', data.roomName);
+      sessionStorage.setItem('hush_roomName', effectiveRoomName);
+      sessionStorage.setItem('hush_displayName', displayName);
       sessionStorage.setItem('hush_roomPassword', password);
 
-      const roomPath = `/room/${encodeURIComponent(data.roomName)}`;
-      navigate(roomPath);
+      navigate(`/room/${encodeURIComponent(effectiveRoomName)}`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -400,10 +374,34 @@ export default function Home() {
     }
   };
 
-  const freePool = serverStatus?.pools?.free;
-  const capacityPercent = freePool
-    ? Math.round((freePool.active / freePool.max) * 100)
-    : 0;
+  if (cryptoError) {
+    return (
+      <div
+        style={{
+          ...styles.page,
+          flexDirection: 'column',
+          gap: '24px',
+          textAlign: 'center',
+          padding: '24px',
+        }}
+      >
+        <div style={{ color: 'var(--hush-danger)', fontSize: '1rem', maxWidth: '360px' }}>
+          {cryptoError}
+        </div>
+        <div style={{ color: 'var(--hush-text-secondary)', fontSize: '0.85rem', maxWidth: '360px' }}>
+          Your browser may not support WebAssembly. Please use a modern Chromium-based browser.
+        </div>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={clearCryptoError}
+          style={{ padding: '10px 20px' }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.page} onMouseMove={handleMouseMove}>
@@ -547,45 +545,6 @@ export default function Home() {
               <div style={styles.error}>{error || matrixError?.message}</div>
             )}
 
-            {poolFull && (
-              <div style={{
-                padding: '16px',
-                background: 'var(--hush-elevated)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--hush-border)',
-              }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>
-                  {poolFull.message}
-                </div>
-                <div style={{
-                  fontSize: '0.75rem',
-                  fontFamily: 'var(--font-mono)',
-                  color: 'var(--hush-text-secondary)',
-                  marginBottom: '12px',
-                }}>
-                  {poolFull.pools?.active ?? '?'}/{poolFull.pools?.max ?? '?'} slots used
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => { setPoolFull(null); handleSubmit(new Event('submit')); }}
-                    style={{ width: '100%', fontSize: '0.8rem' }}
-                  >
-                    try again
-                  </button>
-                  <a
-                    href="https://github.com/YarinCardillo/hush-app#self-hosting-docker"
-                    target="_blank"
-                    rel="noopener"
-                    className="btn btn-secondary"
-                    style={{ width: '100%', fontSize: '0.8rem', textDecoration: 'none', textAlign: 'center' }}
-                  >
-                    self-host (free, unlimited)
-                  </a>
-                </div>
-              </div>
-            )}
-
             {/* CTA button with moving border */}
             <div style={styles.movingBorderWrapper}>
               <div style={styles.movingBorderTrack}>
@@ -602,50 +561,6 @@ export default function Home() {
             </div>
           </form>
 
-          {freePool && (
-            <div style={{
-              marginTop: '16px',
-              padding: '12px 14px',
-              background: 'var(--hush-surface)',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--hush-border)',
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{
-                  fontSize: '0.7rem',
-                  fontWeight: 600,
-                  color: 'var(--hush-text-muted)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
-                }}>
-                  free pool
-                </span>
-                <span style={{
-                  fontSize: '0.7rem',
-                  fontFamily: 'var(--font-mono)',
-                  color: 'var(--hush-text-secondary)',
-                }}>
-                  {freePool.active}/{freePool.max}
-                </span>
-              </div>
-              <div style={{
-                width: '100%',
-                height: '3px',
-                background: 'var(--hush-black)',
-                borderRadius: '2px',
-                overflow: 'hidden',
-              }}>
-                <div style={{
-                  width: `${capacityPercent}%`,
-                  height: '100%',
-                  background: capacityPercent > 80 ? 'var(--hush-amber)' : 'var(--hush-live)',
-                  borderRadius: '2px',
-                  transition: 'width 400ms var(--ease-out)',
-                }} />
-              </div>
-            </div>
-          )}
-
           <div style={styles.footer}>
             <div>
               hush is open source and self-hostable.{' '}
@@ -655,15 +570,6 @@ export default function Home() {
             </div>
             <div style={styles.footerMeta}>
               <span>v{APP_VERSION}</span>
-              {serverOnline !== null && (
-                <>
-                  <span style={{ opacity: 0.3 }}>·</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={styles.statusDot(serverOnline)} />
-                    {serverOnline ? 'online' : 'offline'}
-                  </span>
-                </>
-              )}
             </div>
           </div>
         </motion.div>

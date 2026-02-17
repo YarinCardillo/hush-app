@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Track } from 'livekit-client';
+import { useAuth } from '../contexts/AuthContext';
 import { useRoom } from '../hooks/useRoom';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDevices } from '../hooks/useDevices';
@@ -208,7 +209,10 @@ export default function Room() {
     loadingScreens,
     watchScreen,
     unwatchScreen,
+    mediaE2EEUnavailable,
   } = useRoom();
+
+  const { isAuthenticated, rehydrationAttempted } = useAuth();
 
   const {
     audioDevices,
@@ -222,25 +226,39 @@ export default function Room() {
     requestPermission,
   } = useDevices();
 
+  // Require Matrix auth (and optional room session data)
   useEffect(() => {
-    const token = sessionStorage.getItem('hush_token');
-    if (!token) {
-      navigate('/');
+    if (!rehydrationAttempted) return;
+    if (!isAuthenticated) {
+      navigate('/', { replace: true });
       return;
     }
+    const roomId = sessionStorage.getItem('hush_matrixRoomId');
+    const roomNameStored = sessionStorage.getItem('hush_roomName');
+    if (!roomId || !roomNameStored) {
+      navigate('/', { replace: true });
+      return;
+    }
+  }, [rehydrationAttempted, isAuthenticated, navigate]);
+
+  useEffect(() => {
+    if (!rehydrationAttempted || !isAuthenticated) return;
+
+    const roomId = sessionStorage.getItem('hush_matrixRoomId');
+    const roomNameStored = sessionStorage.getItem('hush_roomName');
+    if (!roomId || !roomNameStored) return;
 
     const displayName = sessionStorage.getItem('hush_displayName') || 'Anonymous';
     const roomPassword = sessionStorage.getItem('hush_roomPassword');
+    const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
 
-    // Connect to LiveKit room with password-derived E2EE key
-    connectRoom(roomName, displayName, roomPassword).then(() => {
+    connectRoom(roomName, displayName, roomPassword, matrixRoomId).then(() => {
       setConnected(true);
       console.log('[room] Connected to LiveKit room');
     }).catch((err) => {
       console.error('[room] Connection failed:', err);
       if (err.message === 'Room not found') {
-        sessionStorage.removeItem('hush_token');
-        navigate('/');
+        navigate('/', { replace: true });
       }
     });
 
@@ -253,7 +271,7 @@ export default function Room() {
     return () => {
       disconnectRoom();
     };
-  }, [navigate, connectRoom, disconnectRoom, roomName]);
+  }, [rehydrationAttempted, isAuthenticated, navigate, connectRoom, disconnectRoom, roomName]);
 
   // Ensure only one sidebar is open at a time
   useEffect(() => {
@@ -472,6 +490,18 @@ export default function Room() {
   const totalCards = allStreams.length + unwatchedScreens.length;
   const gridStyle = getGridStyle(totalCards, breakpoint);
 
+  if (!rehydrationAttempted) {
+    return (
+      <div style={{ ...styles.page, alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ color: 'var(--hush-text-muted)' }}>Loading…</span>
+      </div>
+    );
+  }
+
+  if (rehydrationAttempted && !isAuthenticated) {
+    return null; // useEffect will redirect to /
+  }
+
   return (
     <div style={styles.page}>
       <div style={styles.header}>
@@ -654,6 +684,7 @@ export default function Room() {
         isWebcamOn={isWebcamOn}
         quality={quality}
         isMobile={isMobile}
+        mediaE2EEUnavailable={mediaE2EEUnavailable}
         onScreenShare={handleScreenShare}
         onSwitchScreen={handleSwitchScreen}
         onMic={handleMic}

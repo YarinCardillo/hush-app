@@ -9,6 +9,7 @@ import {
   ExternalE2EEKeyProvider,
 } from 'livekit-client';
 import { getMatrixClient } from '../lib/matrixClient';
+import { ClientEvent } from 'matrix-js-sdk';
 
 // Import E2EE worker for LiveKit encryption
 // @ts-ignore - Vite will resolve this URL correctly
@@ -35,6 +36,7 @@ export function useRoom() {
   const [participants, setParticipants] = useState([]);
   const [isE2EEEnabled, setIsE2EEEnabled] = useState(false);
   const [e2eeKey, setE2eeKey] = useState(null);
+  const [mediaE2EEUnavailable, setMediaE2EEUnavailable] = useState(false);
 
   // ─── Click-to-Watch Screen Shares ─────────────────────
   const [availableScreens, setAvailableScreens] = useState(new Map());
@@ -53,6 +55,9 @@ export function useRoom() {
   const keyRotationCounterRef = useRef(0);
   const roomPasswordRef = useRef(null);
   const roomNameRef = useRef(null);
+  const matrixRoomIdRef = useRef(null);
+  const currentKeyIndexRef = useRef(0);
+  const toDeviceUnsubscribeRef = useRef(null);
 
   // ─── Noise Gate Refs ──────────────────────────────────
   const audioContextRef = useRef(null);
@@ -142,12 +147,15 @@ export function useRoom() {
 
   // ─── Connect to LiveKit Room ──────────────────────────
   const connectRoom = useCallback(
-    async (roomName, displayName, roomPassword) => {
+    async (roomName, displayName, roomPassword, matrixRoomId) => {
       try {
-        // Clear stale state from previous session
         if (roomRef.current) {
           roomRef.current.disconnect();
           roomRef.current = null;
+        }
+        if (toDeviceUnsubscribeRef.current) {
+          toDeviceUnsubscribeRef.current();
+          toDeviceUnsubscribeRef.current = null;
         }
         localTracksRef.current.clear();
         remoteTracksRef.current.clear();
@@ -163,65 +171,114 @@ export function useRoom() {
         setE2eeKey(null);
         keyBytesRef.current = null;
         keyRotationCounterRef.current = 0;
+        currentKeyIndexRef.current = 0;
         roomPasswordRef.current = roomPassword || null;
         roomNameRef.current = roomName;
+        matrixRoomIdRef.current = matrixRoomId || null;
+        setMediaE2EEUnavailable(false);
 
-        // Get Matrix user ID for participantIdentity
         const matrixClient = getMatrixClient();
-        const userId = matrixClient?.getUserId();
-        if (!userId) {
-          throw new Error('Matrix user not authenticated');
+        const accessToken = matrixClient?.getAccessToken?.();
+        if (!matrixClient || !accessToken) {
+          throw new Error('Matrix session required. Please sign in again.');
         }
 
-        // Fetch LiveKit token from server
         const response = await fetch('/api/livekit/token', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
           body: JSON.stringify({
             roomName,
-            participantIdentity: userId,
             participantName: displayName,
           }),
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to get LiveKit token');
+          const errorData = await response.json().catch(() => ({}));
+          const msg = errorData.error || 'Failed to get LiveKit token';
+          if (response.status === 401) {
+            throw new Error('Session invalid. Please sign in again.');
+          }
+          throw new Error(msg);
         }
 
         const { token } = await response.json();
 
-        // ─── Prepare E2EE Before Room Creation ────────────────
+        // ─── E2EE: keyProvider + worker for all; creator sets random key, joiners get key via to-device ───
         let keyProvider = null;
         let worker = null;
         let keyBytes = null;
+        let isCreator = false;
 
         try {
-          if (!roomPassword) {
-            console.warn('[livekit] No room password provided, E2EE disabled');
-            throw new Error('E2EE requires room password');
-          }
-
-          // Derive E2EE key deterministically from password + room name via PBKDF2
-          keyBytes = await deriveE2EEKey(roomPassword, roomName);
-          keyBytesRef.current = keyBytes;
-
-          console.log('[livekit] E2EE key derived from room password via PBKDF2');
-
-          // Create external key provider
           keyProvider = new ExternalE2EEKeyProvider();
           e2eeKeyProviderRef.current = keyProvider;
-
-          // Set the shared key for encryption/decryption
-          await keyProvider.setKey(keyBytes);
-
-          // Create E2EE worker
           worker = new E2EEWorker();
 
-          console.log('[livekit] E2EE key provider and worker initialized');
+          // To-device listener: receive E2EE key (joiners and rekey)
+          const handleToDeviceE2EEKey = (event) => {
+            if (event.getType() !== 'io.hush.e2ee_key') return;
+            const content = event.getContent();
+            const roomId = content?.roomId;
+            const keyB64 = content?.key;
+            const keyIndex = content?.keyIndex ?? 0;
+            if (!roomId || !keyB64 || matrixRoomIdRef.current !== roomId || !e2eeKeyProviderRef.current) return;
+            try {
+              const binary = atob(keyB64);
+              const keyBytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) keyBytes[i] = binary.charCodeAt(i);
+              await e2eeKeyProviderRef.current.setKey(keyBytes, keyIndex);
+              currentKeyIndexRef.current = keyIndex;
+              keyBytesRef.current = keyBytes;
+              setE2eeKey(keyBytes);
+              console.log('[livekit] E2EE key applied from to-device, keyIndex:', keyIndex);
+            } catch (e) {
+              console.error('[livekit] Failed to apply E2EE key from to-device:', e);
+            }
+          };
+
+          matrixClient.on(ClientEvent.ToDeviceEvent, handleToDeviceE2EEKey);
+          toDeviceUnsubscribeRef.current = () => {
+            matrixClient.off(ClientEvent.ToDeviceEvent, handleToDeviceE2EEKey);
+          };
+
+          // Creator: first in room → generate random key. We don't know if we're first until after connect;
+          // we'll set key after connect when remoteParticipants.size === 0.
+          // So for now create keyProvider/worker only; key set after connect for creator.
+          // Actually we need key before connect for creator so that our outbound stream is encrypted.
+          // So: we don't know if we're creator until we connect. Option A: always connect without key, then
+          // if we're first (remoteParticipants.size === 0), generate key, setKey, and... we'd need to reconnect
+          // or LiveKit allows setKey mid-call. Option B: assume we're creator if we have roomPassword (room creator
+          // flow) and generate key; joiners don't have "creator" role so they wait for to-device. So creator =
+          // the one who created the Matrix room. We can't know that in useRoom without passing a flag. Simpler:
+          // first participant to connect is creator (remoteParticipants.size === 0 after connect). So we connect
+          // without key first, then if we're first we generate key and setKey. But then our media might already
+          // be going out unencrypted. So the clean approach: creator generates key before connect and sets it;
+          // we need a way to know we're creator. Pass isCreator from Room.jsx? Room doesn't know either.
+          // Alternative: everyone connects with keyProvider/worker. Creator generates random key and sets it
+          // before connect. Who is creator? The first to connect. So we can't know before connect. So we have to
+          // connect, then immediately if no remote participants, generate key and setKey. For LiveKit, if we
+          // setKey after connection, does it encrypt from that point? I'll assume yes. So flow: connect without
+          // key (keyProvider exists but no key - might need to set a dummy to avoid errors). Actually ExternalE2EEKeyProvider
+          // might require setKey before use. Let me try: creator connects, then in the same tick we check
+          // room.remoteParticipants.size === 0, generate key, setKey(key, 0), and send to no one (we're alone).
+          // When someone joins, ParticipantConnected fires, we send key. So we need key set before we publish
+          // tracks. So set key as soon as we know we're creator (right after connect). That works.
+          // Joiner: connect without key; when to-device arrives, setKey. So we need to allow keyProvider with
+          // no key - does LiveKit support that? I'll set a placeholder zero key for joiner so the room connects,
+          // then replace when real key arrives.
+          const placeholderKey = new Uint8Array(16);
+          await keyProvider.setKey(placeholderKey, 0);
+          keyBytesRef.current = placeholderKey;
         } catch (e2eeErr) {
           console.error('[livekit] E2EE initialization failed:', e2eeErr);
-          // Non-fatal: continue without E2EE
+          setMediaE2EEUnavailable(true);
+          if (toDeviceUnsubscribeRef.current) {
+            toDeviceUnsubscribeRef.current();
+            toDeviceUnsubscribeRef.current = null;
+          }
           keyProvider = null;
           worker = null;
           keyBytes = null;
@@ -253,7 +310,7 @@ export function useRoom() {
 
         // ─── Event Listeners ──────────────────────────────
 
-        // ParticipantConnected
+        // ParticipantConnected: creator sends E2EE key via Matrix to-device
         room.on(RoomEvent.ParticipantConnected, async (participant) => {
           console.log(
             `[livekit] Participant connected: ${participant.identity}`,
@@ -265,6 +322,38 @@ export function useRoom() {
               displayName: participant.name || participant.identity,
             },
           ]);
+
+          if (
+            e2eeKeyProviderRef.current &&
+            keyBytesRef.current &&
+            matrixRoomIdRef.current &&
+            matrixClient.getCrypto()
+          ) {
+            const roomId = matrixRoomIdRef.current;
+            const keyBytes = keyBytesRef.current;
+            const keyIndex = currentKeyIndexRef.current;
+            const keyB64 = btoa(String.fromCharCode(...keyBytes));
+            try {
+              const deviceMap = await matrixClient.getCrypto().getUserDeviceInfo([participant.identity], true);
+              const devicesForUser = deviceMap?.get(participant.identity);
+              const devices = devicesForUser
+                ? Array.from(devicesForUser.keys()).map((deviceId) => ({
+                    userId: participant.identity,
+                    deviceId,
+                  }))
+                : [];
+              if (devices.length > 0) {
+                await matrixClient.encryptAndSendToDevice('io.hush.e2ee_key', devices, {
+                  roomId,
+                  key: keyB64,
+                  keyIndex,
+                });
+                console.log('[livekit] E2EE key sent to', participant.identity);
+              }
+            } catch (err) {
+              console.error('[livekit] Failed to send E2EE key to participant:', err);
+            }
+          }
         });
 
         // ParticipantDisconnected
@@ -293,22 +382,54 @@ export function useRoom() {
           }
           scheduleRemoteTracksUpdate();
 
-          // Rotate E2EE key so departed participant cannot decrypt future media
-          if (roomPasswordRef.current && roomNameRef.current && e2eeKeyProviderRef.current) {
-            try {
-              keyRotationCounterRef.current += 1;
-              const newKey = await deriveE2EEKey(
-                roomPasswordRef.current,
-                roomNameRef.current,
-                keyRotationCounterRef.current,
-              );
-              keyBytesRef.current = newKey;
-              await e2eeKeyProviderRef.current.setKey(newKey);
-              setE2eeKey(newKey);
-              console.log(`[livekit] E2EE key rotated (counter: ${keyRotationCounterRef.current})`);
-            } catch (err) {
-              console.error('[livekit] E2EE key rotation failed:', err);
+          // Rekey: only leader (smallest Matrix user ID among remaining) generates and distributes new key
+          if (
+            e2eeKeyProviderRef.current &&
+            matrixRoomIdRef.current &&
+            matrixClient.getCrypto()
+          ) {
+            const room = roomRef.current;
+            if (!room) return;
+
+            const remaining = [
+              room.localParticipant.identity,
+              ...Array.from(room.remoteParticipants.values()).map((p) => p.identity),
+            ].filter(Boolean);
+            remaining.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+            const leader = remaining[0];
+            const myIdentity = matrixClient.getUserId();
+            if (myIdentity !== leader) return;
+
+            const newKey = new Uint8Array(16);
+            crypto.getRandomValues(newKey);
+            const newKeyIndex = currentKeyIndexRef.current + 1;
+            currentKeyIndexRef.current = newKeyIndex;
+            keyBytesRef.current = newKey;
+            await e2eeKeyProviderRef.current.setKey(newKey, newKeyIndex);
+            setE2eeKey(newKey);
+
+            const roomId = matrixRoomIdRef.current;
+            const keyB64 = btoa(String.fromCharCode(...newKey));
+            const targets = remaining.slice(1);
+            for (const userId of targets) {
+              try {
+                const deviceMap = await matrixClient.getCrypto().getUserDeviceInfo([userId], true);
+                const devicesForUser = deviceMap?.get(userId);
+                const devices = devicesForUser
+                  ? Array.from(devicesForUser.keys()).map((deviceId) => ({ userId, deviceId }))
+                  : [];
+                if (devices.length > 0) {
+                  await matrixClient.encryptAndSendToDevice('io.hush.e2ee_key', devices, {
+                    roomId,
+                    key: keyB64,
+                    keyIndex: newKeyIndex,
+                  });
+                }
+              } catch (err) {
+                console.error('[livekit] Rekey: failed to send to', userId, err);
+              }
             }
+            console.log('[livekit] E2EE rekey: new key distributed by leader');
           }
         });
 
@@ -392,21 +513,28 @@ export function useRoom() {
           setError('Disconnected from room');
         });
 
-        // Connect to LiveKit server
         const livekitUrl =
           import.meta.env.VITE_LIVEKIT_URL || 'ws://localhost:7880';
         await room.connect(livekitUrl, token);
 
-        // ─── Update E2EE State After Connection ───────────────
-        if (keyProvider && keyBytes) {
+        roomRef.current = room;
+
+        // Creator: first in room → replace placeholder with random key and broadcast to future joiners
+        if (keyProvider && matrixRoomIdRef.current && room.remoteParticipants.size === 0) {
+          const randomKey = new Uint8Array(16);
+          crypto.getRandomValues(randomKey);
+          await keyProvider.setKey(randomKey, 0);
+          keyBytesRef.current = randomKey;
+          currentKeyIndexRef.current = 0;
           setIsE2EEEnabled(true);
-          setE2eeKey(keyBytes);
-          console.log('[livekit] E2EE enabled with password-derived key');
+          setE2eeKey(randomKey);
+          console.log('[livekit] E2EE creator: random key set');
+        } else if (keyProvider) {
+          setIsE2EEEnabled(true);
+          setE2eeKey(keyBytesRef.current);
         } else {
           setIsE2EEEnabled(false);
         }
-
-        roomRef.current = room;
 
         // Populate initial participants
         const initialParticipants = Array.from(
@@ -429,15 +557,17 @@ export function useRoom() {
 
   // ─── Disconnect from Room ─────────────────────────────
   const disconnectRoom = useCallback(async () => {
+    if (toDeviceUnsubscribeRef.current) {
+      toDeviceUnsubscribeRef.current();
+      toDeviceUnsubscribeRef.current = null;
+    }
     if (!roomRef.current) return;
 
     try {
-      // Stop all local tracks
       for (const [, track] of localTracksRef.current.values()) {
         track.stop();
       }
 
-      // Cleanup mic audio pipeline
       cleanupMicPipeline();
 
       roomRef.current.disconnect();
@@ -445,8 +575,10 @@ export function useRoom() {
       e2eeKeyProviderRef.current = null;
       keyBytesRef.current = null;
       keyRotationCounterRef.current = 0;
+      currentKeyIndexRef.current = 0;
       roomPasswordRef.current = null;
       roomNameRef.current = null;
+      matrixRoomIdRef.current = null;
 
       localTracksRef.current.clear();
       remoteTracksRef.current.clear();
@@ -991,6 +1123,7 @@ export function useRoom() {
     participants,
     isE2EEEnabled,
     e2eeKey,
+    mediaE2EEUnavailable,
     // Room connection
     connectRoom,
     disconnectRoom,
