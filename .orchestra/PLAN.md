@@ -1,214 +1,235 @@
-# Orchestra Plan — Hush v2 Migration (Cinny Fork)
+# Orchestra Plan — Hush E2EE Fix (Cinny-Inspired)
 
-This file mirrors the project's root PLAN.md for orchestra's task tracking.
-The master plan is in `/PLAN.md`. This file is read by the architect agent.
+This plan fixes the broken E2EE implementation by adopting patterns from Cinny's working codebase.
 
-## Current Focus: Milestone 1 — Foundation & Branding
-
-Hush v2 is a fork of Cinny with LiveKit media streaming added. This milestone establishes the foundation by applying Hush branding and design system to Cinny's codebase.
-
-**Background:**
-- Forked from Cinny v4.10.2 (working E2EE chat)
-- Need to add LiveKit for media streaming
-- Must preserve Hush's dark amber aesthetic
-- Reference hush-app v1 at `/Users/yarin/development/hush-app` for LiveKit patterns
+**Reference:** Cinny source at `/Users/yarin/development/hush-v2`
 
 ---
 
-## Task Breakdown
+## Current Problems
 
-### Milestone 1: Foundation & Branding
-
-#### Phase 1.1: Apply Hush Design System
-
-| Task ID | Title | Status |
-|---------|-------|--------|
-| 1.1.1 | Map Hush colors to Cinny theme tokens | pending |
-| 1.1.2 | Update Vanilla Extract theme files | pending |
-| 1.1.3 | Replace Inter font with Sora | pending |
-| 1.1.4 | Test theme in dev mode | pending |
-
-#### Phase 1.2: Update Branding
-
-| Task ID | Title | Status |
-|---------|-------|--------|
-| 1.2.1 | Replace Cinny logo with Hush logo | pending |
-| 1.2.2 | Update app name throughout UI | pending |
-| 1.2.3 | Update index.html metadata | pending |
-| 1.2.4 | Update favicon and PWA icons | pending |
-
-#### Phase 1.3: Build & Deploy Setup
-
-| Task ID | Title | Status |
-|---------|-------|--------|
-| 1.3.1 | Verify build works with new branding | pending |
-| 1.3.2 | Create docker-compose.yml (future) | pending |
-| 1.3.3 | Document dev setup in README | pending |
+| Issue | File | Problem |
+|-------|------|---------|
+| No state persistence | `matrixClient.js` | Missing IndexedDBStore |
+| No crypto persistence | `matrixClient.js` | Missing IndexedDBCryptoStore |
+| No secret storage | `matrixClient.js` | Missing cryptoCallbacks |
+| Crypto init order | `useMatrixAuth.js` | initRustCrypto() without store setup |
 
 ---
 
-### Milestone 2: LiveKit Integration
+## Reference: Cinny's Working Pattern
 
-#### Phase 2.1: Add Dependencies
+```javascript
+// From /Users/yarin/development/hush-v2/src/client/initMatrix.ts
 
-| Task ID | Title | Status |
-|---------|-------|--------|
-| 2.1.1 | Install livekit-client package | pending |
-| 2.1.2 | Install @livekit/components-react | pending |
-| 2.1.3 | Verify TypeScript types work | pending |
+import { IndexedDBStore, IndexedDBCryptoStore, createClient } from 'matrix-js-sdk';
 
-#### Phase 2.2: Port LiveKit Hooks
+const indexedDBStore = new IndexedDBStore({
+  indexedDB: global.indexedDB,
+  localStorage: global.localStorage,
+  dbName: 'web-sync-store',
+});
 
-| Task ID | Title | Status |
-|---------|-------|--------|
-| 2.2.1 | Convert useRoom.js to TypeScript | pending |
-| 2.2.2 | Port audioProcessing.js to TS | pending |
-| 2.2.3 | Port noiseGateWorklet.js | pending |
-| 2.2.4 | Create LiveKit types file | pending |
+const legacyCryptoStore = new IndexedDBCryptoStore(
+  global.indexedDB,
+  'crypto-store'
+);
 
-#### Phase 2.3: Integrate with Cinny
+const mx = createClient({
+  baseUrl: session.baseUrl,
+  accessToken: session.accessToken,
+  userId: session.userId,
+  store: indexedDBStore,
+  cryptoStore: legacyCryptoStore,
+  deviceId: session.deviceId,
+  timelineSupport: true,
+  cryptoCallbacks: cryptoCallbacks,
+  verificationMethods: ['m.sas.v1'],
+});
 
-| Task ID | Title | Status |
-|---------|-------|--------|
-| 2.3.1 | Find Cinny's voice channel component | pending |
-| 2.3.2 | Wire LiveKit Room to Matrix room | pending |
-| 2.3.3 | Add E2EE key distribution | pending |
-| 2.3.4 | Test basic audio/video works | pending |
-
----
-
-### Milestone 3: Media Features
-
-#### Phase 3.1: Screen Sharing
-
-| Task ID | Title | Status |
-|---------|-------|--------|
-| 3.1.1 | Port screen share logic from v1 | pending |
-| 3.1.2 | Add click-to-watch functionality | pending |
-| 3.1.3 | Test screen share E2EE | pending |
-
-#### Phase 3.2: Quality Controls
-
-| Task ID | Title | Status |
-|---------|-------|--------|
-| 3.2.1 | Port quality presets from v1 | pending |
-| 3.2.2 | Create quality picker UI | pending |
-| 3.2.3 | Add device picker modal | pending |
-
-#### Phase 3.3: Audio Processing
-
-| Task ID | Title | Status |
-|---------|-------|--------|
-| 3.3.1 | Integrate noise gate worklet | pending |
-| 3.3.2 | Add noise gate toggle UI | pending |
-| 3.3.3 | Test audio processing works | pending |
+await indexedDBStore.startup();
+await mx.initRustCrypto();
+```
 
 ---
 
-### Milestone 4: Polish & Documentation
+## Milestone: Matrix E2EE Fix
 
-#### Phase 4.1: Testing
+### Phase 1: IndexedDB Stores
 
-| Task ID | Title | Status |
-|---------|-------|--------|
-| 4.1.1 | Test E2EE chat (Matrix) | pending |
-| 4.1.2 | Test E2EE media (LiveKit) | pending |
-| 4.1.3 | Test cross-browser compatibility | pending |
+| Task ID | Title | Status | Files |
+|---------|-------|--------|-------|
+| 1.1 | Add IndexedDBStore for state sync | pending | `client/src/lib/matrixClient.js` |
+| 1.2 | Add IndexedDBCryptoStore for crypto | pending | `client/src/lib/matrixClient.js` |
+| 1.3 | Await indexedDBStore.startup() before crypto init | pending | `client/src/lib/matrixClient.js` |
 
-#### Phase 4.2: Documentation
+**Task 1.1 Details:**
+- Import `IndexedDBStore` from `matrix-js-sdk`
+- Create store with `dbName: 'hush-sync-store'`
+- Pass to createClient as `store` option
 
-| Task ID | Title | Status |
-|---------|-------|--------|
-| 4.2.1 | Update README with setup guide | pending |
-| 4.2.2 | Document LiveKit integration | pending |
-| 4.2.3 | Create SECURITY.md | pending |
+**Task 1.2 Details:**
+- Import `IndexedDBCryptoStore` from `matrix-js-sdk`
+- Create store with database name `'hush-crypto-store'`
+- Pass to createClient as `cryptoStore` option
+
+**Task 1.3 Details:**
+- Call `await indexedDBStore.startup()` BEFORE `initRustCrypto()`
+- This ensures IndexedDB is ready before crypto operations
+
+---
+
+### Phase 2: Crypto Callbacks
+
+| Task ID | Title | Status | Files |
+|---------|-------|--------|-------|
+| 2.1 | Create secretStorageKeys module | pending | `client/src/lib/secretStorageKeys.js` |
+| 2.2 | Add cryptoCallbacks to createClient | pending | `client/src/lib/matrixClient.js` |
+
+**Task 2.1 Details:**
+Reference: `/Users/yarin/development/hush-v2/src/client/secretStorageKeys.js`
+
+Create module that provides:
+```javascript
+export const cryptoCallbacks = {
+  getSecretStorageKey,
+  cacheSecretStorageKey,
+};
+```
+
+In-memory Map for secret storage keys, keyed by keyId.
+
+**Task 2.2 Details:**
+- Import cryptoCallbacks from secretStorageKeys.js
+- Add to createClient options: `cryptoCallbacks: cryptoCallbacks`
+
+---
+
+### Phase 3: Auth Flow Update
+
+| Task ID | Title | Status | Files |
+|---------|-------|--------|-------|
+| 3.1 | Update createMatrixClient to accept/create stores | pending | `client/src/lib/matrixClient.js` |
+| 3.2 | Update loginAsGuest to use new store pattern | pending | `client/src/hooks/useMatrixAuth.js` |
+| 3.3 | Update login to use new store pattern | pending | `client/src/hooks/useMatrixAuth.js` |
+| 3.4 | Update register to use new store pattern | pending | `client/src/hooks/useMatrixAuth.js` |
+
+**Task 3.1 Details:**
+Refactor createMatrixClient to:
+1. Create IndexedDBStore (or reuse existing)
+2. Create IndexedDBCryptoStore (or reuse existing)
+3. Return { client, indexedDBStore } for proper lifecycle
+
+**Task 3.2-3.4 Details:**
+Update auth flows to:
+1. Get/create stores from createMatrixClient
+2. Await `indexedDBStore.startup()` after creating authenticated client
+3. Call `initRustCrypto()` AFTER store startup
+4. Then call `startClient()`
+
+Order: createClient → startup() → initRustCrypto() → startClient()
+
+---
+
+### Phase 4: Verification
+
+| Task ID | Title | Status | Files |
+|---------|-------|--------|-------|
+| 4.1 | Test guest registration with crypto | pending | manual |
+| 4.2 | Test encrypted room creation | pending | manual |
+| 4.3 | Test message encryption/decryption | pending | manual |
+| 4.4 | Test crypto persistence across refresh | pending | manual |
+
+**Verification Checklist:**
+- [ ] IndexedDB databases created: `hush-sync-store`, `hush-crypto-store`
+- [ ] No crypto initialization errors in console
+- [ ] `/keys/upload` request in Network tab after auth
+- [ ] Room created with `m.room.encryption` state event
+- [ ] Messages sent as `m.room.encrypted` (check Network tab)
+- [ ] Messages decrypt on receiving client
+- [ ] After page refresh: crypto state persists (no re-upload of device keys)
+
+---
+
+## LiveKit E2EE Status
+
+**Current implementation is CORRECT.** Do NOT modify unless tests fail.
+
+The LiveKit E2EE in `useRoom.js` follows the correct pattern:
+1. ExternalE2EEKeyProvider created BEFORE Room
+2. Worker created with Vite import syntax
+3. Key set on provider BEFORE Room.connect()
+4. Room created with `e2ee: { keyProvider, worker }`
+5. Key distribution via Matrix to-device messages
 
 ---
 
 ## Progress Tracking
 
-- [ ] Milestone 1: Foundation & Branding
-- [ ] Milestone 2: LiveKit Integration
-- [ ] Milestone 3: Media Features
-- [ ] Milestone 4: Polish & Documentation
+- [ ] Phase 1: IndexedDB Stores
+- [ ] Phase 2: Crypto Callbacks
+- [ ] Phase 3: Auth Flow Update
+- [ ] Phase 4: Verification
 
 ---
 
 ## Notes for Architect
 
-### Important Differences from v1
+### Critical Files to Read
 
-1. **TypeScript**: All code must be TypeScript (Cinny uses TS)
-2. **Vanilla Extract**: Styling uses CSS-in-TS, not plain CSS
-3. **Jotai**: State management uses Jotai atoms, not plain hooks
-4. **Matrix SDK v38**: Older than v1's v40, but it works
+Before modifying, READ these Cinny files:
+1. `/Users/yarin/development/hush-v2/src/client/initMatrix.ts` - Client initialization
+2. `/Users/yarin/development/hush-v2/src/client/secretStorageKeys.js` - Crypto callbacks
+3. `/Users/yarin/development/hush-v2/src/app/pages/client/ClientRoot.tsx` - Startup flow
 
-### Reference Locations
+### Import Statements
 
-- **Hush v1**: `/Users/yarin/development/hush-app`
-  - LiveKit integration: `client/src/hooks/useRoom.js`
-  - Audio processing: `client/src/lib/audioProcessing.js`
-  - Noise gate: `client/src/lib/noiseGateWorklet.js`
-  - Design system: `client/src/styles/global.css`
-  - Quality presets: `client/src/utils/constants.js`
+Cinny (TypeScript):
+```typescript
+import { IndexedDBStore, IndexedDBCryptoStore, createClient } from 'matrix-js-sdk';
+```
 
-- **Design System Colors** (from v1 global.css):
-  ```
-  --hush-black:        #08080c
-  --hush-surface:      #101018
-  --hush-elevated:     #181824
-  --hush-amber:        #d4a053
-  --hush-amber-bright: #e8b866
-  --hush-text:         #e4e4ec
-  ```
+Hush (JavaScript):
+```javascript
+import { IndexedDBStore, IndexedDBCryptoStore, createClient } from 'matrix-js-sdk';
+```
+
+### Database Names
+
+Use unique names to avoid conflicts:
+- State store: `'hush-sync-store'`
+- Crypto store: `'hush-crypto-store'`
+
+### Error Handling
+
+Cinny pattern for graceful degradation:
+```javascript
+const crypto = mx.getCrypto();
+if (!crypto) {
+  console.warn('Crypto module not available');
+  return;
+}
+```
 
 ### Commit Guidelines
 
-**IMPORTANT:** Commit and push after completing each phase (not each task).
-
-#### When to Commit
-
-| Event | Action |
-|-------|--------|
-| Phase completed (e.g., 1.1 done) | Commit + Push |
-| Major feature working | Commit + Push |
-| Before starting risky changes | Commit (safety checkpoint) |
-| End of work session | Commit + Push |
-
-#### Commit Format
-
-Use conventional commits:
-
+Commit after completing each phase:
 ```
-feat: <description>     # New feature
-fix: <description>      # Bug fix
-refactor: <description> # Code restructuring
-docs: <description>     # Documentation
-style: <description>    # Design/styling changes
+fix: add IndexedDB stores for Matrix crypto persistence
+fix: add cryptoCallbacks for secret storage
+fix: update auth flows with correct crypto initialization order
 ```
 
-#### Example Commits
-
-```bash
-# After Phase 1.1 (design system)
-git add src/colors.css.ts src/config.css.ts
-git commit -m "style: apply Hush dark amber theme to Cinny"
-git push origin main
-
-# After Phase 2.2 (LiveKit hooks)
-git add src/livekit/
-git commit -m "feat: port LiveKit hooks from hush-app v1"
-git push origin main
-```
+Co-Author: `Co-Authored-By: Claude <noreply@anthropic.com>`
 
 ---
 
 ## Dependencies
 
-- React 18.2.0 (already in Cinny)
-- TypeScript 4.9.4 (already in Cinny)
-- matrix-js-sdk 38.2.0 (already in Cinny)
-- livekit-client (to be added)
-- @livekit/components-react (to be added)
-- Vanilla Extract (already in Cinny)
-- Jotai (already in Cinny)
+Current matrix-js-sdk version should support all required APIs:
+- `IndexedDBStore`
+- `IndexedDBCryptoStore`
+- `initRustCrypto()`
+- `cryptoCallbacks`
+
+Check `client/package.json` for version. Cinny uses v38.2.0.

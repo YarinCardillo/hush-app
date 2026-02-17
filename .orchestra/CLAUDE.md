@@ -1,3 +1,165 @@
+# Orchestra Instructions — Hush E2EE Fix
+
+## Mission
+
+Fix the broken Matrix E2EE implementation by adopting Cinny's working patterns.
+
+**Reference codebase:** `/Users/yarin/development/hush-v2` (Cinny fork)
+
+---
+
+## The Problem
+
+Matrix E2EE is broken because:
+1. No IndexedDBStore → state not persisted
+2. No IndexedDBCryptoStore → crypto keys not persisted
+3. No cryptoCallbacks → secret storage inaccessible
+4. Wrong initialization order → crypto fails silently
+
+---
+
+## The Solution
+
+Copy Cinny's approach from `/Users/yarin/development/hush-v2/src/client/initMatrix.ts`:
+
+```javascript
+// 1. Create stores
+const indexedDBStore = new IndexedDBStore({
+  indexedDB: global.indexedDB,
+  localStorage: global.localStorage,
+  dbName: 'hush-sync-store',
+});
+
+const cryptoStore = new IndexedDBCryptoStore(
+  global.indexedDB,
+  'hush-crypto-store'
+);
+
+// 2. Create client with stores
+const client = createClient({
+  baseUrl,
+  accessToken,
+  userId,
+  deviceId,
+  store: indexedDBStore,
+  cryptoStore: cryptoStore,
+  cryptoCallbacks: cryptoCallbacks,
+  timelineSupport: true,
+});
+
+// 3. CORRECT ORDER: startup → initRustCrypto → startClient
+await indexedDBStore.startup();
+await client.initRustCrypto();
+await client.startClient({ initialSyncLimit: 20 });
+```
+
+---
+
+## Files to Modify
+
+### 1. `client/src/lib/matrixClient.js`
+
+**Current:** Creates bare client without stores.
+
+**Target:**
+- Import IndexedDBStore, IndexedDBCryptoStore
+- Create and configure stores
+- Pass stores to createClient
+- Export function to get/create stores
+
+### 2. `client/src/lib/secretStorageKeys.js` (NEW)
+
+**Create this file** based on:
+`/Users/yarin/development/hush-v2/src/client/secretStorageKeys.js`
+
+Provides cryptoCallbacks for secret storage key management.
+
+### 3. `client/src/hooks/useMatrixAuth.js`
+
+**Current:** Calls initRustCrypto() without store setup.
+
+**Target:**
+- Await indexedDBStore.startup() after creating authenticated client
+- Then initRustCrypto()
+- Then startClient()
+
+---
+
+## DO NOT Modify
+
+- `client/src/hooks/useRoom.js` — LiveKit E2EE is CORRECT
+- Synapse configuration — already configured for E2EE
+- Chat.jsx — will work automatically once crypto is fixed
+
+---
+
+## Verification Steps
+
+After implementation, verify:
+
+1. **IndexedDB databases exist:**
+   - Open DevTools → Application → IndexedDB
+   - Look for `hush-sync-store` and `hush-crypto-store`
+
+2. **Crypto initialized:**
+   - Console shows: `[useMatrixAuth] Rust crypto initialized successfully`
+   - No crypto errors
+
+3. **Keys uploaded:**
+   - Network tab shows POST to `/_matrix/client/v3/keys/upload`
+
+4. **Room encryption:**
+   - Create room → Network shows `m.room.encryption` state event
+
+5. **Message encryption:**
+   - Send message → Network shows `m.room.encrypted` event type
+
+6. **Persistence:**
+   - Refresh page → No new `/keys/upload` (keys persist in IndexedDB)
+
+---
+
+## Code Style
+
+Follow the existing hush-app patterns:
+- JavaScript (not TypeScript)
+- JSDoc comments for public functions
+- console.log with `[module]` prefix for debugging
+- Graceful error handling (log and continue, don't crash)
+
+---
+
+## Commit Message Format
+
+```
+fix: <description>
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+---
+
+## Critical Reference Files
+
+Read these before making changes:
+
+| Cinny File | Purpose |
+|------------|---------|
+| `src/client/initMatrix.ts` | Complete client initialization with stores |
+| `src/client/secretStorageKeys.js` | Crypto callbacks implementation |
+| `src/app/pages/client/ClientRoot.tsx` | Startup flow and lifecycle |
+
+---
+
+## Tips
+
+1. **Test incrementally:** After each phase, test that the app still loads
+2. **Check console:** Look for crypto errors after each change
+3. **Use DevTools IndexedDB:** Verify databases are created
+4. **Don't break guest login:** This is the primary auth flow for Hush
+5. **Keep LiveKit E2EE working:** It's already correct, don't touch it
+
+
 <claude-mem-context>
 # Recent Activity
 
@@ -15,226 +177,3 @@
 |----|------|---|-------|------|
 | #3036 | 1:55 AM | 🔵 | Hush-App v1 Has Existing Orchestra Plan for E2EE Implementation | ~467 |
 </claude-mem-context>
-
-# Orchestra Instructions for Hush v2
-
-This file contains instructions specific to Orchestra agents working on Hush v2.
-
----
-
-## Project Context
-
-You are working on **Hush v2**, a fork of [Cinny](https://github.com/cinnyapp/cinny) with LiveKit media streaming capabilities. The goal is to create a privacy-first Discord alternative with working E2EE for both chat (Matrix) and media (LiveKit).
-
-**Key Decision:** We forked Cinny instead of fixing hush-app v1's E2EE because:
-1. Cinny's E2EE already works (battle-tested)
-2. Next milestone requires Discord-like UX (Cinny has this)
-3. Saves weeks of debugging broken crypto implementation
-
----
-
-## Critical Rules
-
-### 1. TypeScript Only
-- All new code must be TypeScript
-- When porting from hush-app v1 (JavaScript), convert to TS
-- Use proper type annotations, not `any`
-
-### 2. Vanilla Extract for Styling
-- Use `@vanilla-extract/css` for styles, not plain CSS
-- Themes defined in `src/colors.css.ts`
-- See existing Cinny components for patterns
-
-### 3. Jotai for State
-- Use Jotai atoms for state management
-- Study Cinny's patterns before creating new state
-- Don't use plain useState for shared state
-
-### 4. Reference Hush v1 for LiveKit
-- **Location**: `/Users/yarin/development/hush-app`
-- Port logic, not copy-paste (need to convert JS → TS)
-- Key files to reference:
-  - `client/src/hooks/useRoom.js` → LiveKit room management
-  - `client/src/lib/audioProcessing.js` → Audio pipeline
-  - `client/src/lib/noiseGateWorklet.js` → Noise gate
-  - `client/src/utils/constants.js` → Quality presets
-
-### 5. Preserve Hush Aesthetic
-- Dark theme with amber accent (#d4a053)
-- Refer to v1's `client/src/styles/global.css` for exact colors
-- Map to Cinny's theme tokens in `src/colors.css.ts`
-
----
-
-## Workflow
-
-### Before Starting a Phase
-
-1. Read the phase tasks in `.orchestra/PLAN.md`
-2. Check if you need to reference hush-app v1 code
-3. Understand Cinny's existing patterns for that area
-
-### During Implementation
-
-1. Make incremental changes
-2. Test in dev mode (`npm start`)
-3. Verify TypeScript compiles (`npm run typecheck`)
-4. Check ESLint (`npm run check:eslint`)
-
-### After Completing a Phase
-
-1. Run `npm run typecheck` - must pass
-2. Run `npm run lint` - should pass (or document why not)
-3. Test in browser - should load without errors
-4. Commit with clear message
-5. Push to origin
-
----
-
-## Design System Reference
-
-From hush-app v1 `global.css`:
-
-```css
-/* Core Surfaces */
---hush-black:        #08080c
---hush-surface:      #101018
---hush-elevated:     #181824
---hush-hover:        #20202e
-
-/* Signature Amber */
---hush-amber:        #d4a053
---hush-amber-bright: #e8b866
---hush-amber-dim:    #a07a3a
---hush-amber-glow:   rgba(212, 160, 83, 0.15)
---hush-amber-ghost:  rgba(212, 160, 83, 0.08)
-
-/* Borders */
---hush-border:       #1e1e2e
---hush-border-hover: #2e2e42
---hush-border-focus: #3e3e56
-
-/* Text Hierarchy */
---hush-text:         #e4e4ec
---hush-text-secondary: #8888a0
---hush-text-muted:   #555568
---hush-text-ghost:   #3a3a4e
-
-/* Status Colors */
---hush-live:         #34d399
---hush-danger:       #ef4444
-
-/* Typography */
---font-sans:  'Sora', -apple-system, sans-serif
---font-mono:  'JetBrains Mono', 'SF Mono', monospace
-```
-
-**Task:** Map these to Cinny's theme token structure in `src/colors.css.ts`.
-
----
-
-## LiveKit Integration Strategy
-
-### Phase 2.2: Port Hooks
-
-When converting `useRoom.js` → `useRoom.ts`:
-
-1. **Add types**:
-   ```typescript
-   import { Room, Track, RemoteParticipant } from 'livekit-client';
-   ```
-
-2. **Convert state**:
-   ```typescript
-   // v1 (JS)
-   const [room, setRoom] = useState(null);
-
-   // v2 (TS)
-   const [room, setRoom] = useState<Room | null>(null);
-   ```
-
-3. **E2EE key distribution**:
-   - Keep Matrix to-device message approach from v1
-   - Type: `io.hush.livekit.e2ee_key`
-   - Storage: sessionStorage (same as v1)
-
-### Phase 2.3: Integration Point
-
-Find Cinny's voice channel component:
-1. Search for "voice" or "call" in `src/app/`
-2. Look for Matrix RTC or VoIP handling
-3. Wire LiveKit Room lifecycle to that component
-
----
-
-## Testing Checklist
-
-After each milestone:
-
-- [ ] TypeScript compiles without errors
-- [ ] Dev server starts (`npm start`)
-- [ ] App loads in browser
-- [ ] No console errors
-- [ ] Theme looks correct (dark amber)
-- [ ] Matrix chat still works (don't break Cinny's features)
-
-After Milestone 2 (LiveKit):
-- [ ] Can join voice channel
-- [ ] Audio works
-- [ ] E2EE enabled (check DevTools)
-
-After Milestone 3 (Media):
-- [ ] Screen share works
-- [ ] Quality controls functional
-- [ ] Noise gate toggles
-
----
-
-## Common Pitfalls
-
-### 1. Don't Break Cinny's Features
-- Preserve existing Matrix chat functionality
-- Don't remove Cinny components unless replacing
-- Test that threads, reactions, etc. still work
-
-### 2. TypeScript Strict Mode
-- Cinny uses strict TS - no implicit `any`
-- Add proper types even if it's tedious
-- Use `unknown` not `any` when uncertain
-
-### 3. Vanilla Extract Gotchas
-- Styles are type-safe - IDE will help
-- Don't mix plain CSS files
-- Theme tokens must be defined in `colors.css.ts`
-
-### 4. Matrix SDK Version
-- Cinny uses v38 (older than v1's v40)
-- Some APIs may differ - check docs if porting breaks
-- Rust crypto is NOT in v38 - uses libolm
-
----
-
-## Resources
-
-- **Cinny codebase**: Explore `src/app/` for patterns
-- **LiveKit docs**: https://docs.livekit.io/
-- **Vanilla Extract**: https://vanilla-extract.style/
-- **Jotai**: https://jotai.org/
-- **Matrix JS SDK**: https://github.com/matrix-org/matrix-js-sdk
-
----
-
-## Communication with User
-
-- The user speaks both English and Italian
-- Commit messages should be in English
-- Code comments in English
-- User prefers direct communication, no fluff
-
----
-
-## Final Note
-
-**This is a migration, not a rewrite.** We're porting working LiveKit code from v1 into Cinny's structure. Don't reinvent - adapt and integrate.
-
-Good luck! 🚀
