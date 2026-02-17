@@ -155,60 +155,74 @@ export default function Chat({ currentPeerId }) {
       return;
     }
 
-    // Diagnostic: Log crypto status when Chat mounts (v40+)
-    const cryptoReady = !!client.getCrypto();
-    console.log('[chat] Component mounted with crypto status:', {
-      cryptoEnabled: cryptoReady,
-      roomId: matrixRoomId,
-      deviceId: client.getDeviceId(),
-      userId: client.getUserId()
-    });
+    // Helper to convert a timeline event to a message object
+    const eventToMessage = (e) => {
+      const eventType = e.getType();
+      if (eventType === EventType.RoomMessage) {
+        return {
+          id: e.getId(),
+          sender: e.getSender(),
+          displayName: e.sender?.name || e.getSender(),
+          content: e.getContent().body,
+          timestamp: e.getTs(),
+          decryptionFailed: false,
+        };
+      }
+      if (eventType === 'm.room.encrypted') {
+        // Event could not be decrypted
+        return {
+          id: e.getId(),
+          sender: e.getSender(),
+          displayName: e.sender?.name || e.getSender(),
+          content: null,
+          timestamp: e.getTs(),
+          decryptionFailed: true,
+        };
+      }
+      return null;
+    };
 
     // Load existing messages from room timeline
     const timeline = room.getLiveTimeline();
     const events = timeline.getEvents();
     const existingMessages = events
-      .filter(e => e.getType() === EventType.RoomMessage)
-      .map(e => ({
-        id: e.getId(),
-        sender: e.getSender(),
-        displayName: e.sender?.name || e.getSender(),
-        content: e.getContent().body,
-        timestamp: e.getTs()
-      }));
+      .map(eventToMessage)
+      .filter(Boolean);
     setMessages(existingMessages);
 
     // Listen for new messages
-    const handleTimelineEvent = (event, room, toStartOfTimeline) => {
+    const handleTimelineEvent = (event, _room, toStartOfTimeline) => {
       if (toStartOfTimeline) return; // Ignore backfill
       if (event.getRoomId() !== matrixRoomId) return;
 
-      // Diagnostic: Log all message-related event types
-      const eventType = event.getType();
-      console.log('[chat] Timeline event received:', {
-        type: eventType,
-        isEncrypted: eventType === 'm.room.encrypted',
-        isMessage: eventType === EventType.RoomMessage,
-        sender: event.getSender(),
-        eventId: event.getId()
-      });
+      const msg = eventToMessage(event);
+      if (!msg) return;
+      setMessages(prev => [...prev, msg]);
+    };
 
-      if (eventType !== EventType.RoomMessage) return;
+    // Listen for decryption retries — when a previously encrypted event is finally decrypted
+    const handleEventDecrypted = (event) => {
+      if (event.getRoomId() !== matrixRoomId) return;
+      if (event.getType() !== EventType.RoomMessage) return;
 
-      const newMsg = {
-        id: event.getId(),
-        sender: event.getSender(),
-        displayName: event.sender?.name || event.getSender(),
-        content: event.getContent().body,
-        timestamp: event.getTs()
-      };
-      setMessages(prev => [...prev, newMsg]);
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === event.getId()) {
+          return {
+            ...msg,
+            content: event.getContent().body,
+            decryptionFailed: false,
+          };
+        }
+        return msg;
+      }));
     };
 
     client.on(RoomEvent.Timeline, handleTimelineEvent);
+    client.on('Event.decrypted', handleEventDecrypted);
 
     return () => {
       client.off(RoomEvent.Timeline, handleTimelineEvent);
+      client.off('Event.decrypted', handleEventDecrypted);
     };
   }, [matrixRoomId]);
 
@@ -295,7 +309,13 @@ export default function Chat({ currentPeerId }) {
                     </span>
                     <span style={styles.timestamp}>{formatTime(msg.timestamp)}</span>
                   </div>
-                  <div style={styles.messageText}>{msg.content}</div>
+                  <div style={styles.messageText}>
+                    {msg.decryptionFailed ? (
+                      <span style={{ color: 'var(--hush-danger)', fontStyle: 'italic' }}>
+                        Unable to decrypt message
+                      </span>
+                    ) : msg.content}
+                  </div>
                 </div>
               );
             })

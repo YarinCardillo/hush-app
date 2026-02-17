@@ -282,14 +282,6 @@ export default function Home() {
       let matrixRoomId;
       let effectiveRoomName = roomName; // Track actual room name used (may have suffix)
 
-      // Verify crypto is ready before room operations (v40+)
-      const cryptoReady = !!client.getCrypto();
-      console.log('[home] Crypto status before room operations:', {
-        cryptoEnabled: cryptoReady,
-        deviceId: client.getDeviceId(),
-        userId: client.getUserId()
-      });
-
       if (mode === 'create') {
         let actualRoomName = roomName;
         let createResponse;
@@ -302,23 +294,21 @@ export default function Home() {
             createResponse = await client.createRoom({
               name: actualRoomName,
               room_alias_name: actualRoomName,
-              visibility: 'public',
-              preset: 'public_chat',
+              visibility: 'private',
+              preset: 'trusted_private_chat',
+              initial_state: [{
+                type: 'm.room.encryption',
+                state_key: '',
+                content: { algorithm: 'm.megolm.v1.aes-sha2' },
+              }],
             });
 
-            // createRoom returns { room_id: string }
             matrixRoomId = createResponse.room_id;
-            console.log('[home] Created room:', {
-              room_id: createResponse.room_id,
-              alias: actualRoomName,
-              retryAttempt: retryAttempts
-            });
 
             // Wait for room to appear in client's room list (sync may take a moment)
             let attempts = 0;
             const maxAttempts = 50;
             while (!client.getRoom(matrixRoomId) && attempts < maxAttempts) {
-              console.log(`[home] Waiting for created room sync... attempt ${attempts + 1}/${maxAttempts}`);
               await new Promise(resolve => setTimeout(resolve, 100));
               attempts++;
             }
@@ -326,26 +316,15 @@ export default function Home() {
             const roomInClient = client.getRoom(matrixRoomId);
             if (!roomInClient) {
               console.error('[home] Created room not in client after', attempts, 'attempts');
-              console.error('[home] Available rooms:', client.getRooms().map(r => r.roomId));
               throw new Error('Failed to create Matrix room: room not found after creation');
             }
 
-            // Check if room has encryption enabled (indicates stale encrypted room)
-            const encryptionState = roomInClient.currentState.getStateEvents('m.room.encryption', '');
-            if (encryptionState) {
-              console.warn('[home] Room has encryption enabled (stale room detected), retrying with unique alias');
-              throw new Error('ROOM_ENCRYPTED');
-            }
-
-            console.log('[home] Created room successfully synced to client');
             break; // Success - exit retry loop
 
           } catch (err) {
-            console.error('[home] Room creation attempt failed:', err);
 
             // Check if error is due to alias collision or encrypted room
             const isCollision = err.errcode === 'M_ROOM_IN_USE' ||
-                               err.message === 'ROOM_ENCRYPTED' ||
                                (err.data && err.data.errcode === 'M_ROOM_IN_USE');
 
             if (isCollision && retryAttempts < maxRetries - 1) {
@@ -353,7 +332,6 @@ export default function Home() {
               const suffix = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
               actualRoomName = `${roomName}-${suffix}`;
               retryAttempts++;
-              console.log(`[home] Retrying with unique alias: ${actualRoomName}`);
               continue;
             }
 
@@ -369,34 +347,21 @@ export default function Home() {
         const serverName = import.meta.env.VITE_MATRIX_SERVER_NAME || 'localhost';
         const roomAlias = `#${roomName}:${serverName}`;
 
-        console.log('[home] Joining room with crypto enabled:', {
-          roomAlias,
-          cryptoReady
-        });
-
         const joinResponse = await client.joinRoom(roomAlias);
-        console.log('[home] Join response:', { roomId: joinResponse.roomId, room_id: joinResponse.room_id });
-
-        // joinRoom returns Room object with roomId property
         matrixRoomId = joinResponse.roomId;
-        console.log('[home] Using roomId:', matrixRoomId);
 
         // Wait for room to appear in client's room list
         let attempts = 0;
         const maxAttempts = 50;
         while (!client.getRoom(matrixRoomId) && attempts < maxAttempts) {
-          console.log(`[home] Waiting for room sync... attempt ${attempts + 1}/${maxAttempts}`);
           await new Promise(resolve => setTimeout(resolve, 100));
           attempts++;
         }
 
         const roomInClient = client.getRoom(matrixRoomId);
         if (!roomInClient) {
-          console.error('[home] Room not in client after', attempts, 'attempts');
-          console.error('[home] Available rooms:', client.getRooms().map(r => r.roomId));
           throw new Error('Failed to join Matrix room: room not found after join');
         }
-        console.log('[home] Room successfully synced to client');
       }
 
       // Store Matrix room ID
@@ -424,6 +389,7 @@ export default function Home() {
       sessionStorage.setItem('hush_token', data.token);
       sessionStorage.setItem('hush_peerId', data.peerId);
       sessionStorage.setItem('hush_roomName', data.roomName);
+      sessionStorage.setItem('hush_roomPassword', password);
 
       const roomPath = `/room/${encodeURIComponent(data.roomName)}`;
       navigate(roomPath);

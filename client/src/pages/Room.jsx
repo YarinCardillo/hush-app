@@ -193,7 +193,6 @@ export default function Room() {
     localTracks,
     remoteTracks,
     participants,
-    e2eeKey,
     connectRoom,
     disconnectRoom,
     publishScreen,
@@ -209,7 +208,6 @@ export default function Room() {
     loadingScreens,
     watchScreen,
     unwatchScreen,
-    sendE2EEKey,
   } = useRoom();
 
   const {
@@ -232,9 +230,10 @@ export default function Room() {
     }
 
     const displayName = sessionStorage.getItem('hush_displayName') || 'Anonymous';
+    const roomPassword = sessionStorage.getItem('hush_roomPassword');
 
-    // Connect to LiveKit room
-    connectRoom(roomName, displayName).then(() => {
+    // Connect to LiveKit room with password-derived E2EE key
+    connectRoom(roomName, displayName, roomPassword).then(() => {
       setConnected(true);
       console.log('[room] Connected to LiveKit room');
     }).catch((err) => {
@@ -269,19 +268,8 @@ export default function Room() {
     }
   }, [showQualityPanel, showChatPanel]);
 
-  // Send E2EE key to new participants when they join
-  useEffect(() => {
-    if (!e2eeKey || participants.length === 0) return;
-
-    // Send key to all current participants
-    // This handles the case when the room creator connects after joiners
-    const roomName = sessionStorage.getItem('hush_roomName');
-    if (!roomName) return;
-
-    participants.forEach((participant) => {
-      sendE2EEKey(participant.id, e2eeKey, roomName);
-    });
-  }, [participants.length, e2eeKey, sendE2EEKey]);
+  // E2EE key distribution is handled via password-derived keys in useRoom.js
+  // No to-device key broadcast needed — all participants derive the same key from the room password
 
   const handleScreenShare = async () => {
     if (isScreenSharing) {
@@ -395,6 +383,7 @@ export default function Room() {
     sessionStorage.removeItem('hush_token');
     sessionStorage.removeItem('hush_peerId');
     sessionStorage.removeItem('hush_roomName');
+    sessionStorage.removeItem('hush_roomPassword');
     navigate('/');
   };
 
@@ -427,15 +416,6 @@ export default function Room() {
     }
   }
 
-  // Debug: log all remote tracks
-  console.log('[Room] All remote tracks:', Array.from(remoteTracks.entries()).map(([sid, info]) => ({
-    sid,
-    kind: info.kind,
-    source: info.source,
-    participantId: info.participant.identity,
-    trackState: info.track.mediaStreamTrack?.readyState,
-  })));
-
   // Render remote tracks
   for (const [trackSid, info] of remoteTracks.entries()) {
     if (info.kind === 'video') {
@@ -456,14 +436,9 @@ export default function Room() {
         ) {
           audioTrack = audioInfo.track.mediaStreamTrack;
           pairedAudioTracks.add(audioSid);
-          console.log('[Room] Paired audio:', { videoSid: trackSid, audioSid, source: pairedAudioSource });
           break;
         }
       }
-      if (!audioTrack && videoSource === Track.Source.ScreenShare) {
-        console.log('[Room] No audio found for screen share from participant:', participantId);
-      }
-
       allStreams.push({
         id: trackSid,
         type: 'remote',
