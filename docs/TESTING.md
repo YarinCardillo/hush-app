@@ -73,13 +73,13 @@ Leave this terminal running.
 npm run dev:client
 ```
 
-The Vite dev server runs at **http://localhost:5173**. It proxies:
+The Vite dev server runs at the port it prints (typically **http://localhost:5173**; if that port is in use, Vite uses 5174 or the next free port). It proxies:
 
 - `/api` → http://localhost:80 (Caddy → Hush server)
 - `/_matrix` → http://localhost:80 (Caddy → Synapse)
 - `/livekit` → http://localhost:80 (Caddy → LiveKit)
 
-So the app on 5173 talks to all services through Caddy on port 80.
+So the client (on whatever port Vite chose) talks to all services through Caddy on port 80.
 
 ### 2.3 Open the app
 
@@ -131,7 +131,7 @@ Use two browser windows (e.g. normal + incognito) to simulate two users.
 
 ### 4.1 Auth and room
 
-1. **Browser 1:** Open http://localhost:5173 → “Continue as Guest” (or Register/Login).
+1. **Browser 1:** Open the client URL (e.g. http://localhost:5173) → use the create/join form (guest auth is used when you submit).
 2. **Browser 2:** Same URL → “Continue as Guest” (or another account).
 3. **Browser 1:** Create a room (name + optional password) → Create. You should be taken to the room page.
 4. **Browser 2:** Join the same room (by room name/alias and password if set) → Join.
@@ -159,7 +159,7 @@ For a full E2EE manual checklist (crypto init, key distribution, rekeying, etc.)
 | 401 on LiveKit token | You must be logged in (guest or registered). Token request sends Matrix Bearer token; if session didn’t rehydrate after refresh, log in again. |
 | Room doesn’t connect / “could not establish pc connection” | LiveKit container is up; Caddy routes `/livekit` to LiveKit; `.env` has correct `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` (same as in LiveKit container). |
 | Matrix errors (e.g. 403 on join) | Synapse config (e.g. `allow_guest_access`, `enable_registration`); room alias and server name match (`MATRIX_SERVER_NAME`). |
-| Client on 5173 can’t reach API/Matrix/LiveKit | Caddy must be running on port 80; Vite proxy targets `http://localhost:80`. |
+| Client (Vite port) can’t reach API/Matrix/LiveKit | Caddy must be running on port 80; Vite proxy targets `http://localhost:80`. |
 
 ---
 
@@ -172,6 +172,6 @@ For a full E2EE manual checklist (crypto init, key distribution, rekeying, etc.)
 | Dependencies | `npm run install:all` | Once (or after adding deps) |
 | Stack | `docker-compose up --build` | Terminal 1; leave running |
 | Dev client | `npm run dev:client` | Terminal 2 |
-| Open app | http://localhost:5173 | Use this for development and testing |
+| Open app | URL Vite prints (e.g. http://localhost:5173) | Use this for development and testing |
 
 For production-like testing with the built client only, run `docker-compose up --build` and open **http://localhost** (no `npm run dev:client`).

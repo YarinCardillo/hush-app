@@ -218,7 +218,7 @@ export function useRoom() {
           worker = new E2EEWorker();
 
           // To-device listener: receive E2EE key (joiners and rekey)
-          const handleToDeviceE2EEKey = (event) => {
+          const handleToDeviceE2EEKey = async (event) => {
             if (event.getType() !== 'io.hush.e2ee_key') return;
             const content = event.getContent();
             const roomId = content?.roomId;
