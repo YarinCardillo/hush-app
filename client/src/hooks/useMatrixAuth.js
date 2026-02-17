@@ -5,6 +5,12 @@ import {
   destroyMatrixClient,
 } from '../lib/matrixClient';
 
+/** IndexedDB-safe prefix for Rust crypto store. One store per account to avoid "account in the store doesn't match" errors. */
+function cryptoStorePrefix(userId, deviceId) {
+  const safeUserId = (userId || '').replace(/^@/, '').replace(/:/g, '-');
+  return `hush-crypto-${safeUserId}-${deviceId || 'unknown'}`;
+}
+
 /**
  * Provides Matrix authentication operations and state management.
  * Primary use case: guest authentication for Hush rooms.
@@ -80,10 +86,15 @@ export function useMatrixAuth() {
         await authenticatedClient.setDisplayName(displayName);
       }
 
-      // Initialize Rust crypto for E2EE support (matrix-js-sdk v40+)
+      // Initialize Rust crypto for E2EE support (matrix-js-sdk v40+). Use per-account store so
+      // multiple users/tabs do not share one IndexedDB and hit "account in the store doesn't match".
       if (authenticatedClient) {
         try {
-          await authenticatedClient.initRustCrypto();
+          const prefix = cryptoStorePrefix(
+            authenticatedClient.getUserId(),
+            authenticatedClient.getDeviceId(),
+          );
+          await authenticatedClient.initRustCrypto({ cryptoDatabasePrefix: prefix });
           console.log('[useMatrixAuth] Rust crypto initialized successfully');
         } catch (cryptoErr) {
           console.error('[useMatrixAuth] Crypto initialization failed:', cryptoErr);
@@ -153,11 +164,15 @@ export function useMatrixAuth() {
         deviceId: response.device_id,
       });
 
-      // Initialize Rust crypto module for E2EE support (matrix-js-sdk v40+)
+      // Initialize Rust crypto with per-account store (see loginAsGuest).
       const authenticatedClient = getMatrixClient();
       if (authenticatedClient) {
         try {
-          await authenticatedClient.initRustCrypto();
+          const prefix = cryptoStorePrefix(
+            authenticatedClient.getUserId(),
+            authenticatedClient.getDeviceId(),
+          );
+          await authenticatedClient.initRustCrypto({ cryptoDatabasePrefix: prefix });
           console.log('[useMatrixAuth] Rust crypto initialized successfully');
         } catch (cryptoErr) {
           console.error('[useMatrixAuth] Crypto initialization failed:', cryptoErr);
@@ -219,10 +234,14 @@ export function useMatrixAuth() {
         await authenticatedClient.setDisplayName(displayName);
       }
 
-      // Initialize Rust crypto for E2EE support (matrix-js-sdk v40+)
+      // Initialize Rust crypto with per-account store (see loginAsGuest).
       if (authenticatedClient) {
         try {
-          await authenticatedClient.initRustCrypto();
+          const prefix = cryptoStorePrefix(
+            authenticatedClient.getUserId(),
+            authenticatedClient.getDeviceId(),
+          );
+          await authenticatedClient.initRustCrypto({ cryptoDatabasePrefix: prefix });
           console.log('[useMatrixAuth] Rust crypto initialized successfully');
         } catch (cryptoErr) {
           console.error('[useMatrixAuth] Crypto initialization failed:', cryptoErr);

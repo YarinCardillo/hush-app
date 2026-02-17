@@ -33,14 +33,7 @@ export default defineConfig({
     react(),
   ],
   optimizeDeps: {
-    // Exclude matrix crypto WASM from pre-bundling to preserve WASM loading
     exclude: ['@matrix-org/matrix-sdk-crypto-wasm'],
-    // Force esbuild to handle WASM files
-    esbuildOptions: {
-      loader: {
-        '.wasm': 'file',
-      },
-    },
   },
   worker: {
     format: 'es',
