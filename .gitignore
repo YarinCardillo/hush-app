@@ -24,3 +24,8 @@ orchestra.sh
 PLAN.md
 TROUBLESHOOTING.md
 .orchestra/
+
+# AI/IDE tools
+.aider*
+.cursorindexingignore
+.specstory/
