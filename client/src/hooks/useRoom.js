@@ -49,9 +49,10 @@ export function useRoom() {
   const watchedScreensRef = useRef(new Set());
   const loadingScreensRef = useRef(new Set());
   const e2eeKeyProviderRef = useRef(null);
-  const currentRoomNameRef = useRef(null);
-  const isRoomCreatorRef = useRef(false);
   const keyBytesRef = useRef(null);
+  const keyRotationCounterRef = useRef(0);
+  const roomPasswordRef = useRef(null);
+  const roomNameRef = useRef(null);
 
   // ─── Noise Gate Refs ──────────────────────────────────
   const audioContextRef = useRef(null);
@@ -108,76 +109,40 @@ export function useRoom() {
     }
   }, []);
 
-  // ─── E2EE Key Distribution via Matrix ─────────────────
-  const sendE2EEKey = useCallback(async (participantUserId, keyBytes, roomName) => {
-    const matrixClient = getMatrixClient();
-    if (!matrixClient) {
-      console.error('[livekit] Cannot send E2EE key: Matrix client not available');
-      return;
-    }
-
-    try {
-      // Convert key bytes to base64
-      const keyBase64 = btoa(String.fromCharCode(...keyBytes));
-
-      // Send to-device message
-      await matrixClient.sendToDevice('io.hush.livekit.e2ee_key', {
-        [participantUserId]: {
-          '*': {
-            key: keyBase64,
-            roomId: roomName,
-          },
-        },
-      });
-
-      console.log(`[livekit] E2EE key sent to ${participantUserId}`);
-    } catch (err) {
-      console.error('[livekit] Failed to send E2EE key:', err);
-    }
-  }, []);
-
-  const handleToDeviceEvent = useCallback((event) => {
-    if (event.getType() !== 'io.hush.livekit.e2ee_key') return;
-
-    const content = event.getContent();
-    const { key: keyBase64, roomId } = content;
-
-    // Verify this key is for the current room
-    if (roomId !== currentRoomNameRef.current) {
-      console.log('[livekit] Received E2EE key for different room, ignoring');
-      return;
-    }
-
-    try {
-      // Decode base64 key
-      const keyString = atob(keyBase64);
-      const keyBytes = new Uint8Array(keyString.length);
-      for (let i = 0; i < keyString.length; i++) {
-        keyBytes[i] = keyString.charCodeAt(i);
-      }
-
-      // Store in sessionStorage
-      sessionStorage.setItem('hush_livekit_e2ee_key', keyBase64);
-      setE2eeKey(keyBytes);
-
-      console.log('[livekit] E2EE key received from Matrix to-device message');
-
-      // Apply key to existing room if connected
-      if (roomRef.current && e2eeKeyProviderRef.current) {
-        e2eeKeyProviderRef.current.setKey(keyBytes).then(() => {
-          console.log('[livekit] E2EE key applied to existing room');
-        }).catch((err) => {
-          console.error('[livekit] Failed to apply received E2EE key:', err);
-        });
-      }
-    } catch (err) {
-      console.error('[livekit] Failed to process received E2EE key:', err);
-    }
+  // ─── Password-Derived E2EE Key (PBKDF2) ────────────────
+  /**
+   * Derives a 256-bit AES key from room password + room name using PBKDF2.
+   * All participants who know the password derive the same key deterministically.
+   * Zero server involvement — true E2EE by construction.
+   * @param {string} password - Room password
+   * @param {string} roomName - Room name (used as salt)
+   * @param {number} rotationCounter - Key rotation counter (incremented on participant leave)
+   */
+  const deriveE2EEKey = useCallback(async (password, roomName, rotationCounter = 0) => {
+    const encoder = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(password),
+      'PBKDF2',
+      false,
+      ['deriveBits'],
+    );
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: encoder.encode(`hush:e2ee:${roomName}:${rotationCounter}`),
+        iterations: 100000,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      256,
+    );
+    return new Uint8Array(derivedBits);
   }, []);
 
   // ─── Connect to LiveKit Room ──────────────────────────
   const connectRoom = useCallback(
-    async (roomName, displayName) => {
+    async (roomName, displayName, roomPassword) => {
       try {
         // Clear stale state from previous session
         if (roomRef.current) {
@@ -196,9 +161,10 @@ export function useRoom() {
         setIsReady(false);
         setIsE2EEEnabled(false);
         setE2eeKey(null);
-        currentRoomNameRef.current = roomName;
-        isRoomCreatorRef.current = false;
         keyBytesRef.current = null;
+        keyRotationCounterRef.current = 0;
+        roomPasswordRef.current = roomPassword || null;
+        roomNameRef.current = roomName;
 
         // Get Matrix user ID for participantIdentity
         const matrixClient = getMatrixClient();
@@ -206,9 +172,6 @@ export function useRoom() {
         if (!userId) {
           throw new Error('Matrix user not authenticated');
         }
-
-        // Register to-device event listener for E2EE key distribution
-        matrixClient.on('toDeviceEvent', handleToDeviceEvent);
 
         // Fetch LiveKit token from server
         const response = await fetch('/api/livekit/token', {
@@ -232,36 +195,18 @@ export function useRoom() {
         let keyProvider = null;
         let worker = null;
         let keyBytes = null;
-        let isRoomCreator = false;
 
         try {
-          // Check sessionStorage for existing key
-          const storedKey = sessionStorage.getItem('hush_livekit_e2ee_key');
-
-          if (storedKey) {
-            // Decode stored base64 key
-            const keyString = atob(storedKey);
-            keyBytes = new Uint8Array(keyString.length);
-            for (let i = 0; i < keyString.length; i++) {
-              keyBytes[i] = keyString.charCodeAt(i);
-            }
-            console.log('[livekit] Using stored E2EE key from sessionStorage');
-          } else {
-            // Generate new random 32-byte key for room creator
-            keyBytes = new Uint8Array(32);
-            crypto.getRandomValues(keyBytes);
-
-            // Store in sessionStorage as base64
-            const keyBase64 = btoa(String.fromCharCode(...keyBytes));
-            sessionStorage.setItem('hush_livekit_e2ee_key', keyBase64);
-            isRoomCreator = true;
-            isRoomCreatorRef.current = true;
-
-            console.log('[livekit] Generated new random E2EE key (room creator)');
+          if (!roomPassword) {
+            console.warn('[livekit] No room password provided, E2EE disabled');
+            throw new Error('E2EE requires room password');
           }
 
-          // Store keyBytes in ref for ParticipantConnected handler access
+          // Derive E2EE key deterministically from password + room name via PBKDF2
+          keyBytes = await deriveE2EEKey(roomPassword, roomName);
           keyBytesRef.current = keyBytes;
+
+          console.log('[livekit] E2EE key derived from room password via PBKDF2');
 
           // Create external key provider
           keyProvider = new ExternalE2EEKeyProvider();
@@ -320,22 +265,10 @@ export function useRoom() {
               displayName: participant.name || participant.identity,
             },
           ]);
-
-          // If room creator with E2EE enabled, send key to new participant
-          if (isRoomCreatorRef.current && keyBytesRef.current) {
-            await sendE2EEKey(
-              participant.identity,
-              keyBytesRef.current,
-              roomName,
-            );
-            console.log(
-              `[livekit] E2EE key sent to new participant: ${participant.identity}`,
-            );
-          }
         });
 
         // ParticipantDisconnected
-        room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+        room.on(RoomEvent.ParticipantDisconnected, async (participant) => {
           console.log(
             `[livekit] Participant disconnected: ${participant.identity}`,
           );
@@ -359,6 +292,24 @@ export function useRoom() {
             }
           }
           scheduleRemoteTracksUpdate();
+
+          // Rotate E2EE key so departed participant cannot decrypt future media
+          if (roomPasswordRef.current && roomNameRef.current && e2eeKeyProviderRef.current) {
+            try {
+              keyRotationCounterRef.current += 1;
+              const newKey = await deriveE2EEKey(
+                roomPasswordRef.current,
+                roomNameRef.current,
+                keyRotationCounterRef.current,
+              );
+              keyBytesRef.current = newKey;
+              await e2eeKeyProviderRef.current.setKey(newKey);
+              setE2eeKey(newKey);
+              console.log(`[livekit] E2EE key rotated (counter: ${keyRotationCounterRef.current})`);
+            } catch (err) {
+              console.error('[livekit] E2EE key rotation failed:', err);
+            }
+          }
         });
 
         // TrackSubscribed
@@ -450,17 +401,7 @@ export function useRoom() {
         if (keyProvider && keyBytes) {
           setIsE2EEEnabled(true);
           setE2eeKey(keyBytes);
-
-          console.log('[livekit] E2EE enabled with Matrix key distribution');
-          console.log('[livekit] room.e2eeManager:', room.e2eeManager);
-
-          // If room creator, send key to any existing participants
-          if (isRoomCreator) {
-            const existingParticipants = Array.from(room.remoteParticipants.values());
-            for (const participant of existingParticipants) {
-              await sendE2EEKey(participant.identity, keyBytes, roomName);
-            }
-          }
+          console.log('[livekit] E2EE enabled with password-derived key');
         } else {
           setIsE2EEEnabled(false);
         }
@@ -483,7 +424,7 @@ export function useRoom() {
         setError(err.message);
       }
     },
-    [scheduleRemoteTracksUpdate, scheduleScreensUpdate, handleToDeviceEvent, sendE2EEKey],
+    [scheduleRemoteTracksUpdate, scheduleScreensUpdate, deriveE2EEKey],
   );
 
   // ─── Disconnect from Room ─────────────────────────────
@@ -499,18 +440,13 @@ export function useRoom() {
       // Cleanup mic audio pipeline
       cleanupMicPipeline();
 
-      // Remove Matrix to-device event listener
-      const matrixClient = getMatrixClient();
-      if (matrixClient) {
-        matrixClient.off('toDeviceEvent', handleToDeviceEvent);
-      }
-
       roomRef.current.disconnect();
       roomRef.current = null;
       e2eeKeyProviderRef.current = null;
-      currentRoomNameRef.current = null;
-      isRoomCreatorRef.current = false;
       keyBytesRef.current = null;
+      keyRotationCounterRef.current = 0;
+      roomPasswordRef.current = null;
+      roomNameRef.current = null;
 
       localTracksRef.current.clear();
       remoteTracksRef.current.clear();
@@ -530,7 +466,7 @@ export function useRoom() {
     } catch (err) {
       console.error('[livekit] Disconnect error:', err);
     }
-  }, [cleanupMicPipeline, handleToDeviceEvent]);
+  }, [cleanupMicPipeline]);
 
   // ─── Publish Screen Share ─────────────────────────────
   const publishScreen = useCallback(
@@ -1041,16 +977,10 @@ export function useRoom() {
         roomRef.current = null;
       }
 
-      // Remove Matrix to-device event listener
-      const matrixClient = getMatrixClient();
-      if (matrixClient) {
-        matrixClient.off('toDeviceEvent', handleToDeviceEvent);
-      }
-
       // Cleanup mic audio pipeline
       cleanupMicPipeline();
     };
-  }, [cleanupMicPipeline, handleToDeviceEvent]);
+  }, [cleanupMicPipeline]);
 
   return {
     // Connection state
@@ -1081,7 +1011,5 @@ export function useRoom() {
     loadingScreens,
     watchScreen,
     unwatchScreen,
-    // E2EE key distribution
-    sendE2EEKey,
   };
 }
