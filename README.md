@@ -217,6 +217,13 @@ All configuration via environment variables:
 
 ---
 
+## Documentation
+
+- **[docs/README.md](docs/README.md)** — Index of all documentation (testing, audits, reference).
+- **[SECURITY.md](SECURITY.md)** — E2EE implementation, trust model, browser support.
+
+---
+
 ## Contributing
 
 PRs welcome. Please open an issue first if you're planning a large change.

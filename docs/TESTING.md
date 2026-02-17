@@ -147,7 +147,7 @@ Use two browser windows (e.g. normal + incognito) to simulate two users.
 
 For a full E2EE manual checklist (crypto init, key distribution, rekeying, etc.), see:
 
-**scripts/e2ee-testing-checklist.md**
+[e2ee-test-checklist.md](e2ee-test-checklist.md)
 
 ---
 
