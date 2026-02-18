@@ -105,27 +105,20 @@ const milestones = [
 ];
 
 const STATUS = {
-  done: { label: "SHIPPED", color: "#4ade80", bg: "rgba(74,222,128,0.08)", dot: "#4ade80" },
-  active: { label: "IN PROGRESS", color: "#38bdf8", bg: "rgba(56,189,248,0.08)", dot: "#38bdf8" },
-  planned: { label: "PLANNED", color: "#a78bfa", bg: "rgba(167,139,250,0.08)", dot: "#a78bfa" },
-  future: { label: "FUTURE", color: "#64748b", bg: "rgba(100,116,139,0.06)", dot: "#475569" },
+  done: { label: "SHIPPED", color: "var(--hush-live)", bg: "var(--hush-live-glow)", border: "var(--hush-live-glow)", dot: "var(--hush-live)" },
+  active: { label: "IN PROGRESS", color: "var(--hush-amber)", bg: "var(--hush-amber-ghost)", border: "var(--hush-amber-ghost)", dot: "var(--hush-amber)" },
+  planned: { label: "PLANNED", color: "var(--hush-amber-dim)", bg: "var(--hush-amber-ghost)", border: "var(--hush-amber-ghost)", dot: "var(--hush-amber-dim)" },
+  future: { label: "FUTURE", color: "var(--hush-text-muted)", bg: "rgba(58,58,78,0.2)", border: "var(--hush-border)", dot: "var(--hush-text-ghost)" },
 };
 
 const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
-
   * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: #080b10;
-    color: #e2e8f0;
-    font-family: 'IBM Plex Sans', sans-serif;
-    min-height: 100vh;
-  }
 
   .roadmap-root {
     min-height: 100vh;
-    background: #080b10;
+    background: var(--hush-black);
+    color: var(--hush-text);
+    font-family: var(--font-sans);
     padding: 64px 24px 96px;
     position: relative;
     overflow-x: hidden;
@@ -137,8 +130,8 @@ const styles = `
     position: fixed;
     inset: 0;
     background:
-      radial-gradient(ellipse 60% 40% at 20% 10%, rgba(56,189,248,0.04) 0%, transparent 60%),
-      radial-gradient(ellipse 40% 60% at 80% 80%, rgba(74,222,128,0.03) 0%, transparent 60%);
+      radial-gradient(ellipse 60% 40% at 20% 10%, var(--hush-amber-glow) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 60% at 80% 80%, var(--hush-live-glow) 0%, transparent 60%);
     pointer-events: none;
   }
 
@@ -161,11 +154,11 @@ const styles = `
   }
 
   .eyebrow {
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.15em;
-    color: #38bdf8;
+    color: var(--hush-amber);
     text-transform: uppercase;
     margin-bottom: 16px;
     display: flex;
@@ -178,14 +171,14 @@ const styles = `
     display: block;
     width: 24px;
     height: 1px;
-    background: #38bdf8;
+    background: var(--hush-amber);
     opacity: 0.6;
   }
 
   .back-link {
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
-    color: #64748b;
+    color: var(--hush-text-muted);
     text-decoration: none;
     letter-spacing: 0.05em;
     margin-bottom: 24px;
@@ -194,14 +187,14 @@ const styles = `
   }
 
   .back-link:hover {
-    color: #38bdf8;
+    color: var(--hush-amber);
   }
 
-  h1 {
-    font-family: 'IBM Plex Mono', monospace;
+  .roadmap-root h1 {
+    font-family: var(--font-mono);
     font-size: clamp(28px, 5vw, 42px);
     font-weight: 600;
-    color: #f8fafc;
+    color: var(--hush-text);
     line-height: 1.1;
     letter-spacing: -0.02em;
     margin-bottom: 16px;
@@ -209,7 +202,7 @@ const styles = `
 
   .subtitle {
     font-size: 15px;
-    color: #64748b;
+    color: var(--hush-text-secondary);
     font-weight: 300;
     line-height: 1.6;
     max-width: 480px;
@@ -221,17 +214,17 @@ const styles = `
     flex-wrap: wrap;
     margin-top: 32px;
     padding-top: 24px;
-    border-top: 1px solid rgba(255,255,255,0.04);
+    border-top: 1px solid var(--hush-border);
   }
 
   .legend-item {
     display: flex;
     align-items: center;
     gap: 7px;
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 10px;
     letter-spacing: 0.1em;
-    color: #475569;
+    color: var(--hush-text-muted);
   }
 
   .legend-dot {
@@ -253,8 +246,8 @@ const styles = `
     background: linear-gradient(
       to bottom,
       transparent 0%,
-      rgba(255,255,255,0.06) 5%,
-      rgba(255,255,255,0.06) 95%,
+      var(--hush-border) 5%,
+      var(--hush-border) 95%,
       transparent 100%
     );
   }
@@ -287,53 +280,53 @@ const styles = `
   }
 
   .milestone-dot.done {
-    background: #4ade80;
-    border-color: #4ade80;
-    box-shadow: 0 0 8px rgba(74,222,128,0.4);
+    background: var(--hush-live);
+    border-color: var(--hush-live);
+    box-shadow: 0 0 8px var(--hush-live-glow);
   }
 
   .milestone-dot.active {
-    background: #38bdf8;
-    border-color: #38bdf8;
-    box-shadow: 0 0 12px rgba(56,189,248,0.6);
-    animation: pulse 2s ease-in-out infinite;
+    background: var(--hush-amber);
+    border-color: var(--hush-amber);
+    box-shadow: 0 0 12px var(--hush-amber-glow);
+    animation: roadmap-pulse 2s ease-in-out infinite;
   }
 
   .milestone-dot.planned {
     background: transparent;
-    border-color: #a78bfa;
+    border-color: var(--hush-amber-dim);
   }
 
   .milestone-dot.future {
     background: transparent;
-    border-color: #334155;
+    border-color: var(--hush-text-ghost);
   }
 
-  @keyframes pulse {
-    0%, 100% { box-shadow: 0 0 8px rgba(56,189,248,0.4); }
-    50% { box-shadow: 0 0 16px rgba(56,189,248,0.8), 0 0 32px rgba(56,189,248,0.2); }
+  @keyframes roadmap-pulse {
+    0%, 100% { box-shadow: 0 0 8px var(--hush-amber-glow); }
+    50% { box-shadow: 0 0 16px var(--hush-amber-glow), 0 0 32px var(--hush-amber-ghost); }
   }
 
   .milestone-card {
     flex: 1;
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 8px;
+    border: 1px solid var(--hush-border);
+    border-radius: var(--radius-sm);
     padding: 18px 20px;
     cursor: pointer;
     transition: border-color 0.2s ease, background 0.2s ease;
     margin-bottom: 12px;
-    background: rgba(255,255,255,0.015);
+    background: var(--hush-surface);
     user-select: none;
   }
 
   .milestone-card:hover {
-    border-color: rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.025);
+    border-color: var(--hush-border-hover);
+    background: var(--hush-elevated);
   }
 
   .milestone-card.open {
-    border-color: rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.02);
+    border-color: var(--hush-border-hover);
+    background: var(--hush-elevated);
   }
 
   .card-header {
@@ -351,14 +344,14 @@ const styles = `
   }
 
   .milestone-id {
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 10px;
-    color: #334155;
+    color: var(--hush-text-ghost);
     letter-spacing: 0.08em;
   }
 
   .status-badge {
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 9px;
     font-weight: 500;
     letter-spacing: 0.12em;
@@ -370,31 +363,31 @@ const styles = `
   .card-title {
     font-size: 15px;
     font-weight: 500;
-    color: #f1f5f9;
+    color: var(--hush-text);
     letter-spacing: -0.01em;
     line-height: 1.3;
   }
 
   .card-summary {
     font-size: 13px;
-    color: #475569;
+    color: var(--hush-text-secondary);
     line-height: 1.6;
     margin-top: 8px;
     font-weight: 300;
   }
 
   .chevron {
-    color: #334155;
+    color: var(--hush-text-ghost);
     font-size: 12px;
     transition: transform 0.2s ease, color 0.2s ease;
     flex-shrink: 0;
     margin-top: 2px;
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: var(--font-mono);
   }
 
   .chevron.open {
     transform: rotate(90deg);
-    color: #64748b;
+    color: var(--hush-text-muted);
   }
 
   .tasks {
@@ -411,7 +404,7 @@ const styles = `
 
   .tasks-inner {
     padding-top: 16px;
-    border-top: 1px solid rgba(255,255,255,0.04);
+    border-top: 1px solid var(--hush-border);
     margin-top: 14px;
     display: flex;
     flex-direction: column;
@@ -422,9 +415,9 @@ const styles = `
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11.5px;
-    color: #64748b;
+    color: var(--hush-text-secondary);
     line-height: 1.5;
   }
 
@@ -437,7 +430,7 @@ const styles = `
   .footer-note {
     margin-top: 56px;
     padding-top: 24px;
-    border-top: 1px solid rgba(255,255,255,0.04);
+    border-top: 1px solid var(--hush-border);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -446,23 +439,23 @@ const styles = `
   }
 
   .footer-text {
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
-    color: #1e293b;
+    color: var(--hush-text-ghost);
     letter-spacing: 0.05em;
   }
 
   .footer-link {
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
-    color: #334155;
+    color: var(--hush-text-muted);
     text-decoration: none;
     letter-spacing: 0.05em;
     transition: color 0.2s;
   }
 
   .footer-link:hover {
-    color: #38bdf8;
+    color: var(--hush-amber);
   }
 
   @media (max-width: 520px) {
@@ -556,7 +549,7 @@ export default function Roadmap() {
                             className="status-badge"
                             style={{
                               color: s.color,
-                              borderColor: `${s.color}33`,
+                              borderColor: s.border,
                               background: s.bg,
                             }}
                           >
@@ -591,8 +584,11 @@ export default function Roadmap() {
           </div>
 
           <div className="footer-note">
-            <span className="footer-text">// open source, github.com/your-handle/hush</span>
-            <a className="footer-link" href="https://gethush.live">gethush.live →</a>
+            <div>
+              <span className="footer-text">// open source, </span>
+              <a className="footer-link" href="https://github.com/YarinCardillo/hush-app" target="_blank" rel="noopener noreferrer">github.com/YarinCardillo/hush-app</a>
+            </div>
+            <a className="footer-link" href="https://gethush.live" target="_blank" rel="noopener noreferrer">gethush.live →</a>
           </div>
 
         </div>
