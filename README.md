@@ -2,234 +2,113 @@
 
 **Stream without limits. Privacy by default.**
 
-High-quality screen sharing with no artificial resolution caps. Open source, self-hostable, privacy-first. Built where others lock 1080p behind a paywall.
+High-quality screen sharing with end-to-end encryption. Open source, self-hostable. Matrix for auth and chat, LiveKit for media — both E2EE.
 
 ---
 
 ## What is this?
 
-Hush is a web-based screen sharing tool that lets you stream your screen to friends at full quality — 1080p, 1440p, 4K, whatever your connection can handle. No account required. No tracking. No bullshit.
+Hush is a web app for screen sharing, voice, and video with full end-to-end encryption. Create or join a room, share your screen or webcam; chat and media are encrypted so the server never sees content.
 
 **Features:**
-- Screen sharing at any resolution/framerate your connection supports
-- Webcam and microphone support
-- Switch windows/screens on the fly without disconnecting
-- Automatic quality recommendation based on your upload speed
+- Screen sharing, webcam, and microphone
+- E2EE chat (Matrix, Megolm)
+- E2EE media (LiveKit frame encryption)
+- Create room / join room — no account required (guest auth)
 - Password-protected rooms
-- Self-hostable with a single `docker-compose up`
-- Transparent server capacity — you always know what's available
+- Self-hostable: `./scripts/setup.sh` then `docker-compose up -d`
 
-**Privacy model:**
-- DTLS/SRTP encryption on all WebRTC traffic (automatic, built into browser)
-- SFU server never decodes media — only forwards encrypted packets
-- Self-host it and trust no one but yourself
-- No tracking, zero analytics, zero ads
+**Privacy:**
+- Chat and media are E2EE; keys never leave client control (except Olm/Megolm exchange via Matrix).
+- Server issues LiveKit tokens after validating Matrix identity; it does not read room traffic.
+- See [SECURITY.md](SECURITY.md) for algorithms, trust model, and browser support.
 
 ---
 
-## How it works — Free vs Supporter vs Self-host
-
-Hush is and will always be **free and open source**. The hosted instance at gethush.live has resource limits because servers cost money. Here's how it breaks down:
-
-| | Free | Supporter (future) | Self-host |
-|---|---|---|---|
-| **Account required** | No | Yes | No |
-| **Room features** | Same as supporter | Same as free | Your choice |
-| **Max participants** | 8 per room | 8 per room | Unlimited |
-| **Screen shares** | Everyone can stream | Everyone can stream | Unlimited |
-| **Max quality** | Source (4K+) | Source (4K+) | No limit |
-| **Concurrent rooms** | 30 globally | Unlimited | Unlimited |
-| **Room persistence** | Temporary | Persistent (like Discord) | Your choice |
-| **Access guarantee** | When free pool full, wait | Always create rooms | Always create rooms |
-| **Cost** | Free | 3-5€/month (future) | Free (you pay hosting) |
-
-### The Model
-
-**Free tier** gives you full-featured rooms (8 people, source quality, everyone can stream), but the hosted instance can only support **30 concurrent free rooms**. When all 30 are occupied, you'll need to wait for one to free up, become a supporter, or self-host.
-
-**Supporter tier** (future) pays for **convenience over self-hosting**: guaranteed access even when free pool is full, persistent rooms that don't disappear when empty, and supporting the infrastructure. You're not paying for features — you're paying for availability and convenience.
-
-**Self-hosting** gives you complete control and unlimited capacity based on your hardware. The code is identical — no artificial restrictions.
-
-**Important:** When the free pool is full, it means the allocated server resources for free rooms are genuinely exhausted. Supporter rooms use a separate, dedicated resource pool — not the same capacity. This isn't a fake paywall; it's real resource allocation. The code is open source — [verify it yourself](server/src/rooms/resourcePool.js).
-
-### Resource transparency
-
-Every Hush instance exposes a public `/api/status` endpoint showing real-time capacity:
-
-```json
-{
-  "pools": {
-    "free": { "active": 8, "max": 30, "available": 22 },
-    "supporter": { "active": 3, "max": 15, "available": 12 },
-    "total": { "active": 11, "capacity": 45, "utilizationPercent": 24 }
-  },
-  "allocation": {
-    "freePercent": 60,
-    "supporterPercent": 30,
-    "reservePercent": 10
-  }
-}
-```
-
-Self-hosters can set `FREE_POOL_PERCENT=100` to disable tiers entirely and make everything free.
-
----
-
-## Quick Start
+## Quick start
 
 ### Self-hosting (Docker)
 
 ```bash
-git clone https://github.com/hush-app/hush.git
-cd hush
-cp .env.example .env
-# Edit .env — set JWT_SECRET and ANNOUNCED_IP (your server's public IP)
-docker-compose up --build
+git clone https://github.com/YarinCardillo/hush-app
+cd hush-app
+./scripts/setup.sh   # generates .env, optional Synapse config
+docker-compose up -d
 ```
 
-Open `http://your-server-ip:3001` in your browser.
+Open `http://localhost` (Caddy serves the app and proxies Matrix/LiveKit). For local dev with hot reload, run `npm run install:all`, then `docker-compose up -d` for backend and `npm run dev` for the client; use the URL Vite prints (e.g. http://localhost:5173).
 
-### Local Development
+### One-time setup
 
-```bash
-# Install all dependencies
-npm run install:all
-
-# Start both server and client in dev mode
-npm run dev
-```
-
-Server runs on `http://localhost:3001`, client on `http://localhost:5173`.
-
-### Production Notes
-
-- **HTTPS is required** for `getDisplayMedia()` to work in browsers. Use a reverse proxy (nginx/Caddy) with Let's Encrypt.
-- **Set `ANNOUNCED_IP`** to your server's public IP in `.env`.
-- **Open ports 40000-40100 UDP/TCP** in your firewall for WebRTC media.
-- **TURN server**: For users behind strict NATs, you'll need a TURN server. Install [coturn](https://github.com/coturn/coturn) on the same or a separate VPS.
+- `./scripts/setup.sh` checks for `docker`, `docker-compose`, `openssl`, creates `.env` from `.env.example` with random secrets, and can run `scripts/generate-synapse-config.sh`.
+- Or copy `.env.example` to `.env` and set at least `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and (for production) `MATRIX_SERVER_NAME`, Synapse secrets, Postgres password.
 
 ---
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────┐
-│                  Client                      │
-│  React + mediasoup-client + Web Crypto API   │
-│                                              │
-│  ┌──────────┐ ┌───────────┐ ┌────────────┐  │
-│  │ Screen   │ │ Webcam    │ │ Microphone │  │
-│  │ Capture  │ │ Capture   │ │ Capture    │  │
-│  └────┬─────┘ └─────┬─────┘ └─────┬──────┘  │
-│       │              │              │         │
-│       └──────────────┼──────────────┘         │
-│                      │                        │
-│           ┌──────────┴──────────┐             │
-│           │ WebRTC Transport    │             │
-│           │ (DTLS/SRTP)         │             │
-│           └──────────┬──────────┘             │
-└──────────────────────┼────────────────────────┘
-                       │
-              Encrypted media
-                       │
-┌──────────────────────┼────────────────────────┐
-│               Server (Node.js)                │
-│                      │                        │
-│  ┌───────────────────┴────────────────────┐   │
-│  │          Resource Pool Manager          │   │
-│  │  ┌─────────┐ ┌────────────┐ ┌───────┐  │   │
-│  │  │  Free   │ │ Supporter  │ │Reserve│  │   │
-│  │  │  60%    │ │   30%      │ │  10%  │  │   │
-│  │  └─────────┘ └────────────┘ └───────┘  │   │
-│  └────────────────────────────────────────┘   │
-│                      │                        │
-│           ┌──────────┴──────────┐             │
-│           │ mediasoup SFU       │             │
-│           │ (forward encrypted  │             │
-│           │  RTP packets)       │             │
-│           └──────────┬──────────┘             │
-│                      │                        │
-│           ┌──────────┴──────────┐             │
-│           │ Socket.io Signaling │             │
-│           │ + Room Management   │             │
-│           │ + JWT Auth          │             │
-│           └─────────────────────┘             │
-└───────────────────────────────────────────────┘
-```
+- **Client:** React 18, Vite. Matrix (matrix-js-sdk) for auth and chat; LiveKit (livekit-client) for voice/video/screen. E2EE for both (Rust crypto via SDK, LiveKit E2EE worker).
+- **Server (Node):** Serves static client, proxies to Synapse and LiveKit, exposes a LiveKit token endpoint (validates Matrix token, returns JWT).
+- **Synapse:** Matrix homeserver (auth, room state, E2EE chat).
+- **LiveKit:** SFU for WebRTC; media encrypted with client-held keys.
+- **Caddy:** Reverse proxy (Matrix, LiveKit, app) and TLS in production.
+
+Self-hosted deploys run Synapse, Postgres, LiveKit, Redis, Caddy, and the Hush server in Docker. For a hosted/production deploy (e.g. gethush.live), LiveKit can be replaced with LiveKit Cloud; use `docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d` and set LiveKit env vars from the cloud dashboard.
 
 ---
 
-## Configuration (Self-hosters)
+## Configuration
 
-All configuration via environment variables:
+Main environment variables (see [.env.example](.env.example)):
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `TOTAL_MAX_ROOMS` | 50 | Total concurrent rooms across all tiers |
-| `FREE_POOL_PERCENT` | 60 | % of capacity allocated to free tier |
-| `SUPPORTER_POOL_PERCENT` | 30 | % of capacity for supporters |
-| `FREE_MAX_PARTICIPANTS` | 4 | Max people per free room |
-| `SUPPORTER_MAX_PARTICIPANTS` | 10 | Max people per supporter room |
-| `FREE_MAX_BITRATE` | 4500000 | Bitrate cap for free (1080p) |
-| `SUPPORTER_MAX_BITRATE` | 15000000 | Bitrate cap for supporters (4K) |
-
-**Want no tiers?** Set `FREE_POOL_PERCENT=100` and all rooms are free with no limits.
+| Variable | Description |
+|----------|-------------|
+| `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | LiveKit API credentials (dev: match docker-compose; prod: from LiveKit Cloud) |
+| `LIVEKIT_URL` | LiveKit WebSocket URL (dev: `ws://localhost:7880`; prod: `wss://<project>.livekit.cloud`) |
+| `MATRIX_HOMESERVER_URL`, `MATRIX_SERVER_NAME` | Matrix homeserver URL and server name |
+| `POSTGRES_*` | Postgres DB for Synapse |
+| `PORT` | Node server port (default 3001) |
 
 ---
 
-## Tech Stack
+## Tech stack
 
-| Component | Technology |
-|-----------|-----------|
-| Frontend | React 18 + Vite |
-| Media Engine | mediasoup (SFU) |
-| Signaling | Socket.io |
-| Auth | bcrypt + JWT |
-| Encryption | DTLS/SRTP (WebRTC built-in) |
-| Resource mgmt | Custom pool allocator |
-| Containerization | Docker |
-
----
-
-## Browser Support
-
-| Feature | Chrome/Edge | Firefox | Safari |
-|---------|:-----------:|:-------:|:------:|
-| Screen sharing | Yes | Yes | Desktop only |
-| System audio capture | Yes (Win/ChromeOS) | No | No |
-| Webcam/Mic | Yes | Yes | Yes |
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 18, Vite, matrix-js-sdk, livekit-client |
+| Auth & chat | Matrix (Synapse), E2EE via Megolm |
+| Media | LiveKit (SFU), E2EE via Insertable Streams |
+| Server | Node (static + proxy + LiveKit token endpoint) |
+| Proxy | Caddy |
+| Containers | Docker, docker-compose |
 
 ---
 
-## Roadmap
+## Browser support
 
-- [ ] TURN server integration (coturn)
-- [ ] Stripe/LemonSqueezy supporter payments
-- [ ] Persistent rooms for supporters
-- [x] Text chat per room
-- [ ] Recording (local, client-side)
-- [ ] Mobile-optimized UI
-- [ ] Room invitations via link
-- [ ] Admin controls (kick, mute)
-- [ ] Simulcast for adaptive quality per viewer
-- [ ] End-to-end encryption (WebRTC Encoded Transform)
+| Browser | Chat E2EE | Media E2EE |
+|---------|-----------|------------|
+| Chromium (Chrome, Edge, Brave, Arc) | Full | Full |
+| Firefox | Full | Partial |
+| Safari | Full | Limited |
+
+Full media E2EE requires Insertable Streams and the LiveKit E2EE worker. See [SECURITY.md](SECURITY.md).
 
 ---
 
 ## Documentation
 
-- **[docs/README.md](docs/README.md)** — Index of all documentation (testing, audits, reference).
-- **[SECURITY.md](SECURITY.md)** — E2EE implementation, trust model, browser support.
+- **[docs/README.md](docs/README.md)** — Index (testing, audits, reference).
+- **[SECURITY.md](SECURITY.md)** — E2EE, trust model, limitations.
 
 ---
 
 ## Contributing
 
-PRs welcome. Please open an issue first if you're planning a large change.
+PRs welcome. Open an issue first for large changes.
 
 ---
 
 ## License
 
-AGPL-3.0 — If you modify and deploy this, share your changes.
+AGPL-3.0 — If you modify and deploy, share your changes.

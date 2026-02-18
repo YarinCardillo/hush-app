@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 
 const Home = lazy(() => import('./pages/Home'));
 const Room = lazy(() => import('./pages/Room'));
+const Roadmap = lazy(() => import('./pages/Roadmap'));
 
 const fallback = (
   <div style={{
@@ -19,6 +20,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/room/:roomName" element={<Room />} />
+          <Route path="/roadmap" element={<Roadmap />} />
         </Routes>
       </Suspense>
     </AuthProvider>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
@@ -567,6 +567,10 @@ export default function Home() {
               <a href="https://github.com/YarinCardillo/hush-app" style={styles.footerLink}>
                 GitHub
               </a>
+              {' · '}
+              <Link to="/roadmap" style={styles.footerLink}>
+                Roadmap
+              </Link>
             </div>
             <div style={styles.footerMeta}>
               <span>v{APP_VERSION}</span>
