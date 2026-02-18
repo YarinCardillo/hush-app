@@ -11,10 +11,6 @@ synapse/homeserver.yaml
 synapse/data/
 synapse/*.signing.key
 
-# claude-mem generated files
-**/CLAUDE.md
-CLAUDE.md
-
 # Claude Code local settings
 .claude/
 design-system.md
@@ -24,6 +20,9 @@ orchestra.sh
 PLAN.md
 TROUBLESHOOTING.md
 .orchestra/
+
+# Private business docs (not for open source repo)
+.private/
 
 # AI/IDE tools
 .aider*
