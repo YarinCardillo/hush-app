@@ -116,29 +116,14 @@ const styles = `
 
   .roadmap-root {
     min-height: 100vh;
-    background: var(--hush-black);
+    background: transparent;
     color: var(--hush-text);
     font-family: var(--font-sans);
     padding: 64px 24px 96px;
     position: relative;
     overflow-x: hidden;
     user-select: none;
-  }
-
-  .roadmap-root::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: radial-gradient(ellipse 60% 40% at 20% 10%, var(--hush-amber-glow) 0%, transparent 60%);
-    pointer-events: none;
-  }
-
-  .noise {
-    position: fixed;
-    inset: 0;
-    opacity: 0.025;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-    pointer-events: none;
+    z-index: 1;
   }
 
   .container {
@@ -501,7 +486,6 @@ export default function Roadmap() {
     <>
       <style>{styles}</style>
       <div className="roadmap-root">
-        <div className="noise" />
         <div className="container">
 
           <div className="header">

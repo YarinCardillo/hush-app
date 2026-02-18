@@ -67,10 +67,35 @@ html, body, #root {
 
 body {
   font-family: var(--font-sans);
-  background: var(--hush-black);
+  background-color: var(--hush-black);
   color: var(--hush-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  position: relative;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse 120% 100% at 0% 0%, rgba(212, 160, 83, 0.2) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 60% at 100% 100%, rgba(212, 160, 83, 0.06) 0%, transparent 45%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  animation: hush-breathe 14s ease-in-out infinite;
+}
+
+@keyframes hush-breathe {
+  0%, 100% { opacity: 0.9; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+
+#root {
+  position: relative;
+  z-index: 1;
 }
 
 /* ── Typography ────────────────────────────────── */

@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import AppBackground from './components/AppBackground';
 
 const Home = lazy(() => import('./pages/Home'));
 const Room = lazy(() => import('./pages/Room'));
@@ -16,6 +17,7 @@ const fallback = (
 export default function App() {
   return (
     <AuthProvider>
+      <AppBackground />
       <Suspense fallback={fallback}>
         <Routes>
           <Route path="/" element={<Home />} />

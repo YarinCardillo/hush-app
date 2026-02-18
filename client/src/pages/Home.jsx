@@ -26,22 +26,29 @@ const styles = {
     userSelect: 'none',
     position: 'relative',
   },
-  spotlight: {
+  spotlightWrapper: {
     position: 'fixed',
     inset: 0,
     pointerEvents: 'none',
     zIndex: 0,
-    background:
-      'radial-gradient(400px circle at var(--sx, -1000px) var(--sy, -1000px), rgba(212, 160, 83, 0.07), transparent 100%)',
+    '--ox': '-1000px',
+    '--oy': '-1000px',
+    '--ix': '-1000px',
+    '--iy': '-1000px',
   },
-  grain: {
+  spotlightOuter: {
     position: 'fixed',
     inset: 0,
-    width: '100%',
-    height: '100%',
     pointerEvents: 'none',
-    zIndex: 1,
-    opacity: 0.03,
+    background:
+      'radial-gradient(600px circle at var(--ox) var(--oy), rgba(212,160,83,0.04), transparent 100%)',
+  },
+  spotlightInner: {
+    position: 'fixed',
+    inset: 0,
+    pointerEvents: 'none',
+    background:
+      'radial-gradient(200px circle at var(--ix) var(--iy), rgba(212,160,83,0.08), transparent 100%)',
   },
   container: {
     width: '100%',
@@ -205,8 +212,14 @@ export default function Home() {
 
   const spotlightRef = useRef(null);
   const rafRef = useRef(null);
+  const posRef = useRef({ x: -1000, y: -1000 });
+  const smoothOuterRef = useRef({ x: -1000, y: -1000 });
+  const smoothInnerRef = useRef({ x: -1000, y: -1000 });
   const wordmarkRef = useRef(null);
   const [dotLeft, setDotLeft] = useState(null);
+  const [spotlightEnabled, setSpotlightEnabled] = useState(
+    () => (typeof window !== 'undefined' ? !window.matchMedia('(pointer: coarse)').matches : false)
+  );
 
   // Pre-fill room name when redirected from a direct invite link
   useEffect(() => {
@@ -219,10 +232,36 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const m = window.matchMedia('(pointer: coarse)');
+    const update = () => setSpotlightEnabled(!m.matches);
+    update();
+    m.addEventListener('change', update);
+    return () => m.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => {
+    if (!spotlightEnabled) return;
+    const loop = () => {
+      const pos = posRef.current;
+      const so = smoothOuterRef.current;
+      const si = smoothInnerRef.current;
+      so.x += (pos.x - so.x) * 0.06;
+      so.y += (pos.y - so.y) * 0.06;
+      si.x += (pos.x - si.x) * 0.1;
+      si.y += (pos.y - si.y) * 0.1;
+      if (spotlightRef.current) {
+        spotlightRef.current.style.setProperty('--ox', `${so.x}px`);
+        spotlightRef.current.style.setProperty('--oy', `${so.y}px`);
+        spotlightRef.current.style.setProperty('--ix', `${si.x}px`);
+        spotlightRef.current.style.setProperty('--iy', `${si.y}px`);
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, []);
+  }, [spotlightEnabled]);
 
   useEffect(() => {
     const measure = () => {
@@ -242,14 +281,8 @@ export default function Home() {
   }, []);
 
   const handleMouseMove = useCallback((e) => {
-    if (rafRef.current) return;
-    rafRef.current = requestAnimationFrame(() => {
-      if (spotlightRef.current) {
-        spotlightRef.current.style.setProperty('--sx', `${e.clientX}px`);
-        spotlightRef.current.style.setProperty('--sy', `${e.clientY}px`);
-      }
-      rafRef.current = null;
-    });
+    posRef.current.x = e.clientX;
+    posRef.current.y = e.clientY;
   }, []);
 
   const handleSubmit = async (e) => {
@@ -412,21 +445,13 @@ export default function Home() {
         }
       `}</style>
 
-      {/* Cursor spotlight — follows mouse via CSS custom properties */}
-      <div ref={spotlightRef} style={styles.spotlight} />
-
-      {/* Background grain — SVG feTurbulence at 3% opacity */}
-      <svg style={styles.grain} xmlns="http://www.w3.org/2000/svg">
-        <filter id="hush-grain">
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency="0.65"
-            numOctaves="3"
-            stitchTiles="stitch"
-          />
-        </filter>
-        <rect width="100%" height="100%" filter="url(#hush-grain)" />
-      </svg>
+      {/* Cursor spotlight — two-layer lerped follow (desktop only) */}
+      {spotlightEnabled && (
+        <div ref={spotlightRef} style={styles.spotlightWrapper}>
+          <div style={styles.spotlightOuter} />
+          <div style={styles.spotlightInner} />
+        </div>
+      )}
 
       <div style={styles.container}>
         {/* Logo — fade in with amber glow pulse */}
