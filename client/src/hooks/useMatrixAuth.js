@@ -349,7 +349,7 @@ export function useMatrixAuth() {
     }
   }, []);
 
-  // Rehydrate from sessionStorage on mount (e.g. after refresh)
+  // Rehydrate from localStorage on mount (e.g. after refresh or new tab)
   useEffect(() => {
     if (userId !== null) {
       setRehydrationAttempted(true);

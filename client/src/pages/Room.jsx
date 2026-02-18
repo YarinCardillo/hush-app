@@ -301,10 +301,9 @@ export default function Room() {
     if (!roomId || !roomNameStored) return;
 
     const displayName = sessionStorage.getItem('hush_displayName') || 'Anonymous';
-    const roomPassword = sessionStorage.getItem('hush_roomPassword');
     const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
 
-    connectRoom(roomName, displayName, roomPassword, matrixRoomId).then(() => {
+    connectRoom(roomName, displayName, matrixRoomId).then(() => {
       setConnected(true);
       console.log('[room] Connected to LiveKit room');
     }).catch((err) => {
@@ -453,7 +452,6 @@ export default function Room() {
     sessionStorage.removeItem('hush_token');
     sessionStorage.removeItem('hush_peerId');
     sessionStorage.removeItem('hush_roomName');
-    sessionStorage.removeItem('hush_roomPassword');
     navigate('/');
   };
 

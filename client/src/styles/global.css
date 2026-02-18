@@ -313,7 +313,7 @@ code, .mono {
 
 .video-container {
   position: relative;
-  background: #000;
+  background: var(--hush-black);
   border-radius: var(--radius-md);
   overflow: hidden;
   /* NO border — video containers are windows, not cards */

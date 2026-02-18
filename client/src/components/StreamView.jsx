@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 const styles = {
   container: (isFullscreen) => ({
     position: 'relative',
-    background: '#000',
+    background: 'var(--hush-black)',
     borderRadius: isFullscreen ? 0 : 'var(--radius-md)',
     overflow: 'hidden',
     /* NO border — video containers are windows, not cards */
@@ -26,7 +26,7 @@ const styles = {
     alignItems: 'center',
     gap: '6px',
     padding: '5px 12px',
-    background: 'rgba(8, 8, 12, 0.7)',
+    background: 'rgba(12, 12, 18, 0.7)',
     backdropFilter: 'blur(12px)',
     WebkitBackdropFilter: 'blur(12px)',
     borderRadius: 'var(--radius-sm)',
@@ -63,7 +63,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'rgba(8, 8, 12, 0.7)',
+    background: 'rgba(12, 12, 18, 0.7)',
     backdropFilter: 'blur(8px)',
     WebkitBackdropFilter: 'blur(8px)',
     border: 'none',
@@ -84,7 +84,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'rgba(8, 8, 12, 0.7)',
+    background: 'rgba(12, 12, 18, 0.7)',
     backdropFilter: 'blur(8px)',
     WebkitBackdropFilter: 'blur(8px)',
     border: 'none',

@@ -187,21 +187,32 @@ const styles = {
   },
 };
 
+const AUTH_VIEW = { CHOOSE: 'choose', LOGIN: 'login', REGISTER: 'register', GUEST: 'guest' };
+
 export default function Home() {
   const navigate = useNavigate();
   const {
     loginAsGuest,
+    login,
+    register,
+    logout,
+    isAuthenticated,
     isLoading: matrixLoading,
     error: matrixError,
     cryptoError,
     clearCryptoError,
   } = useAuth();
+  const [authView, setAuthView] = useState(AUTH_VIEW.CHOOSE);
   const [mode, setMode] = useState('create');
   const [roomName, setRoomName] = useState('');
-  const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('hush_displayName') || '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [registerUsername, setRegisterUsername] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerDisplayName, setRegisterDisplayName] = useState(() => localStorage.getItem('hush_displayName') || '');
 
   const spotlightRef = useRef(null);
   const rafRef = useRef(null);
@@ -271,6 +282,20 @@ export default function Home() {
     posRef.current.x = e.clientX;
     posRef.current.y = e.clientY;
   }, []);
+
+  const handleLoginSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!loginUsername.trim() || !loginPassword) return;
+    await login(loginUsername.trim(), loginPassword);
+  };
+
+  const handleRegisterSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!registerUsername.trim() || !registerPassword || !registerDisplayName.trim()) return;
+    await register(registerUsername.trim(), registerPassword, registerDisplayName.trim());
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -384,7 +409,6 @@ export default function Home() {
       sessionStorage.setItem('hush_matrixRoomId', matrixRoomId);
       sessionStorage.setItem('hush_roomName', effectiveRoomName);
       sessionStorage.setItem('hush_displayName', displayName);
-      sessionStorage.setItem('hush_roomPassword', password);
 
       navigate(`/room/${encodeURIComponent(effectiveRoomName)}`);
     } catch (err) {
@@ -497,82 +521,243 @@ export default function Home() {
           className="glass"
           style={{ padding: '24px' }}
         >
-          <div style={styles.tabs}>
-            <button
-              style={styles.tab(mode === 'create')}
-              onClick={() => { setMode('create'); setError(''); }}
-            >
-              create room
-            </button>
-            <button
-              style={styles.tab(mode === 'join')}
-              onClick={() => { setMode('join'); setError(''); }}
-            >
-              join
-            </button>
-          </div>
-
-          <form style={styles.form} onSubmit={handleSubmit}>
-            <div>
-              <label style={styles.fieldLabel}>Your Name</label>
-              <input
-                className="input"
-                type="text"
-                placeholder="How others will see you"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                required
-                maxLength={30}
-              />
-            </div>
-
-            <div>
-              <label style={styles.fieldLabel}>Room Name</label>
-              <input
-                className="input"
-                type="text"
-                placeholder={mode === 'create' ? 'Choose a room name' : 'Enter room name'}
-                value={roomName}
-                onChange={(e) => setRoomName(e.target.value)}
-                required
-                maxLength={50}
-              />
-            </div>
-
-            <div>
-              <label style={styles.fieldLabel}>
-                {mode === 'create' ? 'Set Password' : 'Room Password'}
-              </label>
-              <input
-                className="input"
-                type="password"
-                placeholder={mode === 'create' ? 'Min 4 characters' : 'Enter password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={4}
-              />
-            </div>
-
-            {(error || matrixError) && (
-              <div style={styles.error}>{error || matrixError?.message}</div>
-            )}
-
-            {/* CTA button with moving border */}
-            <div style={styles.movingBorderWrapper}>
-              <div style={styles.movingBorderTrack}>
-                <div style={styles.movingBorderGradient} />
-              </div>
+          {isAuthenticated && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
               <button
-                className="btn btn-primary"
-                type="submit"
-                disabled={loading || matrixLoading}
-                style={styles.ctaButton}
+                type="button"
+                onClick={() => logout()}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--hush-text-muted)',
+                  fontSize: '0.8rem',
+                  fontFamily: 'var(--font-sans)',
+                  cursor: 'pointer',
+                  padding: '4px 0',
+                }}
               >
-                {loading || matrixLoading ? 'connecting...' : mode === 'create' ? 'create room' : 'join'}
+                Logout
               </button>
             </div>
-          </form>
+          )}
+
+          {isAuthenticated || authView === AUTH_VIEW.GUEST ? (
+            <>
+              {authView === AUTH_VIEW.GUEST && (
+                <p style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', marginBottom: '16px' }}>
+                  Temporary session — no account. Your identity will not persist.
+                </p>
+              )}
+              <div style={styles.tabs}>
+                <button
+                  style={styles.tab(mode === 'create')}
+                  onClick={() => { setMode('create'); setError(''); }}
+                >
+                  create room
+                </button>
+                <button
+                  style={styles.tab(mode === 'join')}
+                  onClick={() => { setMode('join'); setError(''); }}
+                >
+                  join
+                </button>
+              </div>
+
+              <form style={styles.form} onSubmit={handleSubmit}>
+                <div>
+                  <label style={styles.fieldLabel}>Your Name</label>
+                  <input
+                    className="input"
+                    type="text"
+                    placeholder="How others will see you"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    required
+                    maxLength={30}
+                  />
+                </div>
+
+                <div>
+                  <label style={styles.fieldLabel}>Room Name</label>
+                  <input
+                    className="input"
+                    type="text"
+                    placeholder={mode === 'create' ? 'Choose a room name' : 'Enter room name'}
+                    value={roomName}
+                    onChange={(e) => setRoomName(e.target.value)}
+                    required
+                    maxLength={50}
+                  />
+                </div>
+
+                {(error || matrixError) && (
+                  <div style={styles.error}>{error || matrixError?.message}</div>
+                )}
+
+                <div style={styles.movingBorderWrapper}>
+                  <div style={styles.movingBorderTrack}>
+                    <div style={styles.movingBorderGradient} />
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    type="submit"
+                    disabled={loading || matrixLoading}
+                    style={styles.ctaButton}
+                  >
+                    {loading || matrixLoading ? 'connecting...' : mode === 'create' ? 'create room' : 'join'}
+                  </button>
+                </div>
+              </form>
+            </>
+          ) : authView === AUTH_VIEW.CHOOSE ? (
+            <>
+              <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginBottom: '16px' }}>
+                Sign in or continue as guest
+              </p>
+              <div style={{ ...styles.tabs, flexDirection: 'column' }}>
+                <button
+                  type="button"
+                  style={styles.tab(false)}
+                  onClick={() => setAuthView(AUTH_VIEW.LOGIN)}
+                >
+                  Login
+                </button>
+                <button
+                  type="button"
+                  style={styles.tab(false)}
+                  onClick={() => setAuthView(AUTH_VIEW.REGISTER)}
+                >
+                  Register
+                </button>
+                <button
+                  type="button"
+                  style={styles.tab(false)}
+                  onClick={() => setAuthView(AUTH_VIEW.GUEST)}
+                >
+                  Try as Guest
+                </button>
+              </div>
+            </>
+          ) : authView === AUTH_VIEW.LOGIN ? (
+            <>
+              <button
+                type="button"
+                onClick={() => { setAuthView(AUTH_VIEW.CHOOSE); setError(''); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--hush-text-muted)',
+                  fontSize: '0.8rem',
+                  marginBottom: '16px',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                ← Back
+              </button>
+              <form style={styles.form} onSubmit={handleLoginSubmit}>
+                <div>
+                  <label style={styles.fieldLabel}>Username</label>
+                  <input
+                    className="input"
+                    type="text"
+                    placeholder="Matrix username (e.g. alice)"
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    required
+                    autoComplete="username"
+                  />
+                </div>
+                <div>
+                  <label style={styles.fieldLabel}>Password</label>
+                  <input
+                    className="input"
+                    type="password"
+                    placeholder="Password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+                </div>
+                {matrixError && <div style={styles.error}>{matrixError.message}</div>}
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={matrixLoading}
+                  style={{ width: '100%', padding: '12px' }}
+                >
+                  {matrixLoading ? 'Logging in...' : 'Log in'}
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => { setAuthView(AUTH_VIEW.CHOOSE); setError(''); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--hush-text-muted)',
+                  fontSize: '0.8rem',
+                  marginBottom: '16px',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                ← Back
+              </button>
+              <form style={styles.form} onSubmit={handleRegisterSubmit}>
+                <div>
+                  <label style={styles.fieldLabel}>Username</label>
+                  <input
+                    className="input"
+                    type="text"
+                    placeholder="Choose a username (e.g. alice)"
+                    value={registerUsername}
+                    onChange={(e) => setRegisterUsername(e.target.value)}
+                    required
+                    autoComplete="username"
+                  />
+                </div>
+                <div>
+                  <label style={styles.fieldLabel}>Password</label>
+                  <input
+                    className="input"
+                    type="password"
+                    placeholder="Min 8 characters"
+                    value={registerPassword}
+                    onChange={(e) => setRegisterPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div>
+                  <label style={styles.fieldLabel}>Display name</label>
+                  <input
+                    className="input"
+                    type="text"
+                    placeholder="How others will see you"
+                    value={registerDisplayName}
+                    onChange={(e) => setRegisterDisplayName(e.target.value)}
+                    required
+                    maxLength={30}
+                  />
+                </div>
+                {matrixError && <div style={styles.error}>{matrixError.message}</div>}
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={matrixLoading}
+                  style={{ width: '100%', padding: '12px' }}
+                >
+                  {matrixLoading ? 'Creating account...' : 'Create account'}
+                </button>
+              </form>
+            </>
+          )}
 
           <div style={styles.footer}>
             <div>

@@ -354,6 +354,7 @@ export default function Chat({ currentPeerId }) {
               const currentUserId = client.getUserId();
               const isOwn = msg.sender === currentUserId;
               const isFailed = msg.failed === true;
+              const isPending = msg.pending === true;
 
               return (
                 <div
@@ -361,6 +362,7 @@ export default function Chat({ currentPeerId }) {
                   style={{
                     ...styles.message(isOwn),
                     ...(isFailed ? { borderColor: 'var(--hush-danger)' } : {}),
+                    ...(isPending ? { opacity: 0.8 } : {}),
                   }}
                 >
                   <div style={styles.messageHeader}>
@@ -376,6 +378,11 @@ export default function Chat({ currentPeerId }) {
                       </span>
                     ) : msg.content}
                   </div>
+                  {isPending && (
+                    <div style={{ fontSize: '0.7rem', color: 'var(--hush-text-muted)', marginTop: '4px' }}>
+                      sending…
+                    </div>
+                  )}
                   {isFailed && (
                     <div style={{ marginTop: '8px' }}>
                       <button
