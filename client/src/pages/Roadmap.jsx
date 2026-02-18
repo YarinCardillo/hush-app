@@ -127,7 +127,8 @@ const styles = `
     background: #080b10;
     padding: 64px 24px 96px;
     position: relative;
-    overflow: hidden;
+    overflow-x: hidden;
+    user-select: none;
   }
 
   .roadmap-root::before {
@@ -229,7 +230,7 @@ const styles = `
 
   .timeline-line {
     position: absolute;
-    left: 19px;
+    left: 19.5px;
     top: 0;
     bottom: 0;
     width: 1px;
@@ -251,6 +252,7 @@ const styles = `
 
   .milestone-dot-col {
     flex-shrink: 0;
+    width: 40px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -265,7 +267,6 @@ const styles = `
     position: relative;
     z-index: 1;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
-    margin-left: 9px;
     flex-shrink: 0;
   }
 
