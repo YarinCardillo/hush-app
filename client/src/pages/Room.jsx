@@ -35,12 +35,63 @@ const styles = {
   },
   headerLeft: {
     display: 'flex',
+    alignItems: 'stretch',
+    minHeight: '32px',
+    background: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid rgba(255, 255, 255, 0.06)',
+    borderRadius: 0,
+    overflow: 'hidden',
+  },
+  headerLogoCell: {
+    display: 'flex',
     alignItems: 'center',
-    gap: '12px',
+    paddingLeft: '12px',
+    paddingRight: '10px',
+    borderRight: '1px solid rgba(255, 255, 255, 0.06)',
+    flexShrink: 0,
+  },
+  headerLogo: {
+    display: 'block',
+    height: '28px',
+    width: 'auto',
+    userSelect: 'none',
+  },
+  roomTitleCell: {
+    display: 'flex',
+    alignItems: 'center',
+    paddingLeft: '12px',
+    paddingRight: '12px',
+    minWidth: 0,
+    flex: '1 1 auto',
+    maxWidth: '200px',
+    borderRight: '1px solid rgba(255, 255, 255, 0.06)',
   },
   roomTitle: {
-    fontSize: '0.95rem',
+    fontSize: '0.9rem',
     fontWeight: 600,
+    lineHeight: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  headerBadgeWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  headerBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '0 12px',
+    height: '100%',
+    minHeight: '32px',
+    fontSize: '0.7rem',
+    fontWeight: 500,
+    background: 'rgba(52, 211, 153, 0.1)',
+    color: 'var(--hush-live)',
+    border: 'none',
+    borderRadius: 0,
   },
   headerRight: {
     display: 'flex',
@@ -146,7 +197,7 @@ const styles = {
     justifyContent: 'center',
     borderRadius: 'var(--radius-lg)',
     background: 'var(--hush-surface)',
-    border: '1px solid var(--hush-border)',
+    border: '1px solid transparent',
   },
   emptyTitle: {
     fontSize: '1rem',
@@ -210,6 +261,7 @@ export default function Room() {
     watchScreen,
     unwatchScreen,
     mediaE2EEUnavailable,
+    keyExchangeMessage,
   } = useRoom();
 
   const { isAuthenticated, rehydrationAttempted } = useAuth();
@@ -502,21 +554,69 @@ export default function Room() {
     return null; // useEffect will redirect to /
   }
 
+  if (error) {
+    return (
+      <div style={styles.page}>
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '24px',
+          padding: '24px',
+        }}>
+          <p style={{
+            color: 'var(--hush-danger)',
+            fontSize: '1rem',
+            fontWeight: 500,
+            textAlign: 'center',
+            maxWidth: '360px',
+          }}>
+            {error}
+          </p>
+          <button
+            type="button"
+            onClick={handleLeave}
+            style={{
+              padding: '10px 20px',
+              background: 'var(--hush-amber)',
+              color: 'var(--hush-black)',
+              border: 'none',
+              borderRadius: 'var(--radius-md)',
+              fontSize: '0.9rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            Leave
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.page}>
       <div style={styles.header}>
         <div style={styles.headerLeft}>
-          <img
-            src={logoWordmark}
-            alt="hush"
-            style={{ height: '22px', userSelect: 'none' }}
-            draggable={false}
-          />
-          <span style={styles.roomTitle}>{decodeURIComponent(roomName)}</span>
-          <span className="badge badge-live">
-            <span className="live-dot" />
-            Live
-          </span>
+          <div style={styles.headerLogoCell}>
+            <img
+              src={logoWordmark}
+              alt="hush"
+              style={styles.headerLogo}
+              draggable={false}
+            />
+          </div>
+          <div style={styles.roomTitleCell}>
+            <span style={styles.roomTitle}>{decodeURIComponent(roomName)}</span>
+          </div>
+          <div style={styles.headerBadgeWrap}>
+            <span style={styles.headerBadge}>
+              <span className="live-dot" />
+              Live
+            </span>
+          </div>
         </div>
         <div style={styles.headerRight}>
           <button
@@ -693,6 +793,12 @@ export default function Room() {
         onWebcamDeviceSwitch={handleWebcamDeviceSwitch}
         onLeave={handleLeave}
       />
+
+      {keyExchangeMessage && (
+        <div className="toast" role="alert">
+          {keyExchangeMessage}
+        </div>
+      )}
     </div>
   );
 }

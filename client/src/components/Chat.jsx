@@ -33,7 +33,7 @@ const styles = {
     padding: '8px 12px',
     borderRadius: 'var(--radius-md)',
     background: isOwn ? 'var(--hush-amber-ghost)' : 'var(--hush-elevated)',
-    border: isOwn ? '1px solid rgba(212, 160, 83, 0.2)' : '1px solid var(--hush-border)',
+    border: '1px solid transparent',
   }),
 
   messageHeader: {
@@ -67,7 +67,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
-    borderTop: '1px solid var(--hush-border)',
+    borderTop: '1px solid transparent',
     paddingTop: '12px',
   },
 
@@ -80,13 +80,13 @@ const styles = {
     flex: 1,
     padding: '10px 12px',
     background: 'var(--hush-black)',
-    border: '1px solid var(--hush-border)',
+    border: '1px solid transparent',
     borderRadius: 'var(--radius-md)',
     color: 'var(--hush-text)',
     fontFamily: 'var(--font-sans)',
     fontSize: '0.85rem',
     outline: 'none',
-    transition: 'border-color var(--duration-normal) var(--ease-out)',
+    transition: 'box-shadow var(--duration-normal) var(--ease-out)',
     resize: 'none',
     maxHeight: '120px',
   },
@@ -124,7 +124,7 @@ const styles = {
     justifyContent: 'center',
     borderRadius: 'var(--radius-lg)',
     background: 'var(--hush-surface)',
-    border: '1px solid var(--hush-border)',
+    border: '1px solid transparent',
     color: 'var(--hush-text-ghost)',
   },
 
@@ -141,6 +141,7 @@ export default function Chat({ currentPeerId }) {
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const lastSentTempIdRef = useRef(null);
   const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
 
   // Load existing messages and listen for new ones
@@ -190,14 +191,19 @@ export default function Chat({ currentPeerId }) {
       .filter(Boolean);
     setMessages(existingMessages);
 
-    // Listen for new messages
+    // Listen for new messages (merge by id to avoid duplicate with optimistic updates)
     const handleTimelineEvent = (event, _room, toStartOfTimeline) => {
       if (toStartOfTimeline) return; // Ignore backfill
       if (event.getRoomId() !== matrixRoomId) return;
 
       const msg = eventToMessage(event);
       if (!msg) return;
-      setMessages(prev => [...prev, msg]);
+      setMessages((prev) => {
+        const id = event.getId();
+        const idx = prev.findIndex((m) => m.id === id);
+        if (idx >= 0) return prev.map((m, i) => (i === idx ? msg : m));
+        return [...prev, msg];
+      });
     };
 
     // Listen for decryption retries — when a previously encrypted event is finally decrypted
@@ -239,27 +245,75 @@ export default function Chat({ currentPeerId }) {
     const trimmed = inputText.trim();
     if (!trimmed || isSending || !matrixRoomId) return;
 
+    const client = getMatrixClient();
+    const currentUserId = client.getUserId();
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMessage = {
+      id: tempId,
+      sender: currentUserId,
+      displayName: 'You',
+      content: trimmed,
+      timestamp: Date.now(),
+      decryptionFailed: false,
+      pending: true,
+      failed: false,
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+    setInputText('');
+    inputRef.current?.focus();
+    lastSentTempIdRef.current = tempId;
     setIsSending(true);
 
     try {
-      const client = getMatrixClient();
       const room = client.getRoom(matrixRoomId);
+      if (!room) throw new Error('Room not found in Matrix client store');
 
-      if (!room) {
-        throw new Error('Room not found in Matrix client store');
-      }
-
-      await client.sendMessage(matrixRoomId, {
+      const res = await client.sendMessage(matrixRoomId, {
         msgtype: 'm.text',
-        body: trimmed
+        body: trimmed,
       });
 
-      setInputText('');
-      inputRef.current?.focus();
+      const eventId = res?.event_id ?? tempId;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId ? { ...m, id: eventId, pending: false, failed: false } : m,
+        ),
+      );
     } catch (err) {
       console.error('[chat] Send failed:', err.message);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
+      );
     } finally {
+      lastSentTempIdRef.current = null;
       setIsSending(false);
+    }
+  };
+
+  const handleRetry = async (msg) => {
+    if (!matrixRoomId || msg.failed !== true) return;
+    const client = getMatrixClient();
+    const tempId = msg.id;
+    setMessages((prev) =>
+      prev.map((m) => (m.id === tempId ? { ...m, failed: false, pending: true } : m)),
+    );
+    try {
+      const res = await client.sendMessage(matrixRoomId, {
+        msgtype: 'm.text',
+        body: msg.content,
+      });
+      const eventId = res?.event_id ?? tempId;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId ? { ...m, id: eventId, pending: false, failed: false } : m,
+        ),
+      );
+    } catch (err) {
+      console.error('[chat] Retry send failed:', err.message);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
+      );
     }
   };
 
@@ -296,13 +350,19 @@ export default function Chat({ currentPeerId }) {
             </div>
           ) : (
             messages.map((msg) => {
-              // Get current user's Matrix ID from matrixClient
               const client = getMatrixClient();
               const currentUserId = client.getUserId();
               const isOwn = msg.sender === currentUserId;
+              const isFailed = msg.failed === true;
 
               return (
-                <div key={msg.id} style={styles.message(isOwn)}>
+                <div
+                  key={msg.id}
+                  style={{
+                    ...styles.message(isOwn),
+                    ...(isFailed ? { borderColor: 'var(--hush-danger)' } : {}),
+                  }}
+                >
                   <div style={styles.messageHeader}>
                     <span style={styles.senderName(isOwn)}>
                       {isOwn ? 'You' : msg.displayName}
@@ -316,6 +376,26 @@ export default function Chat({ currentPeerId }) {
                       </span>
                     ) : msg.content}
                   </div>
+                  {isFailed && (
+                    <div style={{ marginTop: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleRetry(msg)}
+                        style={{
+                          padding: '4px 10px',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          color: 'var(--hush-danger)',
+                          background: 'var(--hush-danger-ghost)',
+                          border: '1px solid var(--hush-danger)',
+                          borderRadius: 'var(--radius-md)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })

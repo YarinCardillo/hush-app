@@ -21,6 +21,33 @@ import {
   isScreenShareSource,
 } from '../utils/constants';
 
+const KEY_EXCHANGE_RETRY_MESSAGE = 'Could not establish secure media channel. Retrying…';
+const KEY_EXCHANGE_FAIL_MESSAGE = 'Secure channel failed. Please rejoin.';
+
+/**
+ * Runs an async to-device send with retries and exponential backoff.
+ * @param {() => Promise<void>} fn - Async function that performs the send
+ * @param {{ maxAttempts?: number, baseDelayMs?: number, onRetry?: (attempt: number) => void }} options
+ * @returns {Promise<void>}
+ */
+async function retryToDeviceSend(fn, { maxAttempts = 3, baseDelayMs = 1000, onRetry } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      await fn();
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts - 1) {
+        onRetry?.(attempt);
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * LiveKit-based room connection hook.
  * Replaces mediasoup-based useMediasoup hook with LiveKit SFU.
@@ -37,6 +64,7 @@ export function useRoom() {
   const [isE2EEEnabled, setIsE2EEEnabled] = useState(false);
   const [e2eeKey, setE2eeKey] = useState(null);
   const [mediaE2EEUnavailable, setMediaE2EEUnavailable] = useState(false);
+  const [keyExchangeMessage, setKeyExchangeMessage] = useState(null);
 
   // ─── Click-to-Watch Screen Shares ─────────────────────
   const [availableScreens, setAvailableScreens] = useState(new Map());
@@ -269,7 +297,7 @@ export function useRoom() {
           // Joiner: connect without key; when to-device arrives, setKey. So we need to allow keyProvider with
           // no key - does LiveKit support that? I'll set a placeholder zero key for joiner so the room connects,
           // then replace when real key arrives.
-          const placeholderKey = new Uint8Array(16);
+          const placeholderKey = new Uint8Array(32);
           await keyProvider.setKey(placeholderKey, 0);
           keyBytesRef.current = placeholderKey;
         } catch (e2eeErr) {
@@ -282,6 +310,10 @@ export function useRoom() {
           keyProvider = null;
           worker = null;
           keyBytes = null;
+        }
+
+        if (!keyProvider || !worker) {
+          throw new Error('Media encryption unavailable. Cannot join voice channel.');
         }
 
         // Create LiveKit room with dynacast, adaptive streaming, and E2EE
@@ -334,24 +366,33 @@ export function useRoom() {
             const keyIndex = currentKeyIndexRef.current;
             const keyB64 = btoa(String.fromCharCode(...keyBytes));
             try {
-              const deviceMap = await matrixClient.getCrypto().getUserDeviceInfo([participant.identity], true);
-              const devicesForUser = deviceMap?.get(participant.identity);
-              const devices = devicesForUser
-                ? Array.from(devicesForUser.keys()).map((deviceId) => ({
-                    userId: participant.identity,
-                    deviceId,
-                  }))
-                : [];
-              if (devices.length > 0) {
-                await matrixClient.encryptAndSendToDevice('io.hush.e2ee_key', devices, {
-                  roomId,
-                  key: keyB64,
-                  keyIndex,
-                });
-                console.log('[livekit] E2EE key sent to', participant.identity);
-              }
+              await retryToDeviceSend(
+                async () => {
+                  const deviceMap = await matrixClient.getCrypto().getUserDeviceInfo([participant.identity], true);
+                  const devicesForUser = deviceMap?.get(participant.identity);
+                  const devices = devicesForUser
+                    ? Array.from(devicesForUser.keys()).map((deviceId) => ({
+                        userId: participant.identity,
+                        deviceId,
+                      }))
+                    : [];
+                  if (devices.length > 0) {
+                    await matrixClient.encryptAndSendToDevice('io.hush.e2ee_key', devices, {
+                      roomId,
+                      key: keyB64,
+                      keyIndex,
+                    });
+                    console.log('[livekit] E2EE key sent to', participant.identity);
+                  }
+                },
+                {
+                  onRetry: () => setKeyExchangeMessage(KEY_EXCHANGE_RETRY_MESSAGE),
+                },
+              );
+              setKeyExchangeMessage(null);
             } catch (err) {
               console.error('[livekit] Failed to send E2EE key to participant:', err);
+              setKeyExchangeMessage(KEY_EXCHANGE_FAIL_MESSAGE);
             }
           }
         });
@@ -400,7 +441,7 @@ export function useRoom() {
             const myIdentity = matrixClient.getUserId();
             if (myIdentity !== leader) return;
 
-            const newKey = new Uint8Array(16);
+            const newKey = new Uint8Array(32);
             crypto.getRandomValues(newKey);
             const newKeyIndex = currentKeyIndexRef.current + 1;
             currentKeyIndexRef.current = newKeyIndex;
@@ -411,25 +452,39 @@ export function useRoom() {
             const roomId = matrixRoomIdRef.current;
             const keyB64 = btoa(String.fromCharCode(...newKey));
             const targets = remaining.slice(1);
+            let rekeyFailed = false;
             for (const userId of targets) {
               try {
-                const deviceMap = await matrixClient.getCrypto().getUserDeviceInfo([userId], true);
-                const devicesForUser = deviceMap?.get(userId);
-                const devices = devicesForUser
-                  ? Array.from(devicesForUser.keys()).map((deviceId) => ({ userId, deviceId }))
-                  : [];
-                if (devices.length > 0) {
-                  await matrixClient.encryptAndSendToDevice('io.hush.e2ee_key', devices, {
-                    roomId,
-                    key: keyB64,
-                    keyIndex: newKeyIndex,
-                  });
-                }
+                await retryToDeviceSend(
+                  async () => {
+                    const deviceMap = await matrixClient.getCrypto().getUserDeviceInfo([userId], true);
+                    const devicesForUser = deviceMap?.get(userId);
+                    const devices = devicesForUser
+                      ? Array.from(devicesForUser.keys()).map((deviceId) => ({ userId, deviceId }))
+                      : [];
+                    if (devices.length > 0) {
+                      await matrixClient.encryptAndSendToDevice('io.hush.e2ee_key', devices, {
+                        roomId,
+                        key: keyB64,
+                        keyIndex: newKeyIndex,
+                      });
+                    }
+                  },
+                  {
+                    onRetry: () => setKeyExchangeMessage(KEY_EXCHANGE_RETRY_MESSAGE),
+                  },
+                );
+                setKeyExchangeMessage(null);
               } catch (err) {
                 console.error('[livekit] Rekey: failed to send to', userId, err);
+                rekeyFailed = true;
               }
             }
-            console.log('[livekit] E2EE rekey: new key distributed by leader');
+            if (rekeyFailed) {
+              setKeyExchangeMessage(KEY_EXCHANGE_FAIL_MESSAGE);
+            } else {
+              console.log('[livekit] E2EE rekey: new key distributed by leader');
+            }
           }
         });
 
@@ -521,7 +576,7 @@ export function useRoom() {
 
         // Creator: first in room → replace placeholder with random key and broadcast to future joiners
         if (keyProvider && matrixRoomIdRef.current && room.remoteParticipants.size === 0) {
-          const randomKey = new Uint8Array(16);
+          const randomKey = new Uint8Array(32);
           crypto.getRandomValues(randomKey);
           await keyProvider.setKey(randomKey, 0);
           keyBytesRef.current = randomKey;
@@ -557,6 +612,8 @@ export function useRoom() {
 
   // ─── Disconnect from Room ─────────────────────────────
   const disconnectRoom = useCallback(async () => {
+    setError(null);
+    setKeyExchangeMessage(null);
     if (toDeviceUnsubscribeRef.current) {
       toDeviceUnsubscribeRef.current();
       toDeviceUnsubscribeRef.current = null;
@@ -1124,6 +1181,7 @@ export function useRoom() {
     isE2EEEnabled,
     e2eeKey,
     mediaE2EEUnavailable,
+    keyExchangeMessage,
     // Room connection
     connectRoom,
     disconnectRoom,
