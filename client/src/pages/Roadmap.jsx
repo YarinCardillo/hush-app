@@ -105,10 +105,10 @@ const milestones = [
 ];
 
 const STATUS = {
-  done: { label: "SHIPPED", color: "var(--hush-live)", bg: "var(--hush-live-glow)", border: "var(--hush-live-glow)", dot: "var(--hush-live)" },
-  active: { label: "IN PROGRESS", color: "var(--hush-amber)", bg: "var(--hush-amber-ghost)", border: "var(--hush-amber-ghost)", dot: "var(--hush-amber)" },
-  planned: { label: "PLANNED", color: "var(--hush-amber-dim)", bg: "var(--hush-amber-ghost)", border: "var(--hush-amber-ghost)", dot: "var(--hush-amber-dim)" },
-  future: { label: "FUTURE", color: "var(--hush-text-muted)", bg: "rgba(58,58,78,0.2)", border: "var(--hush-border)", dot: "var(--hush-text-ghost)" },
+  done: { label: "SHIPPED", color: "#4ade80", bg: "rgba(74,222,128,0.08)", border: "rgba(74,222,128,0.33)", dot: "#4ade80" },
+  active: { label: "IN PROGRESS", color: "#38bdf8", bg: "rgba(56,189,248,0.08)", border: "rgba(56,189,248,0.33)", dot: "#38bdf8" },
+  planned: { label: "PLANNED", color: "#a78bfa", bg: "rgba(167,139,250,0.08)", border: "rgba(167,139,250,0.33)", dot: "#a78bfa" },
+  future: { label: "FUTURE", color: "#64748b", bg: "rgba(100,116,139,0.06)", border: "var(--hush-border)", dot: "#475569" },
 };
 
 const styles = `
@@ -129,9 +129,7 @@ const styles = `
     content: '';
     position: fixed;
     inset: 0;
-    background:
-      radial-gradient(ellipse 60% 40% at 20% 10%, var(--hush-amber-glow) 0%, transparent 60%),
-      radial-gradient(ellipse 40% 60% at 80% 80%, var(--hush-live-glow) 0%, transparent 60%);
+    background: radial-gradient(ellipse 60% 40% at 20% 10%, var(--hush-amber-glow) 0%, transparent 60%);
     pointer-events: none;
   }
 
@@ -280,21 +278,21 @@ const styles = `
   }
 
   .milestone-dot.done {
-    background: var(--hush-live);
-    border-color: var(--hush-live);
-    box-shadow: 0 0 8px var(--hush-live-glow);
+    background: #4ade80;
+    border-color: #4ade80;
+    box-shadow: 0 0 8px rgba(74,222,128,0.4);
   }
 
   .milestone-dot.active {
-    background: var(--hush-amber);
-    border-color: var(--hush-amber);
-    box-shadow: 0 0 12px var(--hush-amber-glow);
+    background: #38bdf8;
+    border-color: #38bdf8;
+    box-shadow: 0 0 12px rgba(56,189,248,0.6);
     animation: roadmap-pulse 2s ease-in-out infinite;
   }
 
   .milestone-dot.planned {
     background: transparent;
-    border-color: var(--hush-amber-dim);
+    border-color: #a78bfa;
   }
 
   .milestone-dot.future {
@@ -303,8 +301,8 @@ const styles = `
   }
 
   @keyframes roadmap-pulse {
-    0%, 100% { box-shadow: 0 0 8px var(--hush-amber-glow); }
-    50% { box-shadow: 0 0 16px var(--hush-amber-glow), 0 0 32px var(--hush-amber-ghost); }
+    0%, 100% { box-shadow: 0 0 8px rgba(56,189,248,0.4); }
+    50% { box-shadow: 0 0 16px rgba(56,189,248,0.8), 0 0 32px rgba(56,189,248,0.2); }
   }
 
   .milestone-card {
