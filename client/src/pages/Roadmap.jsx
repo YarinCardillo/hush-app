@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 
 const milestones = [
   {
@@ -179,6 +180,21 @@ const styles = `
     height: 1px;
     background: #38bdf8;
     opacity: 0.6;
+  }
+
+  .back-link {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: #64748b;
+    text-decoration: none;
+    letter-spacing: 0.05em;
+    margin-bottom: 24px;
+    display: inline-block;
+    transition: color 0.2s;
+  }
+
+  .back-link:hover {
+    color: #38bdf8;
   }
 
   h1 {
@@ -459,6 +475,35 @@ const styles = `
 export default function Roadmap() {
   const [open, setOpen] = useState(null);
 
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const root = document.getElementById("root");
+    const prev = {
+      html: { overflow: html.style.overflow, height: html.style.height },
+      body: { overflow: body.style.overflow, height: body.style.height },
+      root: root ? { overflow: root.style.overflow, height: root.style.height } : null,
+    };
+    html.style.overflow = "auto";
+    html.style.height = "auto";
+    body.style.overflow = "auto";
+    body.style.height = "auto";
+    if (root) {
+      root.style.overflow = "auto";
+      root.style.height = "auto";
+    }
+    return () => {
+      html.style.overflow = prev.html.overflow;
+      html.style.height = prev.html.height;
+      body.style.overflow = prev.body.overflow;
+      body.style.height = prev.body.height;
+      if (root) {
+        root.style.overflow = prev.root.overflow;
+        root.style.height = prev.root.height;
+      }
+    };
+  }, []);
+
   const toggle = (id) => setOpen((prev) => (prev === id ? null : id));
 
   return (
@@ -469,6 +514,7 @@ export default function Roadmap() {
         <div className="container">
 
           <div className="header">
+            <Link to="/" className="back-link">← Hush</Link>
             <div className="eyebrow">gethush.live</div>
             <h1>Product Roadmap</h1>
             <p className="subtitle">
