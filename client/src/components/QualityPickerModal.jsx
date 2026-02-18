@@ -14,7 +14,7 @@ const styles = {
   },
   card: {
     background: 'var(--hush-surface)',
-    border: '1px solid var(--hush-border)',
+    border: '1px solid transparent',
     borderRadius: 'var(--radius-xl)',
     padding: '28px',
     width: '380px',
@@ -35,7 +35,7 @@ const styles = {
     justifyContent: 'space-between',
     padding: '14px 16px',
     borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--hush-border)',
+    border: '1px solid transparent',
     background: isHovered ? 'var(--hush-elevated)' : 'var(--hush-black)',
     cursor: 'pointer',
     transition: 'all var(--duration-fast) var(--ease-out)',

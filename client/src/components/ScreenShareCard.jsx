@@ -4,7 +4,7 @@ const styles = {
   container: (isHovered, isLoading) => ({
     position: 'relative',
     background: 'var(--hush-surface)',
-    border: `1px solid ${isHovered ? 'var(--hush-border-hover)' : 'var(--hush-border)'}`,
+    border: '1px solid transparent',
     borderRadius: 'var(--radius-lg)',
     aspectRatio: '16 / 9',
     width: '100%',
@@ -38,7 +38,7 @@ const styles = {
   spinner: {
     width: '24px',
     height: '24px',
-    border: '2px solid var(--hush-border)',
+    border: '2px solid transparent',
     borderTopColor: 'var(--hush-primary)',
     borderRadius: '50%',
     animation: 'spin 0.8s linear infinite',

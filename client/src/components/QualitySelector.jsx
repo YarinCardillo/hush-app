@@ -12,7 +12,7 @@ const styles = {
     justifyContent: 'space-between',
     padding: '10px 12px',
     borderRadius: 'var(--radius-sm)',
-    border: isActive ? '1px solid var(--hush-amber-dim)' : '1px solid transparent',
+    border: '1px solid transparent',
     background: isActive ? 'var(--hush-amber-ghost)' : 'var(--hush-black)',
     cursor: 'pointer',
     transition: 'all var(--duration-fast) var(--ease-out)',

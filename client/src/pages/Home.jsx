@@ -31,24 +31,15 @@ const styles = {
     inset: 0,
     pointerEvents: 'none',
     zIndex: 0,
-    '--ox': '-1000px',
-    '--oy': '-1000px',
-    '--ix': '-1000px',
-    '--iy': '-1000px',
+    '--sx': '-1000px',
+    '--sy': '-1000px',
   },
-  spotlightOuter: {
+  spotlight: {
     position: 'fixed',
     inset: 0,
     pointerEvents: 'none',
     background:
-      'radial-gradient(600px circle at var(--ox) var(--oy), rgba(212,160,83,0.04), transparent 100%)',
-  },
-  spotlightInner: {
-    position: 'fixed',
-    inset: 0,
-    pointerEvents: 'none',
-    background:
-      'radial-gradient(200px circle at var(--ix) var(--iy), rgba(212,160,83,0.08), transparent 100%)',
+      'radial-gradient(280px circle at var(--sx) var(--sy), rgba(213,79,18,0.06) 0%, rgba(213,79,18,0.02) 45%, transparent 75%)',
   },
   container: {
     width: '100%',
@@ -65,26 +56,28 @@ const styles = {
     display: 'inline-block',
   },
   logoTitle: {
-    fontFamily: 'var(--font-sans)',
-    fontSize: '2.4rem',
-    fontWeight: 200,
-    letterSpacing: '-0.03em',
+    fontFamily: "'Cormorant Garamond', Georgia, serif",
+    fontStyle: 'italic',
+    fontWeight: 400,
+    fontSize: '8rem',
+    letterSpacing: '0.06em',
     color: 'var(--hush-text)',
     textTransform: 'lowercase',
   },
   logoDot: (left) => ({
     position: 'absolute',
-    top: '-3px',
+    top: '20px',
     left: left != null ? `${left}px` : '38%',
-    width: '10px',
-    height: '10px',
+    width: '14px',
+    height: '14px',
     borderRadius: '50%',
     background: 'var(--hush-amber)',
+    boxShadow: '0 0 12px var(--hush-amber), 0 0 28px rgba(213, 79, 18, 0.3)',
   }),
   logoGlow: {
     position: 'absolute',
     inset: '-30px',
-    background: 'radial-gradient(circle, rgba(212, 160, 83, 0.3) 0%, transparent 70%)',
+    background: 'radial-gradient(circle, rgba(213, 79, 18, 0.3) 0%, transparent 70%)',
     borderRadius: '50%',
     zIndex: -1,
     pointerEvents: 'none',
@@ -213,8 +206,7 @@ export default function Home() {
   const spotlightRef = useRef(null);
   const rafRef = useRef(null);
   const posRef = useRef({ x: -1000, y: -1000 });
-  const smoothOuterRef = useRef({ x: -1000, y: -1000 });
-  const smoothInnerRef = useRef({ x: -1000, y: -1000 });
+  const smoothRef = useRef({ x: -1000, y: -1000 });
   const wordmarkRef = useRef(null);
   const [dotLeft, setDotLeft] = useState(null);
   const [spotlightEnabled, setSpotlightEnabled] = useState(
@@ -243,17 +235,12 @@ export default function Home() {
     if (!spotlightEnabled) return;
     const loop = () => {
       const pos = posRef.current;
-      const so = smoothOuterRef.current;
-      const si = smoothInnerRef.current;
-      so.x += (pos.x - so.x) * 0.06;
-      so.y += (pos.y - so.y) * 0.06;
-      si.x += (pos.x - si.x) * 0.1;
-      si.y += (pos.y - si.y) * 0.1;
+      const s = smoothRef.current;
+      s.x += (pos.x - s.x) * 0.08;
+      s.y += (pos.y - s.y) * 0.08;
       if (spotlightRef.current) {
-        spotlightRef.current.style.setProperty('--ox', `${so.x}px`);
-        spotlightRef.current.style.setProperty('--oy', `${so.y}px`);
-        spotlightRef.current.style.setProperty('--ix', `${si.x}px`);
-        spotlightRef.current.style.setProperty('--iy', `${si.y}px`);
+        spotlightRef.current.style.setProperty('--sx', `${s.x}px`);
+        spotlightRef.current.style.setProperty('--sy', `${s.y}px`);
       }
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -445,11 +432,10 @@ export default function Home() {
         }
       `}</style>
 
-      {/* Cursor spotlight — two-layer lerped follow (desktop only) */}
+      {/* Cursor spotlight — single lerped circle, soft falloff (desktop only) */}
       {spotlightEnabled && (
         <div ref={spotlightRef} style={styles.spotlightWrapper}>
-          <div style={styles.spotlightOuter} />
-          <div style={styles.spotlightInner} />
+          <div style={styles.spotlight} />
         </div>
       )}
 
@@ -503,11 +489,13 @@ export default function Home() {
           </motion.div>
         </motion.div>
 
-        {/* Form card — slides up on mount */}
+        {/* Form card — slides up on mount, glass panel */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
+          className="glass"
+          style={{ padding: '24px' }}
         >
           <div style={styles.tabs}>
             <button

@@ -1,18 +1,20 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,400&display=swap');
+
 /* ── Hush Design System ─────────────────────── */
 
 :root {
   /* ── Core Surfaces ── */
-  --hush-black:        #08080c;
-  --hush-surface:      #101018;
-  --hush-elevated:     #181824;
-  --hush-hover:        #20202e;
+  --hush-black:        #050507;
+  --hush-surface:      #0c0c12;
+  --hush-elevated:     #12121a;
+  --hush-hover:        #181824;
 
-  /* ── Signature Amber ── */
-  --hush-amber:        #d4a053;
-  --hush-amber-bright: #e8b866;
-  --hush-amber-dim:    #a07a3a;
-  --hush-amber-glow:   rgba(212, 160, 83, 0.15);
-  --hush-amber-ghost:  rgba(212, 160, 83, 0.08);
+  /* ── Signature Orange (Adobe RGB 213, 79, 18) ── */
+  --hush-amber:        #d54f12;
+  --hush-amber-bright: #e85a1a;
+  --hush-amber-dim:    #a33d0e;
+  --hush-amber-glow:   rgba(213, 79, 18, 0.15);
+  --hush-amber-ghost:  rgba(213, 79, 18, 0.08);
 
   /* ── Borders ── */
   --hush-border:       #1e1e2e;
@@ -36,11 +38,11 @@
   --font-mono:  'JetBrains Mono', 'SF Mono', Consolas, monospace;
 
   /* ── Spacing & Radius ── */
-  --radius-sm:   6px;
-  --radius-md:   10px;
-  --radius-lg:   14px;
-  --radius-xl:   20px;
-  --radius-full: 9999px;
+  --radius-sm:   0;
+  --radius-md:   0;
+  --radius-lg:   0;
+  --radius-xl:   0;
+  --radius-full: 0;
 
   /* ── Motion ── */
   --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
@@ -74,28 +76,32 @@ body {
   position: relative;
 }
 
-body::before {
-  content: '';
-  position: fixed;
-  inset: -20%;
-  z-index: 0;
-  pointer-events: none;
-  background-image:
-    radial-gradient(ellipse 120% 100% at 0% 0%, rgba(212, 160, 83, 0.2) 0%, transparent 50%),
-    radial-gradient(ellipse 80% 60% at 100% 100%, rgba(212, 160, 83, 0.06) 0%, transparent 45%);
-  background-attachment: fixed;
-  background-repeat: no-repeat;
-  animation: hush-breathe 14s ease-in-out infinite;
-}
-
-@keyframes hush-breathe {
-  0%, 100% { opacity: 0.9; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.06); }
-}
-
 #root {
   position: relative;
   z-index: 1;
+}
+
+/* ── Glass (translucent) ───────────────────────── */
+
+.glass {
+  position: relative;
+  background: rgba(12, 12, 18, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid transparent;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.045;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.20' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
 }
 
 /* ── Typography ────────────────────────────────── */
@@ -159,12 +165,11 @@ code, .mono {
 .btn-secondary {
   background: var(--hush-surface);
   color: var(--hush-text);
-  border: 1px solid var(--hush-border);
+  border: 1px solid transparent;
 }
 
 .btn-secondary:hover {
   background: var(--hush-elevated);
-  border-color: var(--hush-border-hover);
 }
 
 .btn-danger {
@@ -174,7 +179,6 @@ code, .mono {
 }
 
 .btn-danger:hover {
-  border-color: var(--hush-danger);
   background: rgba(239, 68, 68, 0.15);
 }
 
@@ -187,14 +191,13 @@ code, .mono {
   justify-content: center;
   border-radius: var(--radius-md);
   background: var(--hush-surface);
-  border: 1px solid var(--hush-border);
+  border: 1px solid transparent;
   color: var(--hush-text-secondary);
   transition: all var(--duration-fast) var(--ease-out);
 }
 
 .btn-icon:hover {
   color: var(--hush-text);
-  border-color: var(--hush-border-hover);
   background: var(--hush-elevated);
 }
 
@@ -210,18 +213,17 @@ code, .mono {
   width: 100%;
   padding: 11px 14px;
   background: var(--hush-black);
-  border: 1px solid var(--hush-border);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   color: var(--hush-text);
   font-family: var(--font-sans);
   font-size: 0.9rem;
   outline: none;
-  transition: border-color var(--duration-normal) var(--ease-out);
+  transition: box-shadow var(--duration-normal) var(--ease-out);
 }
 
 .input:focus {
-  border-color: var(--hush-amber-dim);
-  box-shadow: 0 0 0 3px var(--hush-amber-ghost);
+  box-shadow: 0 0 0 1px var(--hush-amber-ghost);
 }
 
 .input::placeholder {
@@ -232,15 +234,11 @@ code, .mono {
 
 .card {
   background: var(--hush-surface);
-  border: 1px solid var(--hush-border);
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
   padding: 20px;
-  transition: border-color var(--duration-normal) var(--ease-out);
 }
 
-.card:hover {
-  border-color: var(--hush-border-hover);
-}
 
 /* ── Status indicators ─────────────────────────── */
 
@@ -278,7 +276,7 @@ code, .mono {
 .badge-live {
   background: rgba(52, 211, 153, 0.1);
   color: var(--hush-live);
-  border: 1px solid rgba(52, 211, 153, 0.2);
+  border: 1px solid transparent;
 }
 
 /* ── Layout utilities ──────────────────────────── */
@@ -304,7 +302,7 @@ code, .mono {
 
 ::-webkit-scrollbar-thumb {
   background: var(--hush-border-hover);
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -353,7 +351,7 @@ code, .mono {
   right: 16px;
   padding: 12px 20px;
   background: var(--hush-elevated);
-  border: 1px solid var(--hush-border);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   font-size: 0.85rem;
   z-index: 1000;

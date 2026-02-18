@@ -18,7 +18,7 @@ export default function AppBackground() {
         <filter id="hush-app-grain">
           <feTurbulence
             type="fractalNoise"
-            baseFrequency="0.95"
+            baseFrequency="1.20"
             numOctaves="4"
             stitchTiles="stitch"
           />

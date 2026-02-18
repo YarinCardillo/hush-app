@@ -1,19 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 110" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="25 0 290 110" fill="none">
+  <defs>
+    <!-- Glow scale: same proportion as Home (28px blur → 82/128 scale ≈ 18) -->
+    <filter id="dot-blur" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4"/>
+    </filter>
+  </defs>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300&amp;display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,400&amp;display=swap');
   </style>
-  
-  <!-- Full wordmark -->
-  <text 
-    x="170" y="82" 
-    font-family="'Sora', sans-serif" 
-    font-weight="300" 
-    font-size="82" 
-    fill="#e4e4ec" 
-    letter-spacing="-3"
+  <!-- Wordmark (drawn first so dot can sit above it in z-order) -->
+  <text
+    id="wordmark"
+    x="170"
+    y="82"
+    font-family="'Cormorant Garamond', Georgia, serif"
+    font-style="italic"
+    font-weight="400"
+    font-size="82"
+    letter-spacing="5"
+    fill="#e4e4ec"
     text-anchor="middle"
   >hush</text>
-  
-  <!-- Amber dot above the "u" -->
-  <circle cx="151" cy="16" r="7.5" fill="#d4a053"/>
+  <!-- Dot above "u": proportions from Home (14px dot, top 20px → r=4.5, cy=17 in 82px font scale) -->
+  <circle cx="158" cy="25" r="9" fill="#d54f12" opacity="0.3" filter="url(#dot-blur)"/>
+  <circle cx="158" cy="25" r="4.5" fill="#d54f12"/>
 </svg>

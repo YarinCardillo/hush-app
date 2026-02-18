@@ -292,23 +292,21 @@ const styles = `
 
   .milestone-card {
     flex: 1;
-    border: 1px solid var(--hush-border);
+    border: 1px solid transparent;
     border-radius: var(--radius-sm);
     padding: 18px 20px;
     cursor: pointer;
-    transition: border-color 0.2s ease, background 0.2s ease;
+    transition: background 0.2s ease;
     margin-bottom: 12px;
     background: var(--hush-surface);
     user-select: none;
   }
 
   .milestone-card:hover {
-    border-color: var(--hush-border-hover);
     background: var(--hush-elevated);
   }
 
   .milestone-card.open {
-    border-color: var(--hush-border-hover);
     background: var(--hush-elevated);
   }
 
@@ -339,7 +337,7 @@ const styles = `
     font-weight: 500;
     letter-spacing: 0.12em;
     padding: 2px 7px;
-    border-radius: 3px;
+    border-radius: 0;
     border: 1px solid;
   }
 

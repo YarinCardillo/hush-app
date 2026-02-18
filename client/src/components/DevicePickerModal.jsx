@@ -14,7 +14,7 @@ const styles = {
   },
   card: {
     background: 'var(--hush-surface)',
-    border: '1px solid var(--hush-border)',
+    border: '1px solid transparent',
     borderRadius: 'var(--radius-xl)',
     padding: '28px',
     width: '380px',
@@ -43,10 +43,12 @@ const styles = {
     gap: '12px',
     padding: '14px 16px',
     borderRadius: 'var(--radius-md)',
-    border: isSelected
-      ? '1px solid var(--hush-amber)'
-      : '1px solid var(--hush-border)',
-    background: isHovered ? 'var(--hush-elevated)' : 'var(--hush-black)',
+    border: '1px solid transparent',
+    background: isSelected
+      ? 'var(--hush-amber-ghost)'
+      : isHovered
+        ? 'var(--hush-elevated)'
+        : 'var(--hush-black)',
     cursor: 'pointer',
     transition: 'all var(--duration-fast) var(--ease-out)',
   }),
