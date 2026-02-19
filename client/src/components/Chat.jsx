@@ -7,11 +7,12 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     height: '100%',
-    gap: '12px',
+    minHeight: 0,
   },
 
   messagesSection: {
     flex: 1,
+    minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
@@ -19,11 +20,16 @@ const styles = {
 
   messagesScroll: {
     flex: 1,
+    minHeight: 0,
     overflowY: 'auto',
     overflowX: 'hidden',
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
+  },
+
+  messagesScrollWithMessages: {
+    justifyContent: 'flex-end',
   },
 
   message: (isOwn) => ({
@@ -64,10 +70,11 @@ const styles = {
   },
 
   inputSection: {
+    flexShrink: 0,
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
-    borderTop: '1px solid transparent',
+    borderTop: '1px solid var(--hush-border)',
     paddingTop: '12px',
   },
 
@@ -110,6 +117,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
+    minHeight: '100%',
     gap: '12px',
     color: 'var(--hush-text-muted)',
     textAlign: 'center',
@@ -359,11 +367,18 @@ export default function Chat({ currentPeerId }) {
     });
   };
 
+  const hasMessages = messages.length > 0;
+
   return (
     <div style={styles.container}>
       <div style={styles.messagesSection}>
-        <div style={styles.messagesScroll}>
-          {messages.length === 0 ? (
+        <div
+          style={{
+            ...styles.messagesScroll,
+            ...(hasMessages ? styles.messagesScrollWithMessages : {}),
+          }}
+        >
+          {!hasMessages ? (
             <div style={styles.empty}>
               <div style={styles.emptyIcon}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -433,7 +448,7 @@ export default function Chat({ currentPeerId }) {
               );
             })
           )}
-          <div ref={messagesEndRef} />
+          {hasMessages && <div ref={messagesEndRef} />}
         </div>
       </div>
 

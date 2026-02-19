@@ -1,30 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+
+const EXIT_DURATION_MS = 200;
 
 const styles = {
-  overlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0, 0, 0, 0.6)',
-    backdropFilter: 'blur(8px)',
-    WebkitBackdropFilter: 'blur(8px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  card: {
-    background: 'var(--hush-surface)',
-    border: '1px solid transparent',
-    borderRadius: 'var(--radius-xl)',
-    padding: '28px',
-    width: '380px',
-    maxWidth: '90vw',
-    maxHeight: '70vh',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-    animation: 'modal-enter var(--duration-slow) var(--ease-spring)',
-  },
   title: {
     fontSize: '1rem',
     fontWeight: 500,
@@ -109,17 +87,40 @@ export default function DevicePickerModal({
   onSelect,
   onCancel,
 }) {
-  useEffect(() => {
-    const handleKey = (e) => {
-      if (e.key === 'Escape') onCancel();
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+  const [isOpen, setIsOpen] = useState(false);
+  const exitTimeoutRef = useRef(null);
+
+  const handleClose = useCallback(() => {
+    setIsOpen(false);
+    if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
+    exitTimeoutRef.current = setTimeout(onCancel, EXIT_DURATION_MS);
   }, [onCancel]);
 
+  useEffect(() => {
+    const t = requestAnimationFrame(() => setIsOpen(true));
+    return () => cancelAnimationFrame(t);
+  }, []);
+
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === 'Escape') handleClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
+    };
+  }, [handleClose]);
+
   return (
-    <div style={styles.overlay} onClick={onCancel}>
-      <div style={styles.card} onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`modal-backdrop ${isOpen ? 'modal-backdrop-open' : ''}`}
+      onClick={handleClose}
+    >
+      <div
+        className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div style={styles.title}>{title}</div>
 
         <div style={styles.list}>
@@ -137,7 +138,7 @@ export default function DevicePickerModal({
           )}
         </div>
 
-        <button style={styles.cancelBtn} onClick={onCancel}>
+        <button style={styles.cancelBtn} onClick={handleClose}>
           cancel
         </button>
       </div>

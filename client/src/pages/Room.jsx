@@ -8,7 +8,6 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDevices } from '../hooks/useDevices';
 import { DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
 import { estimateUploadSpeed, getRecommendedQuality } from '../lib/bandwidthEstimator';
-import LogoWordmark from '../components/LogoWordmark';
 import StreamView from '../components/StreamView';
 import ScreenShareCard from '../components/ScreenShareCard';
 import Controls from '../components/Controls';
@@ -36,63 +35,32 @@ const styles = {
   },
   headerLeft: {
     display: 'flex',
-    alignItems: 'stretch',
-    minHeight: '32px',
-    background: 'var(--hush-header-block-bg)',
-    border: '1px solid var(--hush-header-block-border)',
-    borderRadius: 0,
-    overflow: 'hidden',
-  },
-  headerLogoCell: {
-    display: 'flex',
     alignItems: 'center',
-    paddingLeft: '12px',
-    paddingRight: '10px',
-    borderRight: '1px solid var(--hush-header-block-border)',
-    flexShrink: 0,
-    color: 'var(--hush-text)',
-  },
-  headerLogo: {
-    display: 'block',
-    height: '28px',
-    width: 'auto',
-  },
-  roomTitleCell: {
-    display: 'flex',
-    alignItems: 'center',
-    paddingLeft: '12px',
-    paddingRight: '12px',
+    gap: '8px',
     minWidth: 0,
-    flex: '1 1 auto',
-    maxWidth: '200px',
-    borderRight: '1px solid var(--hush-header-block-border)',
   },
   roomTitle: {
-    fontSize: '0.9rem',
-    fontWeight: 600,
-    lineHeight: 1,
+    fontSize: '0.8rem',
+    fontWeight: 500,
+    color: 'var(--hush-text-secondary)',
+    padding: '4px 8px',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
-  },
-  headerBadgeWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    flexShrink: 0,
+    maxWidth: '200px',
   },
   headerBadge: {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '6px',
-    padding: '0 12px',
-    height: '100%',
-    minHeight: '32px',
-    fontSize: '0.7rem',
+    padding: '4px 8px',
+    fontSize: '0.8rem',
     fontWeight: 500,
     background: 'var(--hush-badge-live-bg)',
     color: 'var(--hush-live)',
     border: 'none',
-    borderRadius: 0,
+    borderRadius: 'var(--radius-sm)',
+    flexShrink: 0,
   },
   headerRight: {
     display: 'flex',
@@ -101,6 +69,7 @@ const styles = {
   },
   participantCount: {
     fontSize: '0.8rem',
+    fontWeight: 500,
     color: 'var(--hush-text-secondary)',
     display: 'flex',
     alignItems: 'center',
@@ -603,18 +572,11 @@ export default function Room() {
     <div style={styles.page}>
       <div style={styles.header}>
         <div style={styles.headerLeft}>
-          <div style={styles.headerLogoCell}>
-            <LogoWordmark style={styles.headerLogo} />
-          </div>
-          <div style={styles.roomTitleCell}>
-            <span style={styles.roomTitle}>{decodeURIComponent(roomName)}</span>
-          </div>
-          <div style={styles.headerBadgeWrap}>
-            <span style={styles.headerBadge}>
-              <span className="live-dot" />
-              Live
-            </span>
-          </div>
+          <span style={styles.roomTitle}>{decodeURIComponent(roomName)}</span>
+          <span style={styles.headerBadge}>
+            <span className="live-dot" />
+            Live
+          </span>
         </div>
         <div style={styles.headerRight}>
           <button
@@ -694,15 +656,16 @@ export default function Room() {
           )}
         </div>
 
-        {showQualityPanel && (
+        {isMobile ? (
           <>
-            {isMobile && (
-              <div
-                style={styles.sidebarOverlay}
-                onClick={() => setShowQualityPanel(false)}
-              />
-            )}
-            <div style={styles.sidebar(isMobile)}>
+            <div
+              className={`sidebar-overlay ${showQualityPanel ? 'sidebar-overlay-open' : ''}`}
+              onClick={() => setShowQualityPanel(false)}
+              aria-hidden={!showQualityPanel}
+            />
+            <div
+              className={`sidebar-panel-right ${showQualityPanel ? 'sidebar-panel-open' : ''}`}
+            >
               <div style={styles.sidebarSection}>
                 <div style={styles.sidebarLabel}>Participants ({participants.length + 1})</div>
                 <div style={styles.peerItem}>
@@ -716,7 +679,6 @@ export default function Room() {
                   </div>
                 ))}
               </div>
-
               {isScreenSharing && (
                 <div style={styles.sidebarSection}>
                   <div style={styles.sidebarLabel}>Stream Quality</div>
@@ -727,23 +689,62 @@ export default function Room() {
                 </div>
               )}
             </div>
-          </>
-        )}
-
-        {showChatPanel && (
-          <>
-            {isMobile && (
-              <div
-                style={styles.sidebarOverlay}
-                onClick={() => setShowChatPanel(false)}
-              />
-            )}
-            <div style={styles.sidebar(isMobile)}>
+            <div
+              className={`sidebar-overlay ${showChatPanel ? 'sidebar-overlay-open' : ''}`}
+              onClick={() => setShowChatPanel(false)}
+              aria-hidden={!showChatPanel}
+            />
+            <div
+              className={`sidebar-panel-right ${showChatPanel ? 'sidebar-panel-open' : ''}`}
+            >
               <div style={styles.sidebarSection}>
                 <div style={styles.sidebarLabel}>Chat</div>
                 <Chat
                   currentPeerId={sessionStorage.getItem('hush_peerId')}
                 />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div
+              className={`sidebar-desktop ${showQualityPanel ? 'sidebar-desktop-open' : ''}`}
+            >
+              <div className="sidebar-desktop-inner" style={styles.sidebar(false)}>
+                <div style={styles.sidebarSection}>
+                  <div style={styles.sidebarLabel}>Participants ({participants.length + 1})</div>
+                  <div style={styles.peerItem}>
+                    <div style={styles.peerDot(isScreenSharing)} />
+                    <span>You</span>
+                  </div>
+                  {participants.map((participant) => (
+                    <div key={participant.id} style={styles.peerItem}>
+                      <div style={styles.peerDot(true)} />
+                      <span>{participant.displayName}</span>
+                    </div>
+                  ))}
+                </div>
+                {isScreenSharing && (
+                  <div style={styles.sidebarSection}>
+                    <div style={styles.sidebarLabel}>Stream Quality</div>
+                    <QualitySelector
+                      currentQuality={quality}
+                      onSelect={handleQualityChange}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+            <div
+              className={`sidebar-desktop ${showChatPanel ? 'sidebar-desktop-open' : ''}`}
+            >
+              <div className="sidebar-desktop-inner" style={styles.sidebar(false)}>
+                <div style={styles.sidebarSection}>
+                  <div style={styles.sidebarLabel}>Chat</div>
+                  <Chat
+                    currentPeerId={sessionStorage.getItem('hush_peerId')}
+                  />
+                </div>
               </div>
             </div>
           </>

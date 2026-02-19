@@ -26,7 +26,6 @@ const styles = {
     fontSize: '0.85rem',
     fontWeight: 500,
     cursor: 'pointer',
-    transition: 'all var(--duration-fast) var(--ease-out)',
     ...(variant === 'danger'
       ? {
           background: 'var(--hush-danger-ghost)',
@@ -56,7 +55,6 @@ const styles = {
     background: active ? 'var(--hush-amber)' : 'var(--hush-surface)',
     color: active ? 'var(--hush-black)' : 'var(--hush-text-secondary)',
     cursor: 'pointer',
-    transition: 'all var(--duration-fast) var(--ease-out)',
   }),
   divider: {
     width: '1px',
@@ -181,8 +179,8 @@ export default function Controls({
 
       <div style={styles.divider} />
 
-      {/* Microphone + device switch */}
-      {isMicOn && onMicDeviceSwitch ? (
+      {/* Microphone + device switch (always show chevron when device switch available) */}
+      {onMicDeviceSwitch ? (
         <div
           style={{
             ...styles.deviceGroup(isMicOn),
@@ -197,12 +195,22 @@ export default function Controls({
             disabled={!isReady || mediaDisabled}
             title={mediaTitle || (isMicOn ? 'Mute mic' : 'Unmute mic')}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
+            {isMicOn ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="1" y1="1" x2="23" y2="23" />
+                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .51-.06 1-.16 1.47" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            )}
           </button>
           <button
             type="button"
@@ -211,6 +219,7 @@ export default function Controls({
               e.stopPropagation();
               onMicDeviceSwitch();
             }}
+            disabled={mediaDisabled}
             title="Change microphone"
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -249,8 +258,8 @@ export default function Controls({
         </button>
       )}
 
-      {/* Webcam + device switch */}
-      {isWebcamOn && onWebcamDeviceSwitch ? (
+      {/* Webcam + device switch (always show chevron when device switch available) */}
+      {onWebcamDeviceSwitch ? (
         <div
           style={{
             ...styles.deviceGroup(isWebcamOn),
@@ -265,10 +274,17 @@ export default function Controls({
             disabled={!isReady || mediaDisabled}
             title={mediaTitle || (isWebcamOn ? 'Turn off camera' : 'Turn on camera')}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M23 7l-7 5 7 5V7z" />
-              <rect x="1" y="5" width="15" height="14" rx="2" />
-            </svg>
+            {isWebcamOn ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M23 7l-7 5 7 5V7z" />
+                <rect x="1" y="5" width="15" height="14" rx="2" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            )}
           </button>
           <button
             type="button"
@@ -277,6 +293,7 @@ export default function Controls({
               e.stopPropagation();
               onWebcamDeviceSwitch();
             }}
+            disabled={mediaDisabled}
             title="Change webcam"
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
