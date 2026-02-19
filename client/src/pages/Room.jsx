@@ -419,14 +419,29 @@ export default function Room() {
   };
 
   const handleLeave = async () => {
-    disconnectRoom();
-    sessionStorage.removeItem('hush_token');
-    sessionStorage.removeItem('hush_peerId');
-    sessionStorage.removeItem('hush_roomName');
-    if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
-      await logout();
+    const LEAVE_TIMEOUT_MS = 5000;
+    const cleanupAndNavigate = async () => {
+      sessionStorage.removeItem('hush_token');
+      sessionStorage.removeItem('hush_peerId');
+      sessionStorage.removeItem('hush_roomName');
+      if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
+        await logout().catch(() => {});
+      }
+      navigate('/');
+    };
+
+    try {
+      await Promise.race([
+        disconnectRoom(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Leave timeout')), LEAVE_TIMEOUT_MS),
+        ),
+      ]);
+    } catch (err) {
+      console.error('[Room] Leave/disconnect error:', err);
+    } finally {
+      await cleanupAndNavigate();
     }
-    navigate('/');
   };
 
   const allStreams = [];

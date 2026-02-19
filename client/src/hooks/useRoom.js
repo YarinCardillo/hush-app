@@ -386,8 +386,13 @@ export function useRoom() {
     if (!roomRef.current) return;
 
     try {
-      for (const [, track] of localTracksRef.current.values()) {
-        track.stop();
+      const localTracksMap = localTracksRef.current;
+      if (localTracksMap && typeof localTracksMap.forEach === 'function') {
+        localTracksMap.forEach((info) => {
+          if (info?.track && typeof info.track.stop === 'function') {
+            info.track.stop();
+          }
+        });
       }
 
       cleanupMicPipeline();
@@ -556,17 +561,19 @@ export function useRoom() {
   // ─── Cleanup on Unmount ───────────────────────────────
   useEffect(() => {
     return () => {
-      if (roomRef.current) {
-        // Stop all local tracks
-        for (const [, info] of localTracksRef.current.values()) {
-          info.track.stop();
+      const room = roomRef.current;
+      const localTracksMap = localTracksRef.current;
+      if (room) {
+        if (localTracksMap && typeof localTracksMap.forEach === 'function') {
+          localTracksMap.forEach((info) => {
+            if (info?.track && typeof info.track.stop === 'function') {
+              info.track.stop();
+            }
+          });
         }
-
-        roomRef.current.disconnect();
+        room.disconnect();
         roomRef.current = null;
       }
-
-      // Cleanup mic audio pipeline
       cleanupMicPipeline();
     };
   }, [cleanupMicPipeline]);
