@@ -5,6 +5,9 @@
 
 const STORAGE_KEY = 'hush_matrix_credentials';
 
+/** SessionStorage key: set to '1' when user is in a guest (temporary) session. */
+export const GUEST_SESSION_KEY = 'hush_guest_session';
+
 /**
  * @typedef {Object} StoredCredentials
  * @property {string} userId

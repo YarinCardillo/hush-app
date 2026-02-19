@@ -1,13 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,400&display=swap');
 
 /* ── Hush Design System ─────────────────────── */
+/* Theme: default is dark. Light applied via prefers-color-scheme or [data-theme="light"]. */
 
 :root {
-  /* ── Core Surfaces ── */
-  --hush-black:        #050507;
-  --hush-surface:      #0c0c12;
-  --hush-elevated:     #12121a;
-  --hush-hover:        #181824;
+  /* ── Core Surfaces (dark, warm sRGB 19,18,10 → 60,57,53) ── */
+  --hush-black:        #13120a;  /* 19,18,10 — page bg */
+  --hush-surface:      #1b1912;  /* 27,25,18 — cards */
+  --hush-elevated:     #26241e;  /* 38,36,30 — raised */
+  --hush-hover:        #3c3935;  /* 60,57,53 — hover */
 
   /* ── Signature Orange (Adobe RGB 213, 79, 18) ── */
   --hush-amber:        #d54f12;
@@ -15,11 +16,12 @@
   --hush-amber-dim:    #a33d0e;
   --hush-amber-glow:   rgba(213, 79, 18, 0.15);
   --hush-amber-ghost:  rgba(213, 79, 18, 0.08);
+  --hush-on-amber:     #13120a;
 
-  /* ── Borders ── */
-  --hush-border:       #1e1e2e;
-  --hush-border-hover: #2e2e42;
-  --hush-border-focus: #3e3e56;
+  /* ── Borders (warm dark) ── */
+  --hush-border:       #26241e;
+  --hush-border-hover: #3c3935;
+  --hush-border-focus: #4a4742;
 
   /* ── Text Hierarchy (4 levels) ── */
   --hush-text:         #e4e4ec;
@@ -32,6 +34,14 @@
   --hush-live-glow:    rgba(52, 211, 153, 0.25);
   --hush-danger:       #ef4444;
   --hush-danger-ghost: rgba(239, 68, 68, 0.10);
+
+  /* ── Theme-specific (glass, overlays) ── */
+  --hush-glass-bg:         rgba(19, 18, 10, 0.68);
+  --hush-video-label-bg:  rgba(19, 18, 10, 0.7);
+  --hush-badge-live-bg:   rgba(52, 211, 153, 0.1);
+  --hush-btn-danger-hover: rgba(239, 68, 68, 0.15);
+  --hush-header-block-bg:    rgba(255, 255, 255, 0.03);
+  --hush-header-block-border: rgba(255, 255, 255, 0.06);
 
   /* ── Typography ── */
   --font-sans:  'Sora', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -50,6 +60,84 @@
   --duration-fast:   120ms;
   --duration-normal: 200ms;
   --duration-slow:   350ms;
+}
+
+/* Light theme: cream palette (sRGB 247,247,243 → 216,213,207). Follows system unless overridden by data-theme. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --hush-black:        #f7f7f3;  /* 247,247,243 — page bg */
+    --hush-surface:      #f2f1ed;  /* 242,241,237 — cards */
+    --hush-elevated:     #e6e5e0;  /* 230,229,224 — raised */
+    --hush-hover:        #d8d5cf;  /* 216,213,207 — hover */
+
+    --hush-amber-glow:   rgba(213, 79, 18, 0.12);
+    --hush-amber-ghost:  rgba(213, 79, 18, 0.06);
+    --hush-on-amber:     #ffffff;
+
+    --hush-border:       #e0ddd7;
+    --hush-border-hover: #d0cdc6;
+    --hush-border-focus: #c0bdb4;
+
+    --hush-text:         #1a1a18;
+    --hush-text-secondary: #5c5b56;
+    --hush-text-muted:   #7a7973;
+    --hush-text-ghost:   #9a9992;
+
+    --hush-glass-bg:         rgba(230, 229, 224, 0.82);
+    --hush-video-label-bg:  rgba(26, 26, 24, 0.65);
+    --hush-badge-live-bg:   rgba(52, 211, 153, 0.12);
+    --hush-btn-danger-hover: rgba(239, 68, 68, 0.12);
+    --hush-header-block-bg:    rgba(0, 0, 0, 0.04);
+    --hush-header-block-border: rgba(0, 0, 0, 0.08);
+  }
+}
+
+/* Explicit theme override (for future in-app setting: system / light / dark) */
+[data-theme="light"] {
+  --hush-black:        #f7f7f3;
+  --hush-surface:      #f2f1ed;
+  --hush-elevated:     #e6e5e0;
+  --hush-hover:        #d8d5cf;
+  --hush-amber-glow:   rgba(213, 79, 18, 0.12);
+  --hush-amber-ghost:  rgba(213, 79, 18, 0.06);
+  --hush-on-amber:     #ffffff;
+  --hush-border:       #e0ddd7;
+  --hush-border-hover: #d0cdc6;
+  --hush-border-focus: #c0bdb4;
+  --hush-text:         #1a1a18;
+  --hush-text-secondary: #5c5b56;
+  --hush-text-muted:   #7a7973;
+  --hush-text-ghost:   #9a9992;
+  --hush-glass-bg:         rgba(230, 229, 224, 0.82);
+  --hush-video-label-bg:  rgba(26, 26, 24, 0.65);
+  --hush-badge-live-bg:   rgba(52, 211, 153, 0.12);
+  --hush-btn-danger-hover: rgba(239, 68, 68, 0.12);
+  --hush-header-block-bg:    rgba(0, 0, 0, 0.04);
+  --hush-header-block-border: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="dark"] {
+  /* Dark theme: warm palette (sRGB 19,18,10 → 60,57,53) */
+  --hush-black:        #13120a;
+  --hush-surface:      #1b1912;
+  --hush-elevated:     #26241e;
+  --hush-hover:        #3c3935;
+  --hush-amber-glow:   rgba(213, 79, 18, 0.15);
+  --hush-amber-ghost:  rgba(213, 79, 18, 0.08);
+  --hush-on-amber:     #13120a;
+  --hush-border:       #26241e;
+  --hush-border-hover: #3c3935;
+  --hush-border-focus: #4a4742;
+  --hush-text:         #e4e4ec;
+  --hush-text-secondary: #8888a0;
+  --hush-text-muted:   #555568;
+  --hush-text-ghost:   #3a3a4e;
+  --hush-glass-bg:         rgba(19, 18, 10, 0.68);
+  --hush-video-label-bg:  rgba(19, 18, 10, 0.7);
+  --hush-badge-live-bg:   rgba(52, 211, 153, 0.1);
+  --hush-btn-danger-hover: rgba(239, 68, 68, 0.15);
+  --hush-header-block-bg:    rgba(255, 255, 255, 0.03);
+  --hush-header-block-border: rgba(255, 255, 255, 0.06);
 }
 
 /* ── Reset ─────────────────────────────────────── */
@@ -85,7 +173,7 @@ body {
 
 .glass {
   position: relative;
-  background: rgba(12, 12, 18, 0.55);
+  background: var(--hush-glass-bg);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border: 1px solid transparent;
@@ -154,7 +242,7 @@ code, .mono {
 
 .btn-primary {
   background: var(--hush-amber);
-  color: var(--hush-black);
+  color: var(--hush-on-amber);
 }
 
 .btn-primary:hover {
@@ -179,7 +267,7 @@ code, .mono {
 }
 
 .btn-danger:hover {
-  background: rgba(239, 68, 68, 0.15);
+  background: var(--hush-btn-danger-hover);
 }
 
 .btn-icon {
@@ -316,7 +404,7 @@ code, .mono {
 }
 
 .badge-live {
-  background: rgba(52, 211, 153, 0.1);
+  background: var(--hush-badge-live-bg);
   color: var(--hush-live);
   border: 1px solid transparent;
 }
@@ -376,7 +464,7 @@ code, .mono {
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  background: rgba(8, 8, 12, 0.7);
+  background: var(--hush-video-label-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-radius: var(--radius-sm);

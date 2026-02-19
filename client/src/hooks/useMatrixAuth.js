@@ -8,6 +8,7 @@ import {
   getStoredCredentials,
   setStoredCredentials,
   clearStoredCredentials,
+  GUEST_SESSION_KEY,
 } from '../lib/authStorage';
 
 /** IndexedDB-safe prefix for Rust crypto store. One store per account to avoid "account in the store doesn't match" errors. */
@@ -160,22 +161,28 @@ export function useMatrixAuth() {
 
   /**
    * Login with Matrix credentials.
-   * For future use - not currently used in Hush flow.
+   * Accepts Matrix username (localpart) or email; Matrix spec allows identifier
+   * types m.id.user or m.id.thirdparty (email) if the account has that 3PID linked.
    *
-   * @param {string} username - Matrix username
+   * @param {string} identifier - Matrix username (localpart) or email address
    * @param {string} password - Matrix password
    */
-  const login = useCallback(async (username, password) => {
+  const login = useCallback(async (identifier, password) => {
     setIsLoading(true);
     setError(null);
 
     try {
       const client = createMatrixClient();
 
-      const response = await client.login('m.login.password', {
-        user: username,
-        password: password,
-      });
+      const isEmail = typeof identifier === 'string' && identifier.includes('@');
+      const loginBody = {
+        type: 'm.login.password',
+        password,
+        identifier: isEmail
+          ? { type: 'm.id.thirdparty', medium: 'email', address: identifier.trim() }
+          : { type: 'm.id.user', user: identifier.trim() },
+      };
+      const response = await client.loginRequest(loginBody);
 
       setUserId(response.user_id);
       setAccessToken(response.access_token);
@@ -239,11 +246,12 @@ export function useMatrixAuth() {
 
   /**
    * Register new Matrix account.
-   * For future use - not currently used in Hush flow.
+   * Uses m.login.dummy (no email verification). Display name is not required by
+   * Matrix for registration; we set it via setDisplayName after register (profile).
    *
-   * @param {string} username - Desired username
+   * @param {string} username - Desired Matrix username (localpart)
    * @param {string} password - Account password
-   * @param {string} displayName - User display name
+   * @param {string} displayName - Display name set on Matrix profile after register
    */
   const register = useCallback(async (username, password, displayName) => {
     setIsLoading(true);
@@ -336,7 +344,7 @@ export function useMatrixAuth() {
     setCryptoError(null);
 
     try {
-      sessionStorage.removeItem('hush_guest_session');
+      sessionStorage.removeItem(GUEST_SESSION_KEY);
       clearStoredCredentials();
       await destroyMatrixClient();
       setUserId(null);

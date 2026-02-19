@@ -2,12 +2,13 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Track } from 'livekit-client';
 import { useAuth } from '../contexts/AuthContext';
+import { GUEST_SESSION_KEY } from '../lib/authStorage';
 import { useRoom } from '../hooks/useRoom';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDevices } from '../hooks/useDevices';
 import { DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
 import { estimateUploadSpeed, getRecommendedQuality } from '../lib/bandwidthEstimator';
-import logoWordmark from '../assets/logo-wordmark.svg';
+import LogoWordmark from '../components/LogoWordmark';
 import StreamView from '../components/StreamView';
 import ScreenShareCard from '../components/ScreenShareCard';
 import Controls from '../components/Controls';
@@ -37,8 +38,8 @@ const styles = {
     display: 'flex',
     alignItems: 'stretch',
     minHeight: '32px',
-    background: 'rgba(255, 255, 255, 0.03)',
-    border: '1px solid rgba(255, 255, 255, 0.06)',
+    background: 'var(--hush-header-block-bg)',
+    border: '1px solid var(--hush-header-block-border)',
     borderRadius: 0,
     overflow: 'hidden',
   },
@@ -47,14 +48,14 @@ const styles = {
     alignItems: 'center',
     paddingLeft: '12px',
     paddingRight: '10px',
-    borderRight: '1px solid rgba(255, 255, 255, 0.06)',
+    borderRight: '1px solid var(--hush-header-block-border)',
     flexShrink: 0,
+    color: 'var(--hush-text)',
   },
   headerLogo: {
     display: 'block',
     height: '28px',
     width: 'auto',
-    userSelect: 'none',
   },
   roomTitleCell: {
     display: 'flex',
@@ -64,7 +65,7 @@ const styles = {
     minWidth: 0,
     flex: '1 1 auto',
     maxWidth: '200px',
-    borderRight: '1px solid rgba(255, 255, 255, 0.06)',
+    borderRight: '1px solid var(--hush-header-block-border)',
   },
   roomTitle: {
     fontSize: '0.9rem',
@@ -88,7 +89,7 @@ const styles = {
     minHeight: '32px',
     fontSize: '0.7rem',
     fontWeight: 500,
-    background: 'rgba(52, 211, 153, 0.1)',
+    background: 'var(--hush-badge-live-bg)',
     color: 'var(--hush-live)',
     border: 'none',
     borderRadius: 0,
@@ -264,7 +265,7 @@ export default function Room() {
     keyExchangeMessage,
   } = useRoom();
 
-  const { isAuthenticated, rehydrationAttempted } = useAuth();
+  const { isAuthenticated, rehydrationAttempted, logout } = useAuth();
 
   const {
     audioDevices,
@@ -288,10 +289,14 @@ export default function Room() {
     const roomId = sessionStorage.getItem('hush_matrixRoomId');
     const roomNameStored = sessionStorage.getItem('hush_roomName');
     if (!roomId || !roomNameStored) {
-      navigate('/', { replace: true });
+      if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
+        logout().then(() => navigate('/', { replace: true }));
+      } else {
+        navigate('/', { replace: true });
+      }
       return;
     }
-  }, [rehydrationAttempted, isAuthenticated, navigate]);
+  }, [rehydrationAttempted, isAuthenticated, navigate, logout]);
 
   useEffect(() => {
     if (!rehydrationAttempted || !isAuthenticated) return;
@@ -309,7 +314,11 @@ export default function Room() {
     }).catch((err) => {
       console.error('[room] Connection failed:', err);
       if (err.message === 'Room not found') {
-        navigate('/', { replace: true });
+        if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
+          logout().then(() => navigate('/', { replace: true }));
+        } else {
+          navigate('/', { replace: true });
+        }
       }
     });
 
@@ -447,11 +456,14 @@ export default function Room() {
     setShowQualityPanel(false);
   };
 
-  const handleLeave = () => {
+  const handleLeave = async () => {
     disconnectRoom();
     sessionStorage.removeItem('hush_token');
     sessionStorage.removeItem('hush_peerId');
     sessionStorage.removeItem('hush_roomName');
+    if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
+      await logout();
+    }
     navigate('/');
   };
 
@@ -599,12 +611,7 @@ export default function Room() {
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <div style={styles.headerLogoCell}>
-            <img
-              src={logoWordmark}
-              alt="hush"
-              style={styles.headerLogo}
-              draggable={false}
-            />
+            <LogoWordmark style={styles.headerLogo} />
           </div>
           <div style={styles.roomTitleCell}>
             <span style={styles.roomTitle}>{decodeURIComponent(roomName)}</span>

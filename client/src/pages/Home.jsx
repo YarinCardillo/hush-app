@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
 import { getMatrixClient } from '../lib/matrixClient';
+import { GUEST_SESSION_KEY } from '../lib/authStorage';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your', 'privacy.'];
 
@@ -160,7 +161,6 @@ const styles = {
 };
 
 const AUTH_VIEW = { CHOOSE: 'choose', LOGIN: 'login', REGISTER: 'register', GUEST: 'guest' };
-const GUEST_SESSION_KEY = 'hush_guest_session';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -352,7 +352,7 @@ export default function Home() {
 
             // Check if error is due to alias collision or encrypted room
             const isCollision = err.errcode === 'M_ROOM_IN_USE' ||
-                               (err.data && err.data.errcode === 'M_ROOM_IN_USE');
+              (err.data && err.data.errcode === 'M_ROOM_IN_USE');
 
             if (isCollision && retryAttempts < maxRetries - 1) {
               // Generate random 4-character hex suffix
@@ -597,23 +597,13 @@ export default function Home() {
             </>
           ) : authView === AUTH_VIEW.CHOOSE ? (
             <>
-              <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginBottom: '16px' }}>
-                Sign in or continue as guest
-              </p>
               <div className="home-auth-choices" style={{ ...styles.tabs, flexDirection: 'column' }}>
                 <button
                   type="button"
                   className="home-auth-choice-btn"
                   onClick={() => setAuthView(AUTH_VIEW.LOGIN)}
                 >
-                  Login
-                </button>
-                <button
-                  type="button"
-                  className="home-auth-choice-btn"
-                  onClick={() => setAuthView(AUTH_VIEW.REGISTER)}
-                >
-                  Register
+                  Sign in
                 </button>
                 <button
                   type="button"
@@ -635,11 +625,11 @@ export default function Home() {
               </button>
               <form style={styles.form} onSubmit={handleLoginSubmit}>
                 <div>
-                  <label style={styles.fieldLabel}>Username</label>
+                  <label style={styles.fieldLabel}>Username or email</label>
                   <input
                     className="input"
                     type="text"
-                    placeholder="Matrix username (e.g. alice)"
+                    placeholder="alice or alice@example.com"
                     value={loginUsername}
                     onChange={(e) => setLoginUsername(e.target.value)}
                     required
@@ -665,9 +655,27 @@ export default function Home() {
                   disabled={matrixLoading}
                   style={{ width: '100%', padding: '12px' }}
                 >
-                  {matrixLoading ? 'Logging in...' : 'Log in'}
+                  {matrixLoading ? 'Signing in...' : 'Sign in'}
                 </button>
               </form>
+              <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginTop: '16px', textAlign: 'center' }}>
+                Don&apos;t have an account?{' '}
+                <button
+                  type="button"
+                  className="back-link"
+                  style={{
+                    padding: 0,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    font: 'inherit',
+                    color: 'var(--hush-amber-dim)',
+                  }}
+                  onClick={() => setAuthView(AUTH_VIEW.REGISTER)}
+                >
+                  Sign up
+                </button>
+              </p>
             </>
           ) : (
             <>
@@ -722,7 +730,7 @@ export default function Home() {
                   <input
                     className="input"
                     type="text"
-                    placeholder="How others will see you"
+                    placeholder="How others will see you in rooms"
                     value={registerDisplayName}
                     onChange={(e) => setRegisterDisplayName(e.target.value)}
                     required
@@ -741,6 +749,23 @@ export default function Home() {
                   {matrixLoading ? 'Creating account...' : 'Create account'}
                 </button>
               </form>
+              <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginTop: '16px', textAlign: 'center' }}>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  style={{
+                    padding: 0,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    font: 'inherit',
+                    color: 'var(--hush-amber-dim)',
+                  }}
+                  onClick={() => { setAuthView(AUTH_VIEW.LOGIN); setError(''); }}
+                >
+                  Sign in
+                </button>
+              </p>
             </>
           )}
 
@@ -757,6 +782,8 @@ export default function Home() {
             </div>
             <div style={styles.footerMeta}>
               <span>v{APP_VERSION}</span>
+              <span>·</span>
+              <span>powered by Matrix</span>
             </div>
           </div>
         </motion.div>
