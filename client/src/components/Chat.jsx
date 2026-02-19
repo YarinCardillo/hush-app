@@ -345,7 +345,7 @@ export default function Chat({ currentPeerId }) {
                 </svg>
               </div>
               <div style={styles.emptyText}>
-                no messages yet — start the conversation
+                no messages yet, start the conversation
               </div>
             </div>
           ) : (

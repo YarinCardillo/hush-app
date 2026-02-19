@@ -36,12 +36,34 @@ cd hush-app
 docker-compose up -d
 ```
 
-Open `http://localhost` (Caddy serves the app and proxies Matrix/LiveKit). For local dev with hot reload, run `npm run install:all`, then `docker-compose up -d` for backend and `npm run dev` for the client; use the URL Vite prints (e.g. http://localhost:5173).
+Open `http://localhost` (Caddy serves the app and proxies Matrix/LiveKit). **When to open:** after `docker-compose up -d`, wait until Synapse is ready (first start can take 1–2 min). Run: `curl -s http://localhost:80/_matrix/client/versions` — when it returns JSON (not 502/empty), open the app. Or run `docker ps` and wait until `hush-synapse` shows **(healthy)**.
+
+**If you changed docker-compose.yml** (e.g. added `depends_on` for Hush): recreate so the new order applies: `docker-compose down && docker-compose up -d`. Plain `docker-compose up -d` does not recreate already-running containers.
+
+For local dev with hot reload, run `npm run install:all`, then `docker-compose up -d` for backend and `npm run dev` for the client; use the URL Vite prints (e.g. http://localhost:5173).
 
 ### One-time setup
 
 - `./scripts/setup.sh` checks for `docker`, `docker-compose`, `openssl`, creates `.env` from `.env.example` with random secrets, and can run `scripts/generate-synapse-config.sh`.
 - Or copy `.env.example` to `.env` and set at least `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and (for production) `MATRIX_SERVER_NAME`, Synapse secrets, Postgres password.
+
+**Synapse restarts / "password authentication failed for user synapse"**  
+This happens when the Postgres volume was created with a different `POSTGRES_PASSWORD` than in your current `.env` (e.g. after re-running `./scripts/setup.sh` or editing `.env`). Postgres does not re-apply the new password to existing data. Fix: remove the Postgres volume and re-create so it uses the current password:
+
+```bash
+docker-compose down && docker volume rm hush-app_postgres_data && docker-compose up -d
+```
+
+If the volume name differs, run `docker volume ls` and remove the one matching `postgres_data`.
+
+**"Fetch failed" / "Cannot reach Matrix server" when entering a room (LiveKit token)**  
+The Hush container calls Synapse for token validation. (1) Hush now starts only after Synapse is healthy (`depends_on: synapse: condition: service_healthy`). If you still see the error, run `docker ps` and confirm `hush-synapse` shows "healthy". (2) **In Docker, the Hush container must reach Synapse by service name.** In `.env`, either leave `MATRIX_HOMESERVER_URL` unset (so the default `http://synapse:8008` is used) or set `MATRIX_HOMESERVER_URL=http://synapse:8008`. If it is set to `http://localhost:8008`, the container will try to reach port 8008 on itself and get connection refused. (3) When using `npm run dev`, `/api` is served by the Hush container (via Caddy); ensure `docker-compose up -d` and that `.env` has `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`. (4) After server code changes, rebuild: `docker-compose up -d --build`. To see the error: `docker logs hush-app-hush-1 2>&1 | tail -30`.
+
+**"Invalid API key" or "Failed to fetch" / ERR_CONNECTION_RESET when joining a room**  
+The LiveKit server and the Hush token service must use the same API key/secret. `livekit/livekit.yaml` is configured with `devkey`/`devsecret`. For **local dev** set in `.env`: `LIVEKIT_API_KEY=devkey` and `LIVEKIT_API_SECRET=devsecret`, then run `docker-compose up -d` (or `docker-compose up -d --force-recreate` so the LiveKit container restarts with the updated config). If you previously ran `./scripts/setup.sh` and got random keys, either re-run setup and choose localhost (it now keeps devkey/devsecret) or manually set the two LiveKit vars above.
+
+**"Disconnected" or "could not establish pc connection" right after creating/joining a room**  
+The WebSocket (port 7880) can succeed while the WebRTC media connection fails if the host cannot reach the LiveKit RTC ports. (1) Ensure `livekit/livekit.yaml` uses `port_range_start: 50020` and `port_range_end: 50100` to match the ports published in `docker-compose.yml` (50020–50100/udp and 7881/tcp). Restart LiveKit after config changes: `docker-compose up -d --force-recreate livekit`. (2) On **Docker for Mac**, UDP forwarding to containers is often flaky; the client uses a longer peer connection timeout so ICE can fall back to TCP (7881). If it still fails, run LiveKit on the host for local dev: download the binary from [livekit/releases](https://github.com/livekit/livekit/releases), run it with your `livekit.yaml`, and point the app at `ws://localhost:7880`.
 
 ---
 

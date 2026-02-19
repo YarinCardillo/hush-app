@@ -207,6 +207,48 @@ code, .mono {
   transform: none;
 }
 
+/* Home: auth choice buttons (Login / Register / Guest) — hover only.
+   Base and hover in CSS so hover is not overridden by inline styles. */
+.home-auth-choice-btn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--hush-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.home-auth-choice-btn:hover {
+  background: var(--hush-hover);
+  color: var(--hush-text);
+}
+
+/* Home: create/join room tabs — hover tonality on inactive tab */
+.home-room-tabs button[data-active="false"]:hover {
+  background: var(--hush-hover);
+  color: var(--hush-text);
+}
+
+/* Back link/button — shared hover (Home, Roadmap-style) */
+.back-link {
+  background: none;
+  border: none;
+  color: var(--hush-text-muted);
+  font-size: 0.8rem;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 16px;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.back-link:hover {
+  color: var(--hush-amber);
+}
+
 /* ── Inputs ────────────────────────────────────── */
 
 .input {

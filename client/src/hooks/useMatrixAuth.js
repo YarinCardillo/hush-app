@@ -336,6 +336,7 @@ export function useMatrixAuth() {
     setCryptoError(null);
 
     try {
+      sessionStorage.removeItem('hush_guest_session');
       clearStoredCredentials();
       await destroyMatrixClient();
       setUserId(null);

@@ -128,34 +128,6 @@ const styles = {
     color: 'var(--hush-danger)',
     fontSize: '0.85rem',
   },
-  movingBorderWrapper: {
-    position: 'relative',
-    borderRadius: 'var(--radius-md)',
-    overflow: 'hidden',
-    marginTop: '8px',
-  },
-  movingBorderTrack: {
-    position: 'absolute',
-    inset: 0,
-    borderRadius: 'inherit',
-    overflow: 'hidden',
-  },
-  movingBorderGradient: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    width: '300%',
-    paddingBottom: '300%',
-    background:
-      'conic-gradient(from 0deg, transparent 0%, transparent 60%, rgba(232, 184, 102, 0.5) 80%, rgba(255, 255, 255, 0.15) 85%, rgba(232, 184, 102, 0.5) 90%, transparent 100%)',
-    animation: 'moving-border-spin 4s linear infinite',
-  },
-  ctaButton: {
-    position: 'relative',
-    width: 'calc(100% - 2px)',
-    padding: '12px',
-    margin: '1px',
-  },
   footer: {
     marginTop: '32px',
     textAlign: 'center',
@@ -188,6 +160,7 @@ const styles = {
 };
 
 const AUTH_VIEW = { CHOOSE: 'choose', LOGIN: 'login', REGISTER: 'register', GUEST: 'guest' };
+const GUEST_SESSION_KEY = 'hush_guest_session';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -203,6 +176,7 @@ export default function Home() {
     clearCryptoError,
   } = useAuth();
   const [authView, setAuthView] = useState(AUTH_VIEW.CHOOSE);
+  const [isGuestSession, setIsGuestSession] = useState(() => sessionStorage.getItem(GUEST_SESSION_KEY) === '1');
   const [mode, setMode] = useState('create');
   const [roomName, setRoomName] = useState('');
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('hush_displayName') || '');
@@ -212,6 +186,7 @@ export default function Home() {
   const [loginPassword, setLoginPassword] = useState('');
   const [registerUsername, setRegisterUsername] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
+  const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState('');
   const [registerDisplayName, setRegisterDisplayName] = useState(() => localStorage.getItem('hush_displayName') || '');
 
   const spotlightRef = useRef(null);
@@ -286,6 +261,8 @@ export default function Home() {
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    sessionStorage.removeItem(GUEST_SESSION_KEY);
+    setIsGuestSession(false);
     if (!loginUsername.trim() || !loginPassword) return;
     await login(loginUsername.trim(), loginPassword);
   };
@@ -293,7 +270,13 @@ export default function Home() {
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    sessionStorage.removeItem(GUEST_SESSION_KEY);
+    setIsGuestSession(false);
     if (!registerUsername.trim() || !registerPassword || !registerDisplayName.trim()) return;
+    if (registerPassword !== registerPasswordConfirm) {
+      setError('Passwords do not match');
+      return;
+    }
     await register(registerUsername.trim(), registerPassword, registerDisplayName.trim());
   };
 
@@ -307,6 +290,8 @@ export default function Home() {
 
       // Step 1: Authenticate with Matrix as guest
       await loginAsGuest();
+      sessionStorage.setItem(GUEST_SESSION_KEY, '1');
+      setIsGuestSession(true);
 
       if (matrixError) {
         throw new Error(`Matrix authentication failed: ${matrixError}`);
@@ -449,13 +434,6 @@ export default function Home() {
 
   return (
     <div style={styles.page} onMouseMove={handleMouseMove}>
-      <style>{`
-        @keyframes moving-border-spin {
-          from { transform: translate(-50%, -50%) rotate(0deg); }
-          to { transform: translate(-50%, -50%) rotate(360deg); }
-        }
-      `}</style>
-
       {/* Cursor spotlight — single lerped circle, soft falloff (desktop only) */}
       {spotlightEnabled && (
         <div ref={spotlightRef} style={styles.spotlightWrapper}>
@@ -536,7 +514,7 @@ export default function Home() {
                   padding: '4px 0',
                 }}
               >
-                Logout
+                {isGuestSession ? 'End session' : 'Logout'}
               </button>
             </div>
           )}
@@ -544,19 +522,32 @@ export default function Home() {
           {isAuthenticated || authView === AUTH_VIEW.GUEST ? (
             <>
               {authView === AUTH_VIEW.GUEST && (
-                <p style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', marginBottom: '16px' }}>
-                  Temporary session — no account. Your identity will not persist.
-                </p>
+                <>
+                  <button
+                    type="button"
+                    className="back-link"
+                    onClick={() => { setAuthView(AUTH_VIEW.CHOOSE); setError(''); }}
+                  >
+                    ← Back
+                  </button>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', marginBottom: '16px' }}>
+                    Temporary session, no account. Your identity will not persist.
+                  </p>
+                </>
               )}
-              <div style={styles.tabs}>
+              <div className="home-room-tabs" style={styles.tabs}>
                 <button
+                  type="button"
                   style={styles.tab(mode === 'create')}
+                  data-active={mode === 'create'}
                   onClick={() => { setMode('create'); setError(''); }}
                 >
                   create room
                 </button>
                 <button
+                  type="button"
                   style={styles.tab(mode === 'join')}
+                  data-active={mode === 'join'}
                   onClick={() => { setMode('join'); setError(''); }}
                 >
                   join
@@ -594,19 +585,14 @@ export default function Home() {
                   <div style={styles.error}>{error || matrixError?.message}</div>
                 )}
 
-                <div style={styles.movingBorderWrapper}>
-                  <div style={styles.movingBorderTrack}>
-                    <div style={styles.movingBorderGradient} />
-                  </div>
-                  <button
-                    className="btn btn-primary"
-                    type="submit"
-                    disabled={loading || matrixLoading}
-                    style={styles.ctaButton}
-                  >
-                    {loading || matrixLoading ? 'connecting...' : mode === 'create' ? 'create room' : 'join'}
-                  </button>
-                </div>
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={loading || matrixLoading}
+                  style={{ width: '100%', padding: '12px' }}
+                >
+                  {loading || matrixLoading ? 'connecting...' : mode === 'create' ? 'create room' : 'join'}
+                </button>
               </form>
             </>
           ) : authView === AUTH_VIEW.CHOOSE ? (
@@ -614,24 +600,24 @@ export default function Home() {
               <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginBottom: '16px' }}>
                 Sign in or continue as guest
               </p>
-              <div style={{ ...styles.tabs, flexDirection: 'column' }}>
+              <div className="home-auth-choices" style={{ ...styles.tabs, flexDirection: 'column' }}>
                 <button
                   type="button"
-                  style={styles.tab(false)}
+                  className="home-auth-choice-btn"
                   onClick={() => setAuthView(AUTH_VIEW.LOGIN)}
                 >
                   Login
                 </button>
                 <button
                   type="button"
-                  style={styles.tab(false)}
+                  className="home-auth-choice-btn"
                   onClick={() => setAuthView(AUTH_VIEW.REGISTER)}
                 >
                   Register
                 </button>
                 <button
                   type="button"
-                  style={styles.tab(false)}
+                  className="home-auth-choice-btn"
                   onClick={() => setAuthView(AUTH_VIEW.GUEST)}
                 >
                   Try as Guest
@@ -642,16 +628,8 @@ export default function Home() {
             <>
               <button
                 type="button"
+                className="back-link"
                 onClick={() => { setAuthView(AUTH_VIEW.CHOOSE); setError(''); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--hush-text-muted)',
-                  fontSize: '0.8rem',
-                  marginBottom: '16px',
-                  cursor: 'pointer',
-                  padding: 0,
-                }}
               >
                 ← Back
               </button>
@@ -695,16 +673,8 @@ export default function Home() {
             <>
               <button
                 type="button"
+                className="back-link"
                 onClick={() => { setAuthView(AUTH_VIEW.CHOOSE); setError(''); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--hush-text-muted)',
-                  fontSize: '0.8rem',
-                  marginBottom: '16px',
-                  cursor: 'pointer',
-                  padding: 0,
-                }}
               >
                 ← Back
               </button>
@@ -735,6 +705,19 @@ export default function Home() {
                   />
                 </div>
                 <div>
+                  <label style={styles.fieldLabel}>Confirm password</label>
+                  <input
+                    className="input"
+                    type="password"
+                    placeholder="Repeat your password"
+                    value={registerPasswordConfirm}
+                    onChange={(e) => setRegisterPasswordConfirm(e.target.value)}
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div>
                   <label style={styles.fieldLabel}>Display name</label>
                   <input
                     className="input"
@@ -746,7 +729,9 @@ export default function Home() {
                     maxLength={30}
                   />
                 </div>
-                {matrixError && <div style={styles.error}>{matrixError.message}</div>}
+                {(error || matrixError) && (
+                  <div style={styles.error}>{error || matrixError?.message}</div>
+                )}
                 <button
                   className="btn btn-primary"
                   type="submit"
