@@ -64,6 +64,7 @@ export function useRoom() {
   const matrixRoomIdRef = useRef(null);
   const currentKeyIndexRef = useRef(0);
   const toDeviceUnsubscribeRef = useRef(null);
+  const connectionEpochRef = useRef(0);
 
   // ─── Noise Gate Refs ──────────────────────────────────
   const audioContextRef = useRef(null);
@@ -123,6 +124,8 @@ export function useRoom() {
   // ─── Connect to LiveKit Room ──────────────────────────
   const connectRoom = useCallback(
     async (roomName, displayName, matrixRoomId) => {
+      const epoch = ++connectionEpochRef.current;
+      const isStale = () => epoch !== connectionEpochRef.current;
       try {
         if (roomRef.current) {
           roomRef.current.disconnect();
@@ -179,6 +182,7 @@ export function useRoom() {
         }
 
         const { token } = await response.json();
+        if (isStale()) return;
 
         // ─── E2EE: keyProvider + worker; key distribution via e2eeKeyManager ───
         let keyProvider = null;
@@ -215,6 +219,7 @@ export function useRoom() {
         if (!keyProvider || !worker) {
           throw new Error('Media encryption unavailable. Cannot join voice channel.');
         }
+        if (isStale()) return;
 
         // Create LiveKit room with dynacast, adaptive streaming, and E2EE
         const roomOptions = {
@@ -244,6 +249,7 @@ export function useRoom() {
 
         // ParticipantConnected: update list and send E2EE key via e2eeKeyManager
         room.on(RoomEvent.ParticipantConnected, async (participant) => {
+          if (isStale()) return;
           console.log(
             `[livekit] Participant connected: ${participant.identity}`,
           );
@@ -265,6 +271,7 @@ export function useRoom() {
 
         // ParticipantDisconnected: update list, clean tracks/screens, rekey via e2eeKeyManager
         room.on(RoomEvent.ParticipantDisconnected, async (participant) => {
+          if (isStale()) return;
           console.log(
             `[livekit] Participant disconnected: ${participant.identity}`,
           );
@@ -303,8 +310,23 @@ export function useRoom() {
         };
         attachRemoteTrackListeners(room, trackRefs, scheduleRemoteTracksUpdate, scheduleScreensUpdate);
 
+        // Connected: set creator E2EE key only after connection is fully established,
+        // so setKey does not trigger renegotiation on a not-yet-ready peer connection.
+        // Connected fires synchronously during room.connect(), before roomRef is set.
+        // Use the local `room` variable from the closure, not roomRef.current.
+        room.on(RoomEvent.Connected, async () => {
+          if (isStale()) return;
+          if (!keyProvider || !matrixRoomIdRef.current) return;
+          if (room.remoteParticipants.size === 0) {
+            await setCreatorKey(keyProvider, { keyBytesRef, currentKeyIndexRef }, setE2eeKey);
+          }
+          setIsE2EEEnabled(true);
+          if (keyBytesRef.current) setE2eeKey(keyBytesRef.current);
+        });
+
         // Disconnected
         room.on(RoomEvent.Disconnected, () => {
+          if (isStale()) return;
           console.log('[livekit] Disconnected from room');
           setIsReady(false);
           setError('Disconnected from room');
@@ -314,14 +336,20 @@ export function useRoom() {
           import.meta.env.VITE_LIVEKIT_URL || 'ws://localhost:7880';
         await room.connect(livekitUrl, token);
 
+        // If superseded during connect (e.g. StrictMode remount), discard this room
+        if (isStale()) {
+          room.disconnect();
+          return;
+        }
+
         roomRef.current = room;
 
-        if (keyProvider && matrixRoomIdRef.current && room.remoteParticipants.size === 0) {
-          await setCreatorKey(keyProvider, { keyBytesRef, currentKeyIndexRef }, setE2eeKey);
-          setIsE2EEEnabled(true);
-        } else if (keyProvider) {
-          setIsE2EEEnabled(true);
-          setE2eeKey(keyBytesRef.current);
+        if (keyProvider) {
+          if (room.remoteParticipants.size > 0) {
+            setIsE2EEEnabled(true);
+            setE2eeKey(keyBytesRef.current);
+          }
+          // Creator path: E2EE key is set in RoomEvent.Connected handler
         } else {
           setIsE2EEEnabled(false);
         }
@@ -338,6 +366,7 @@ export function useRoom() {
         setIsReady(true);
         console.log('[livekit] Connected to room:', roomName);
       } catch (err) {
+        if (isStale()) return;
         console.error('[livekit] Connection error:', err);
         setError(err.message);
       }
@@ -347,6 +376,7 @@ export function useRoom() {
 
   // ─── Disconnect from Room ─────────────────────────────
   const disconnectRoom = useCallback(async () => {
+    connectionEpochRef.current++;
     setError(null);
     setKeyExchangeMessage(null);
     if (toDeviceUnsubscribeRef.current) {
