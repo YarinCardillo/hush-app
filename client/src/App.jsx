@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppBackground from './components/AppBackground';
 import { clearStoredCredentials, GUEST_SESSION_KEY } from './lib/authStorage';
 
@@ -30,6 +30,68 @@ function GuestSessionCleanup() {
   return null;
 }
 
+/**
+ * Handles redirect from Matrix SSO: reads loginToken from query, exchanges it for
+ * session, then redirects to / (or shows error and link to /).
+ */
+function LoginCallback() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { completeSsoLogin, error: authError } = useAuth();
+  const loginToken = searchParams.get('loginToken');
+
+  useEffect(() => {
+    if (!loginToken) {
+      navigate('/', { replace: true });
+      return;
+    }
+    let cancelled = false;
+    completeSsoLogin(loginToken).then((ok) => {
+      if (cancelled) return;
+      if (ok) navigate('/', { replace: true });
+    });
+    return () => { cancelled = true; };
+  }, [loginToken, completeSsoLogin, navigate]);
+
+  if (!loginToken) {
+    return null;
+  }
+  if (authError) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'var(--hush-black)',
+        color: 'var(--hush-text)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '16px',
+        padding: '24px',
+        fontFamily: 'var(--font-sans)',
+      }}>
+        <p style={{ color: 'var(--hush-text-secondary)' }}>
+          Sign-in failed: {authError?.message || 'Unknown error'}
+        </p>
+        <a href="/" style={{ color: 'var(--hush-amber-dim)' }}>Return to home</a>
+      </div>
+    );
+  }
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'var(--hush-black)',
+      color: 'var(--hush-text-secondary)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontFamily: 'var(--font-sans)',
+    }}>
+      Signing you in…
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -38,6 +100,7 @@ export default function App() {
       <Suspense fallback={fallback}>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/login/callback" element={<LoginCallback />} />
           <Route path="/room/:roomName" element={<Room />} />
           <Route path="/roadmap" element={<Roadmap />} />
         </Routes>

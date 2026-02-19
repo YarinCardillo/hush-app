@@ -191,7 +191,7 @@ export default function Chat({ currentPeerId }) {
       .filter(Boolean);
     setMessages(existingMessages);
 
-    // Listen for new messages (merge by id to avoid duplicate with optimistic updates)
+    // Listen for new messages (merge with existing, including optimistic sends)
     const handleTimelineEvent = (event, _room, toStartOfTimeline) => {
       if (toStartOfTimeline) return; // Ignore backfill
       if (event.getRoomId() !== matrixRoomId) return;
@@ -201,7 +201,33 @@ export default function Chat({ currentPeerId }) {
       setMessages((prev) => {
         const id = event.getId();
         const idx = prev.findIndex((m) => m.id === id);
-        if (idx >= 0) return prev.map((m, i) => (i === idx ? msg : m));
+        if (idx >= 0) {
+          // Replace existing message with same event id
+          return prev.map((m, i) => (i === idx ? msg : m));
+        }
+
+        // If this is our own message, try to merge with an optimistic "pending" one
+        const client = getMatrixClient();
+        const currentUserId = client.getUserId();
+        if (currentUserId && msg.sender === currentUserId) {
+          const optimisticIdx = prev.findIndex(
+            (m) =>
+              m.pending === true &&
+              m.sender === currentUserId &&
+              m.content === msg.content,
+          );
+          if (optimisticIdx >= 0) {
+            const next = [...prev];
+            next[optimisticIdx] = {
+              ...msg,
+              pending: false,
+              failed: false,
+            };
+            return next;
+          }
+        }
+
+        // Otherwise append as new message
         return [...prev, msg];
       });
     };

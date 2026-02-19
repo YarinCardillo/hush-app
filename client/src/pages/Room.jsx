@@ -627,7 +627,10 @@ export default function Room() {
           <button
             style={styles.participantCount}
             title="Chat"
-            onClick={() => setShowChatPanel(!showChatPanel)}
+            onClick={() => {
+              setShowQualityPanel(false);
+              setShowChatPanel((prev) => !prev);
+            }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -637,7 +640,10 @@ export default function Room() {
           <button
             style={styles.participantCount}
             title="Room panel"
-            onClick={() => setShowQualityPanel(!showQualityPanel)}
+            onClick={() => {
+              setShowChatPanel(false);
+              setShowQualityPanel((prev) => !prev);
+            }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />

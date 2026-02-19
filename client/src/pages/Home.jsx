@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'motion/react';
+import { SSOAction } from 'matrix-js-sdk';
 import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
 import { getMatrixClient } from '../lib/matrixClient';
@@ -169,6 +170,10 @@ export default function Home() {
     login,
     register,
     logout,
+    fetchLoginFlows,
+    startSsoLogin,
+    ssoProviders,
+    loginFlowsError,
     isAuthenticated,
     isLoading: matrixLoading,
     error: matrixError,
@@ -208,6 +213,13 @@ export default function Home() {
       sessionStorage.removeItem('hush_pendingRoom');
     }
   }, []);
+
+  // Fetch Matrix login flows when showing Login or Register so SSO buttons can be shown
+  useEffect(() => {
+    if (authView === AUTH_VIEW.LOGIN || authView === AUTH_VIEW.REGISTER) {
+      fetchLoginFlows();
+    }
+  }, [authView, fetchLoginFlows]);
 
   useEffect(() => {
     const m = window.matchMedia('(pointer: coarse)');
@@ -658,6 +670,36 @@ export default function Home() {
                   {matrixLoading ? 'Signing in...' : 'Sign in'}
                 </button>
               </form>
+              {ssoProviders.length > 0 && (
+                <>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-muted)', marginTop: '16px', marginBottom: '8px', textAlign: 'center' }}>or</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {ssoProviders.map((idp) => (
+                      <button
+                        key={idp.id || 'sso'}
+                        type="button"
+                        className="btn"
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          background: 'var(--hush-surface)',
+                          border: '1px solid var(--hush-border)',
+                          color: 'var(--hush-text)',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => startSsoLogin(idp.id || undefined, SSOAction.LOGIN)}
+                      >
+                        Continue with {idp.name}
+                      </button>
+                    ))}
+                  </div>
+                  {loginFlowsError && (
+                    <p style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', marginTop: '8px', textAlign: 'center' }}>
+                      Unable to load sign-in options
+                    </p>
+                  )}
+                </>
+              )}
               <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginTop: '16px', textAlign: 'center' }}>
                 Don&apos;t have an account?{' '}
                 <button
@@ -749,6 +791,36 @@ export default function Home() {
                   {matrixLoading ? 'Creating account...' : 'Create account'}
                 </button>
               </form>
+              {ssoProviders.length > 0 && (
+                <>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-muted)', marginTop: '16px', marginBottom: '8px', textAlign: 'center' }}>or</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {ssoProviders.map((idp) => (
+                      <button
+                        key={idp.id || 'sso'}
+                        type="button"
+                        className="btn"
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          background: 'var(--hush-surface)',
+                          border: '1px solid var(--hush-border)',
+                          color: 'var(--hush-text)',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => startSsoLogin(idp.id || undefined, SSOAction.REGISTER)}
+                      >
+                        Continue with {idp.name}
+                      </button>
+                    ))}
+                  </div>
+                  {loginFlowsError && (
+                    <p style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', marginTop: '8px', textAlign: 'center' }}>
+                      Unable to load sign-in options
+                    </p>
+                  )}
+                </>
+              )}
               <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginTop: '16px', textAlign: 'center' }}>
                 Already have an account?{' '}
                 <button

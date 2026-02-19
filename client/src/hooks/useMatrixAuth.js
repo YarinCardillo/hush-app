@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { SSOAction } from 'matrix-js-sdk';
 import {
   createMatrixClient,
   getMatrixClient,
@@ -41,6 +42,8 @@ export function useMatrixAuth() {
   const [deviceId, setDeviceId] = useState(null);
   const [rehydrationAttempted, setRehydrationAttempted] = useState(false);
   const [cryptoError, setCryptoError] = useState(null);
+  const [ssoProviders, setSsoProviders] = useState([]);
+  const [loginFlowsError, setLoginFlowsError] = useState(null);
 
   const isAuthenticated = userId !== null && accessToken !== null;
 
@@ -154,6 +157,132 @@ export function useMatrixAuth() {
       setUserId(null);
       setAccessToken(null);
       setDeviceId(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  /**
+   * Fetches login flows from the homeserver and sets ssoProviders when SSO is available.
+   * Call when showing Login or Register view so SSO buttons can be displayed.
+   */
+  const fetchLoginFlows = useCallback(async () => {
+    setLoginFlowsError(null);
+    try {
+      const client = getMatrixClient() || createMatrixClient();
+      const response = await client.loginFlows();
+      const ssoFlow = response.flows?.find(
+        (f) => f.type === 'm.login.sso' || f.type === 'm.login.cas'
+      );
+      if (ssoFlow?.identity_providers?.length > 0) {
+        setSsoProviders(ssoFlow.identity_providers);
+      } else if (ssoFlow) {
+        setSsoProviders([{ id: '', name: 'SSO' }]);
+      } else {
+        setSsoProviders([]);
+      }
+    } catch (err) {
+      console.error('[useMatrixAuth] fetchLoginFlows failed:', err);
+      setLoginFlowsError(err);
+      setSsoProviders([]);
+    }
+  }, []);
+
+  /**
+   * Redirects the browser to the homeserver SSO URL. After auth, the server
+   * redirects back to /login/callback?loginToken=... which must be handled by
+   * completeSsoLogin.
+   *
+   * @param {string|undefined} idpId - Identity provider id from ssoProviders, or undefined for generic SSO
+   * @param {string} action - SSOAction.LOGIN or SSOAction.REGISTER
+   */
+  const startSsoLogin = useCallback((idpId, action) => {
+    const callbackUrl = `${window.location.origin}/login/callback`;
+    const client = getMatrixClient() || createMatrixClient();
+    const url = client.getSsoLoginUrl(
+      callbackUrl,
+      'sso',
+      idpId || undefined,
+      action
+    );
+    window.location.href = url;
+  }, []);
+
+  /**
+   * Exchanges a loginToken (from SSO redirect) for Matrix credentials and completes
+   * login: init crypto, start client, store credentials.
+   *
+   * @param {string} loginToken - Token from redirect query param
+   * @returns {Promise<boolean>} - True if login succeeded, false otherwise
+   */
+  const completeSsoLogin = useCallback(async (loginToken) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const client = createMatrixClient();
+      const response = await client.loginRequest({
+        type: 'm.login.token',
+        token: loginToken,
+        refresh_token: true,
+      });
+
+      setUserId(response.user_id);
+      setAccessToken(response.access_token);
+      setDeviceId(response.device_id);
+
+      createMatrixClient({
+        userId: response.user_id,
+        accessToken: response.access_token,
+        deviceId: response.device_id,
+      });
+
+      const authenticatedClient = getMatrixClient();
+      if (authenticatedClient) {
+        try {
+          const prefix = cryptoStorePrefix(
+            authenticatedClient.getUserId(),
+            authenticatedClient.getDeviceId(),
+          );
+          await authenticatedClient.initRustCrypto({ cryptoDatabasePrefix: prefix });
+          setCryptoError(null);
+        } catch (cryptoErr) {
+          console.error('[useMatrixAuth] Crypto initialization failed:', cryptoErr);
+          setCryptoError(
+            cryptoErr?.message || 'Encryption unavailable. Hush requires E2EE to function.',
+          );
+          setUserId(null);
+          setAccessToken(null);
+          setDeviceId(null);
+          setIsLoading(false);
+          return false;
+        }
+      }
+
+      if (authenticatedClient) {
+        await authenticatedClient.startClient({ initialSyncLimit: 20 });
+      }
+
+      if (authenticatedClient) {
+        const baseUrl =
+          authenticatedClient.getHomeserverUrl?.() ||
+          import.meta.env.VITE_MATRIX_HOMESERVER_URL ||
+          window.location.origin;
+        setStoredCredentials({
+          userId: response.user_id,
+          deviceId: response.device_id,
+          accessToken: response.access_token,
+          baseUrl,
+        });
+      }
+      return true;
+    } catch (err) {
+      console.error('[useMatrixAuth] SSO token exchange failed:', err);
+      setError(err);
+      setUserId(null);
+      setAccessToken(null);
+      setDeviceId(null);
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -424,6 +553,11 @@ export function useMatrixAuth() {
     login,
     register,
     logout,
+    fetchLoginFlows,
+    startSsoLogin,
+    completeSsoLogin,
+    ssoProviders,
+    loginFlowsError,
     isAuthenticated,
     isLoading,
     error,
