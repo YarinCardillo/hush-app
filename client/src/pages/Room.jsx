@@ -397,6 +397,7 @@ export default function Room() {
   const handleMicDevicePick = async (deviceId) => {
     setShowMicPicker(false);
     selectMic(deviceId);
+    if (isMicOn) await unpublishMic();
     await publishMic(deviceId);
     setIsMicOn(true);
   };
@@ -417,25 +418,17 @@ export default function Room() {
   const handleWebcamDevicePick = async (deviceId) => {
     setShowWebcamPicker(false);
     selectWebcam(deviceId);
+    if (isWebcamOn) await unpublishWebcam();
     await publishWebcam(deviceId);
     setIsWebcamOn(true);
   };
 
   const handleMicDeviceSwitch = async () => {
-    // Stop current mic, show picker, user picks new device → starts new mic
-    if (isMicOn) {
-      await unpublishMic();
-      setIsMicOn(false);
-    }
     await requestPermission('audio');
     setShowMicPicker(true);
   };
 
   const handleWebcamDeviceSwitch = async () => {
-    if (isWebcamOn) {
-      await unpublishWebcam();
-      setIsWebcamOn(false);
-    }
     await requestPermission('video');
     setShowWebcamPicker(true);
   };

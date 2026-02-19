@@ -58,6 +58,7 @@ const milestones = [
       "Voice channels (Matrix rooms + LiveKit call state)",
       "Server list sidebar, channel list, member list",
       "Invite links via Matrix room aliases",
+      "Create-room 'Invite only' toggle (currently disabled until invite links work)",
       "Moderation via Matrix power levels (0 / 50 / 100)",
     ],
   },

@@ -123,6 +123,20 @@ const styles = {
     color: 'var(--hush-text-secondary)',
     fontWeight: 500,
   },
+  toggleRow: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  toggleWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  toggleHint: {
+    fontSize: '0.75rem',
+    color: 'var(--hush-text-muted)',
+  },
   error: {
     padding: '10px 14px',
     background: 'var(--hush-danger-ghost)',
@@ -185,6 +199,8 @@ export default function Home() {
   const [mode, setMode] = useState('create');
   const [roomName, setRoomName] = useState('');
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('hush_displayName') || '');
+  // Invite-only room: toggle is fixed off until Phase C2.5 (invite links) is implemented.
+  const [inviteOnly, setInviteOnly] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
@@ -339,6 +355,14 @@ export default function Home() {
                   state_key: '',
                   content: { guest_access: 'can_join' },
                 },
+                // When inviteOnly is true (toggle enabled after C2.5), omit this so room stays invite-only.
+                ...(inviteOnly ? [] : [
+                  {
+                    type: 'm.room.join_rules',
+                    state_key: '',
+                    content: { join_rule: 'public' },
+                  },
+                ]),
               ],
             });
 
@@ -593,6 +617,27 @@ export default function Home() {
                   />
                 </div>
 
+                {mode === 'create' && (
+                  <div style={styles.toggleRow}>
+                    <label style={styles.fieldLabel} htmlFor="invite-only-toggle">
+                      Invite only
+                    </label>
+                    <div style={styles.toggleWrap}>
+                      <input
+                        id="invite-only-toggle"
+                        type="checkbox"
+                        role="switch"
+                        aria-checked={inviteOnly}
+                        checked={inviteOnly}
+                        onChange={(e) => setInviteOnly(e.target.checked)}
+                        disabled
+                        className="toggle-switch"
+                      />
+                      <span style={styles.toggleHint}>(available when invite links are ready)</span>
+                    </div>
+                  </div>
+                )}
+
                 {(error || matrixError) && (
                   <div style={styles.error}>{error || matrixError?.message}</div>
                 )}
@@ -843,19 +888,24 @@ export default function Home() {
 
           <div style={styles.footer}>
             <div>
-              hush is open source and self-hostable.{' '}
-              <a href="https://github.com/YarinCardillo/hush-app" style={styles.footerLink}>
-                GitHub
-              </a>
-              {' · '}
-              <Link to="/roadmap" style={styles.footerLink}>
-                Roadmap
-              </Link>
+              <span style={{ display: 'inline-block' }}>hush is open source and self-hostable.</span>
+              {' '}
+              <span style={{ display: 'inline-block' }}>
+                <a href="https://github.com/YarinCardillo/hush-app" style={styles.footerLink}>
+                  GitHub
+                </a>
+                {' · '}
+                <Link to="/roadmap" style={styles.footerLink}>
+                  Roadmap
+                </Link>
+              </span>
             </div>
             <div style={styles.footerMeta}>
-              <span>v{APP_VERSION}</span>
-              <span>·</span>
-              <span>powered by Matrix</span>
+              <span style={{ display: 'inline-block' }}>
+                <span>v{APP_VERSION}</span>
+                <span>·</span>
+                <span>powered by Matrix</span>
+              </span>
             </div>
           </div>
         </motion.div>
