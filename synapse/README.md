@@ -42,6 +42,7 @@ This directory contains the Matrix Synapse homeserver configuration for Hush.
 - **Guest access enabled** - No registration required for guests
 - **E2EE support** - End-to-end encryption via Olm/Megolm
 - **Open registration** - Users can create accounts without email verification
+- **registration_shared_secret** - Injected by `generate-synapse-config.sh` from `SYNAPSE_REGISTRATION_SHARED_SECRET` in `.env`. Required for creating users via `register_new_matrix_user` (e.g. to create an admin user for Hush; see [Room lifecycle](../docs/room-lifecycle.md#how-to-get-a-synapse-admin-token-self-hosting)).
 
 ## Security Notes
 

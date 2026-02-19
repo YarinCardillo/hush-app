@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Track } from 'livekit-client';
 import { useAuth } from '../contexts/AuthContext';
 import { GUEST_SESSION_KEY } from '../lib/authStorage';
+import { getMatrixClient } from '../lib/matrixClient';
 import { useRoom } from '../hooks/useRoom';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDevices } from '../hooks/useDevices';
@@ -85,6 +86,7 @@ const styles = {
     flex: 1,
     display: 'flex',
     overflow: 'hidden',
+    position: 'relative',
   },
   streamsArea: {
     flex: 1,
@@ -181,6 +183,17 @@ const styles = {
   },
 };
 
+function formatCountdown(remainingMs) {
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 function getGridStyle(count, breakpoint) {
   if (count === 0) return {};
   if (breakpoint === 'mobile') {
@@ -208,6 +221,8 @@ export default function Room() {
   const [showMicPicker, setShowMicPicker] = useState(false);
   const [showWebcamPicker, setShowWebcamPicker] = useState(false);
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [roomEndTimeMs, setRoomEndTimeMs] = useState(null);
+  const [countdownRemainingMs, setCountdownRemainingMs] = useState(null);
 
   const {
     isReady,
@@ -315,6 +330,62 @@ export default function Room() {
     }
   }, [showQualityPanel, showChatPanel]);
 
+  // Guest room countdown: read created_at from Matrix state and limits from server
+  useEffect(() => {
+    if (!connected || !isReady) return;
+    const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
+    if (!matrixRoomId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const [limitsRes, client] = await Promise.all([
+          fetch('/api/rooms/limits'),
+          (async () => {
+            const { getMatrixClient } = await import('../lib/matrixClient');
+            return getMatrixClient();
+          })(),
+        ]);
+        if (cancelled) return;
+        const limits = limitsRes.ok ? await limitsRes.json() : {};
+        const durationMs = limits.guestRoomMaxDurationMs;
+        const room = client?.getRoom(matrixRoomId);
+        const state = room?.currentState;
+        const events = state?.getStateEvents?.('io.hush.room.created_at', '') ?? [];
+        const content = events[0]?.getContent?.();
+        const created_at = content?.created_at;
+        if (cancelled || typeof created_at !== 'number' || typeof durationMs !== 'number') return;
+        setRoomEndTimeMs(created_at + durationMs);
+      } catch (e) {
+        console.warn('[room] Countdown setup failed:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [connected, isReady]);
+
+  // Countdown tick: update remaining every second; redirect when expired
+  useEffect(() => {
+    if (roomEndTimeMs == null) return;
+    const tick = () => {
+      const remaining = Math.max(0, roomEndTimeMs - Date.now());
+      setCountdownRemainingMs(remaining);
+      if (remaining <= 0) {
+        sessionStorage.removeItem('hush_token');
+        sessionStorage.removeItem('hush_peerId');
+        sessionStorage.removeItem('hush_roomName');
+        sessionStorage.removeItem('hush_matrixRoomId');
+        sessionStorage.removeItem('hush_actualRoomName');
+        if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
+          logout().catch(() => {});
+        }
+        navigate('/', { replace: true, state: { message: 'This room has ended.' } });
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [roomEndTimeMs, navigate, logout]);
+
   // E2EE key distribution is handled via password-derived keys in useRoom.js
   // No to-device key broadcast needed — all participants derive the same key from the room password
 
@@ -420,10 +491,14 @@ export default function Room() {
 
   const handleLeave = async () => {
     const LEAVE_TIMEOUT_MS = 5000;
+    const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
+
     const cleanupAndNavigate = async () => {
       sessionStorage.removeItem('hush_token');
       sessionStorage.removeItem('hush_peerId');
       sessionStorage.removeItem('hush_roomName');
+      sessionStorage.removeItem('hush_matrixRoomId');
+      sessionStorage.removeItem('hush_actualRoomName');
       if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
         await logout().catch(() => {});
       }
@@ -440,6 +515,24 @@ export default function Room() {
     } catch (err) {
       console.error('[Room] Leave/disconnect error:', err);
     } finally {
+      // Leave Matrix room so membership drops; then ask server to delete room if now empty
+      if (matrixRoomId) {
+        try {
+          const client = getMatrixClient();
+          if (client) await client.leaveRoom(matrixRoomId);
+        } catch (e) {
+          // Ignore (e.g. already left, network)
+        }
+        try {
+          await fetch('/api/rooms/delete-if-empty', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ roomId: matrixRoomId }),
+          });
+        } catch (e) {
+          // Best-effort; don't block navigation
+        }
+      }
       await cleanupAndNavigate();
     }
   };
@@ -627,6 +720,24 @@ export default function Room() {
       </div>
 
       <div style={styles.main}>
+        {countdownRemainingMs != null && countdownRemainingMs > 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '12px',
+              right: '12px',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              color: 'var(--hush-text-muted)',
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: '0.02em',
+              zIndex: 10,
+            }}
+            aria-live="polite"
+          >
+            {formatCountdown(countdownRemainingMs)}
+          </div>
+        )}
         <div style={{ ...styles.streamsArea, ...gridStyle }}>
           {totalCards === 0 ? (
             <div style={styles.empty}>

@@ -42,6 +42,9 @@ enable_registration_without_verification: true
 allow_guest_access: true
 guest_access_require_3pid: false
 
+# Required for register_new_matrix_user (e.g. to create admin user)
+registration_shared_secret: "REGISTRATION_SHARED_SECRET"
+
 # Registration requires no email/phone validation
 registrations_require_3pid: []
 

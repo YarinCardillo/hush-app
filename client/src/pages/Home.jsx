@@ -331,6 +331,17 @@ export default function Home() {
       let effectiveRoomName = roomName; // Track actual room name used (may have suffix)
 
       if (mode === 'create') {
+        const canCreateRes = await fetch('/api/rooms/can-create');
+        if (canCreateRes.status === 404) {
+          throw new Error(
+            'Room availability check is not available. Ensure the server is running and up to date.',
+          );
+        }
+        const canCreateData = await canCreateRes.json().catch(() => ({}));
+        if (!canCreateData.allowed) {
+          throw new Error(canCreateData.reason || 'All guest rooms are full.');
+        }
+
         let actualRoomName = roomName;
         let createResponse;
         let retryAttempts = 0;
@@ -406,6 +417,18 @@ export default function Home() {
         // Store actual room name used (may have suffix) for join path and display
         sessionStorage.setItem('hush_actualRoomName', actualRoomName);
         effectiveRoomName = actualRoomName;
+
+        const createdAt = Date.now();
+        await client.sendStateEvent(matrixRoomId, 'io.hush.room.created_at', '', { created_at: createdAt });
+        try {
+          await fetch('/api/rooms/created', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ roomId: matrixRoomId, roomName: actualRoomName, createdAt }),
+          });
+        } catch (e) {
+          console.warn('[home] Failed to register room for expiry:', e);
+        }
       } else {
         const serverName = import.meta.env.VITE_MATRIX_SERVER_NAME || 'localhost';
         const roomAlias = `#${roomName}:${serverName}`;

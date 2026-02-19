@@ -1,6 +1,6 @@
 # Hush documentation
 
-Index of project documentation. Root-level docs (e.g. [README.md](../README.md), [SECURITY.md](../SECURITY.md)) stay in the repo root; detailed and historical docs live here.
+Index of project documentation. Root-level docs stay in the repo root; detailed and historical docs live under `docs/`. Start from [README.md](../README.md) for quick start and self-hosting.
 
 ---
 
@@ -9,6 +9,7 @@ Index of project documentation. Root-level docs (e.g. [README.md](../README.md),
 | Doc | Description |
 |-----|-------------|
 | [reference/MATRIX_REFERENCE.md](reference/MATRIX_REFERENCE.md) | Matrix protocol reference for Hush: Client-Server API, auth, sync, rooms, E2EE, to-device, media. Spec v1.17. |
+| [room-lifecycle.md](room-lifecycle.md) | Room creation, leave flow, empty-room deletion, and limits: `MAX_GUEST_ROOMS`, `GUEST_ROOM_MAX_DURATION_MS`, `MAX_PARTICIPANTS_PER_ROOM`; `delete-if-empty` and expiry job; Synapse Admin API, [SYNAPSE_ADMIN_TOKEN setup](room-lifecycle.md#how-to-get-a-synapse-admin-token-self-hosting). |
 
 ---
 
@@ -31,8 +32,17 @@ Index of project documentation. Root-level docs (e.g. [README.md](../README.md),
 
 ---
 
-## Elsewhere
+## Root
 
-- **Root:** [README.md](../README.md) (product, quick start, self-hosting), [SECURITY.md](../SECURITY.md) (E2EE, trust model, browser support).
-- **Synapse:** [synapse/README.md](../synapse/README.md) (Synapse config and layout).
-- **Scripts:** [scripts/checkpoint-B-test.md](../scripts/checkpoint-B-test.md) (Milestone B checkpoint test notes).
+| Doc | Description |
+|-----|-------------|
+| [README.md](../README.md) | Product overview, quick start, self-hosting, configuration, troubleshooting. |
+| [SECURITY.md](../SECURITY.md) | E2EE algorithms, trust model, browser support, limitations. |
+
+---
+
+## Other
+
+| Doc | Description |
+|-----|-------------|
+| [synapse/README.md](../synapse/README.md) | Synapse config, layout, generate-synapse-config.sh, troubleshooting. |

@@ -11,8 +11,9 @@ synapse/homeserver.yaml
 synapse/data/
 synapse/*.signing.key
 
-# Claude Code local settings
+# Claude Code / agent instructions (local workflow)
 .claude/
+CLAUDE.md
 design-system.md
 ARCHITECTURE.md
 FEEDBACK.md
@@ -20,6 +21,13 @@ orchestra.sh
 PLAN.md
 TROUBLESHOOTING.md
 .orchestra/
+
+# Internal test/checkpoint reports
+scripts/checkpoint-*.md
+
+# Internal checkpoint / test reports (not for open source repo)
+scripts/checkpoint-B-test.md
+scripts/*checkpoint*.md
 
 # Private business docs (not for open source repo)
 .private/

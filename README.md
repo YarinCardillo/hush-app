@@ -88,6 +88,8 @@ Main environment variables (see [.env.example](.env.example)):
 | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | LiveKit API credentials (dev: match docker-compose; prod: from LiveKit Cloud) |
 | `LIVEKIT_URL` | LiveKit WebSocket URL (dev: `ws://localhost:7880`; prod: `wss://<project>.livekit.cloud`) |
 | `MATRIX_HOMESERVER_URL`, `MATRIX_SERVER_NAME` | Matrix homeserver URL and server name |
+| `SYNAPSE_ADMIN_TOKEN` | Synapse admin user token. Required for room limits (can-create), empty-room deletion, and guest-room expiry. See [Room lifecycle](docs/room-lifecycle.md#how-to-get-a-synapse-admin-token-self-hosting) for step-by-step setup. |
+| `MAX_GUEST_ROOMS`, `GUEST_ROOM_MAX_DURATION_MS`, `MAX_PARTICIPANTS_PER_ROOM` | Optional; defaults 30, 3h, 10. See [Room lifecycle](docs/room-lifecycle.md). |
 | `POSTGRES_*` | Postgres DB for Synapse |
 | `PORT` | Node server port (default 3001) |
 
@@ -120,8 +122,9 @@ Full media E2EE requires Insertable Streams and the LiveKit E2EE worker. See [SE
 
 ## Documentation
 
-- **[docs/README.md](docs/README.md)** — Index (testing, audits, reference).
+- **[docs/README.md](docs/README.md)** — Full index: reference, testing, room lifecycle (incl. [Synapse admin token](docs/room-lifecycle.md#how-to-get-a-synapse-admin-token-self-hosting)), audits, architecture, design system.
 - **[SECURITY.md](SECURITY.md)** — E2EE, trust model, limitations.
+- **Self-hosting:** [README quick start](#quick-start), [room-lifecycle](docs/room-lifecycle.md) (admin token, limits), [synapse/README](synapse/README.md).
 
 ---
 
