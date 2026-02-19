@@ -5,8 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hush — Stream Without Limits</title>
   <meta name="description" content="Private screen sharing. No limits, no tracking, no bullshit." />
-  <link rel="icon" type="image/png" href="/favicon.png">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <!-- Favicon and apple-touch-icon: set from system preference for first paint, then kept in sync by app (FaviconThemeSync) when data-theme is set -->
+  <link rel="icon" type="image/png" href="/favicon.png" id="favicon">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" id="apple-touch-icon">
+  <script>
+    (function(){
+      var dark = !window.matchMedia('(prefers-color-scheme: light)').matches;
+      var f = document.getElementById('favicon'); var a = document.getElementById('apple-touch-icon');
+      if (f) f.href = dark ? '/favicon.png' : '/favicon-light.png';
+      if (a) a.href = dark ? '/apple-touch-icon.png' : '/apple-touch-icon-light.png';
+    })();
+  </script>
   <meta property="og:image" content="https://gethush.live/og-image.png">
   <meta property="og:title" content="hush: share your screen. keep your privacy.">
   <meta property="og:description" content="High-quality screen sharing with no resolution caps. Open source, self-hostable.">

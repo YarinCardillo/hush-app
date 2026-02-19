@@ -206,6 +206,16 @@ function getGridStyle(count, breakpoint) {
   return { gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(auto-fill, 1fr)' };
 }
 
+/** Maps raw room/connection errors to short, user-facing messages. Avoids exposing URLs and stack traces. */
+function getFriendlyRoomError(errorMessage) {
+  if (!errorMessage || typeof errorMessage !== 'string') return 'Something went wrong. Please try again.';
+  const short = errorMessage.trim();
+  if (short.length <= 80 && !short.includes('http') && !/^[A-Za-z]+Error:/i.test(short)) return short;
+  if (/room not found|not found/i.test(short)) return 'Room not found.';
+  if (/disconnected|disconnect/i.test(short)) return short;
+  return 'Something went wrong. Please try again.';
+}
+
 export default function Room() {
   const navigate = useNavigate();
   const { roomName } = useParams();
@@ -635,6 +645,7 @@ export default function Room() {
   }
 
   if (error) {
+    const displayError = getFriendlyRoomError(error);
     return (
       <div style={styles.page}>
         <div style={{
@@ -652,8 +663,10 @@ export default function Room() {
             fontWeight: 500,
             textAlign: 'center',
             maxWidth: '360px',
+            overflowWrap: 'break-word',
+            wordBreak: 'break-word',
           }}>
-            {error}
+            {displayError}
           </p>
           <button
             type="button"

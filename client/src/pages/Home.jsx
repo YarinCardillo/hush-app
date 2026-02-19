@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { SSOAction } from 'matrix-js-sdk';
 import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
@@ -143,6 +143,25 @@ const styles = {
     borderRadius: 'var(--radius-md)',
     color: 'var(--hush-danger)',
     fontSize: '0.85rem',
+    overflowWrap: 'break-word',
+    wordBreak: 'break-word',
+  },
+  /** Toast: fixed position, no border, auto fade-out */
+  errorToast: {
+    position: 'fixed',
+    bottom: '24px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    maxWidth: 'min(420px, calc(100vw - 32px))',
+    padding: '12px 16px',
+    background: 'var(--hush-danger-ghost)',
+    borderRadius: 'var(--radius-md)',
+    color: 'var(--hush-danger)',
+    fontSize: '0.85rem',
+    overflowWrap: 'break-word',
+    wordBreak: 'break-word',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+    zIndex: 1000,
   },
   footer: {
     marginTop: '32px',
@@ -177,6 +196,15 @@ const styles = {
 
 const AUTH_VIEW = { CHOOSE: 'choose', LOGIN: 'login', REGISTER: 'register', GUEST: 'guest' };
 
+/** Maps raw create/join errors to short, user-facing messages. Avoids exposing URLs and stack traces. */
+function getFriendlyCreateJoinError(err) {
+  const msg = err?.message || String(err);
+  if (/404|not found|M_NOT_FOUND/i.test(msg)) return 'Room not found. Check the name or create it first.';
+  if (/room full|403|M_FORBIDDEN|full/i.test(msg)) return 'Room is full or you don\'t have access.';
+  if (/Room availability|All guest rooms are full|can-create/i.test(msg)) return msg;
+  return 'Something went wrong. Please try again.';
+}
+
 export default function Home() {
   const navigate = useNavigate();
   const {
@@ -202,6 +230,7 @@ export default function Home() {
   // Invite-only room: toggle is fixed off until Phase C2.5 (invite links) is implemented.
   const [inviteOnly, setInviteOnly] = useState(false);
   const [error, setError] = useState('');
+  const [toastMessage, setToastMessage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -236,6 +265,15 @@ export default function Home() {
       fetchLoginFlows();
     }
   }, [authView, fetchLoginFlows]);
+
+  // Sync error/matrixError to toast and auto-clear after delay
+  useEffect(() => {
+    const msg = error || matrixError?.message || null;
+    setToastMessage(msg);
+    if (!msg) return;
+    const id = setTimeout(() => setToastMessage(null), 4000);
+    return () => clearTimeout(id);
+  }, [error, matrixError]);
 
   useEffect(() => {
     const m = window.matchMedia('(pointer: coarse)');
@@ -456,7 +494,11 @@ export default function Home() {
 
       navigate(`/room/${encodeURIComponent(effectiveRoomName)}`);
     } catch (err) {
-      setError(err.message);
+      setError(getFriendlyCreateJoinError(err));
+      // Auto-end guest session on create/join failure so the disposable account is transparent
+      if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
+        logout().catch(() => {});
+      }
     } finally {
       setLoading(false);
     }
@@ -558,7 +600,8 @@ export default function Home() {
           className="glass"
           style={{ padding: '24px' }}
         >
-          {isAuthenticated && (
+          {/* Logout only for persistent accounts; never show in guest flow (avoids flash before isGuestSession updates) */}
+          {isAuthenticated && !isGuestSession && authView !== AUTH_VIEW.GUEST && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
               <button
                 type="button"
@@ -573,7 +616,7 @@ export default function Home() {
                   padding: '4px 0',
                 }}
               >
-                {isGuestSession ? 'End session' : 'Logout'}
+                Logout
               </button>
             </div>
           )}
@@ -589,9 +632,6 @@ export default function Home() {
                   >
                     ← Back
                   </button>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', marginBottom: '16px' }}>
-                    Temporary session, no account. Your identity will not persist.
-                  </p>
                 </>
               )}
               <div className="home-room-tabs" style={styles.tabs}>
@@ -661,10 +701,6 @@ export default function Home() {
                   </div>
                 )}
 
-                {(error || matrixError) && (
-                  <div style={styles.error}>{error || matrixError?.message}</div>
-                )}
-
                 <button
                   className="btn btn-primary"
                   type="submit"
@@ -681,6 +717,8 @@ export default function Home() {
                 <button
                   type="button"
                   className="home-auth-choice-btn"
+                  disabled
+                  title="Sign in is not fully supported yet"
                   onClick={() => setAuthView(AUTH_VIEW.LOGIN)}
                 >
                   Sign in
@@ -728,7 +766,6 @@ export default function Home() {
                     autoComplete="current-password"
                   />
                 </div>
-                {matrixError && <div style={styles.error}>{matrixError.message}</div>}
                 <button
                   className="btn btn-primary"
                   type="submit"
@@ -847,9 +884,6 @@ export default function Home() {
                     maxLength={30}
                   />
                 </div>
-                {(error || matrixError) && (
-                  <div style={styles.error}>{error || matrixError?.message}</div>
-                )}
                 <button
                   className="btn btn-primary"
                   type="submit"
@@ -927,12 +961,33 @@ export default function Home() {
               <span style={{ display: 'inline-block' }}>
                 <span>v{APP_VERSION}</span>
                 <span>·</span>
-                <span>powered by Matrix</span>
+                <span>powered by{' '}
+                <a href="https://matrix.org/" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>
+                  Matrix
+                </a>
+                </span>
               </span>
             </div>
           </div>
         </motion.div>
       </div>
+
+      {/* Error toast: fixed position, auto fade-out after 4s */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            key="toast"
+            style={styles.errorToast}
+            role="alert"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            {toastMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
