@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { SSOAction } from 'matrix-js-sdk';
 import { APP_VERSION } from '../utils/constants';
@@ -20,13 +20,14 @@ const wordVariants = {
 
 const styles = {
   page: {
-    height: '100%',
+    minHeight: '100%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     padding: '20px',
     userSelect: 'none',
     position: 'relative',
+    overflowY: 'auto',
   },
   spotlightWrapper: {
     position: 'fixed',
@@ -90,27 +91,6 @@ const styles = {
     fontSize: '0.9rem',
     fontWeight: 400,
   },
-  tabs: {
-    display: 'flex',
-    gap: '2px',
-    marginBottom: '24px',
-    background: 'var(--hush-surface)',
-    padding: '3px',
-    borderRadius: 'var(--radius-md)',
-  },
-  tab: (active) => ({
-    flex: 1,
-    padding: '10px',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    background: active ? 'var(--hush-elevated)' : 'transparent',
-    color: active ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '0.85rem',
-    fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-  }),
   form: {
     display: 'flex',
     flexDirection: 'column',
@@ -122,20 +102,6 @@ const styles = {
     fontSize: '0.8rem',
     color: 'var(--hush-text-secondary)',
     fontWeight: 500,
-  },
-  toggleRow: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  toggleWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  },
-  toggleHint: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-muted)',
   },
   error: {
     padding: '10px 14px',
@@ -222,13 +188,13 @@ export default function Home() {
     cryptoError,
     clearCryptoError,
   } = useAuth();
-  const [authView, setAuthView] = useState(AUTH_VIEW.CHOOSE);
+  const [searchParams] = useSearchParams();
+  const joinParam = searchParams.get('join');
+  // Skip auth choice screen when joining via link — go straight to guest form
+  const [authView, setAuthView] = useState(joinParam ? AUTH_VIEW.GUEST : AUTH_VIEW.CHOOSE);
   const [isGuestSession, setIsGuestSession] = useState(() => sessionStorage.getItem(GUEST_SESSION_KEY) === '1');
-  const [mode, setMode] = useState('create');
   const [roomName, setRoomName] = useState('');
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('hush_displayName') || '');
-  // Invite-only room: toggle is fixed off until Phase C2.5 (invite links) is implemented.
-  const [inviteOnly, setInviteOnly] = useState(false);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -248,16 +214,6 @@ export default function Home() {
   const [spotlightEnabled, setSpotlightEnabled] = useState(
     () => (typeof window !== 'undefined' ? !window.matchMedia('(pointer: coarse)').matches : false)
   );
-
-  // Pre-fill room name when redirected from a direct invite link
-  useEffect(() => {
-    const pendingRoom = sessionStorage.getItem('hush_pendingRoom');
-    if (pendingRoom) {
-      setRoomName(pendingRoom);
-      setMode('join');
-      sessionStorage.removeItem('hush_pendingRoom');
-    }
-  }, []);
 
   // Fetch Matrix login flows when showing Login or Register so SSO buttons can be shown
   useEffect(() => {
@@ -346,6 +302,62 @@ export default function Home() {
     await register(registerUsername.trim(), registerPassword, registerDisplayName.trim());
   };
 
+  const handleJoinSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      localStorage.setItem('hush_displayName', displayName);
+
+      // Step 1: Authenticate with Matrix as guest
+      await loginAsGuest();
+      sessionStorage.setItem(GUEST_SESSION_KEY, '1');
+      setIsGuestSession(true);
+
+      if (matrixError) {
+        throw new Error(`Matrix authentication failed: ${matrixError}`);
+      }
+
+      // Step 2: Join the room via ?join= param
+      if (!joinParam || !/^[a-zA-Z0-9._=-]+$/.test(joinParam)) {
+        throw new Error('Invalid room link.');
+      }
+      const client = getMatrixClient();
+      const serverName = import.meta.env.VITE_MATRIX_SERVER_NAME || 'localhost';
+      const roomAlias = `#${joinParam}:${serverName}`;
+
+      const joinResponse = await client.joinRoom(roomAlias);
+      const matrixRoomId = joinResponse.roomId;
+
+      // Wait for room to appear in client's room list
+      let attempts = 0;
+      const maxAttempts = 50;
+      while (!client.getRoom(matrixRoomId) && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+
+      const roomInClient = client.getRoom(matrixRoomId);
+      if (!roomInClient) {
+        throw new Error('Failed to join Matrix room: room not found after join');
+      }
+
+      sessionStorage.setItem('hush_matrixRoomId', matrixRoomId);
+      sessionStorage.setItem('hush_roomName', joinParam);
+      sessionStorage.setItem('hush_displayName', displayName);
+
+      navigate(`/room/${encodeURIComponent(joinParam)}`);
+    } catch (err) {
+      setError(getFriendlyCreateJoinError(err));
+      if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
+        logout().catch(() => {});
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -363,136 +375,87 @@ export default function Home() {
         throw new Error(`Matrix authentication failed: ${matrixError}`);
       }
 
-      // Step 2: Create or join Matrix room with E2EE
+      // Step 2: Create Matrix room with E2EE
       const client = getMatrixClient();
       let matrixRoomId;
-      let effectiveRoomName = roomName; // Track actual room name used (may have suffix)
 
-      if (mode === 'create') {
-        const canCreateRes = await fetch('/api/rooms/can-create');
-        if (canCreateRes.status === 404) {
-          throw new Error(
-            'Room availability check is not available. Ensure the server is running and up to date.',
-          );
-        }
-        const canCreateData = await canCreateRes.json().catch(() => ({}));
-        if (!canCreateData.allowed) {
-          throw new Error(canCreateData.reason || 'All guest rooms are full.');
-        }
+      const canCreateRes = await fetch('/api/rooms/can-create');
+      if (canCreateRes.status === 404) {
+        throw new Error(
+          'Room availability check is not available. Ensure the server is running and up to date.',
+        );
+      }
+      const canCreateData = await canCreateRes.json().catch(() => ({}));
+      if (!canCreateData.allowed) {
+        throw new Error(canCreateData.reason || 'All guest rooms are full.');
+      }
 
-        let actualRoomName = roomName;
-        let createResponse;
-        let retryAttempts = 0;
-        const maxRetries = 3;
+      // Always append a random 8-hex suffix to the alias to avoid collisions
+      // and prevent leaking info about existing room names.
+      // Display name stays as what the user typed.
+      const suffix = Math.floor(Math.random() * 0x100000000).toString(16).padStart(8, '0');
+      const actualRoomName = `${roomName}-${suffix}`;
 
-        // Try to create room, handling collisions with stale encrypted rooms
-        while (retryAttempts < maxRetries) {
-          try {
-            createResponse = await client.createRoom({
-              name: actualRoomName,
-              room_alias_name: actualRoomName,
-              visibility: 'private',
-              preset: 'trusted_private_chat',
-              initial_state: [
-                {
-                  type: 'm.room.encryption',
-                  state_key: '',
-                  content: { algorithm: 'm.megolm.v1.aes-sha2' },
-                },
-                {
-                  type: 'm.room.guest_access',
-                  state_key: '',
-                  content: { guest_access: 'can_join' },
-                },
-                // When inviteOnly is true (toggle enabled after C2.5), omit this so room stays invite-only.
-                ...(inviteOnly ? [] : [
-                  {
-                    type: 'm.room.join_rules',
-                    state_key: '',
-                    content: { join_rule: 'public' },
-                  },
-                ]),
-              ],
-            });
+      const createResponse = await client.createRoom({
+        name: roomName,
+        room_alias_name: actualRoomName,
+        visibility: 'private',
+        preset: 'trusted_private_chat',
+        initial_state: [
+          {
+            type: 'm.room.encryption',
+            state_key: '',
+            content: { algorithm: 'm.megolm.v1.aes-sha2' },
+          },
+          {
+            type: 'm.room.guest_access',
+            state_key: '',
+            content: { guest_access: 'can_join' },
+          },
+          {
+            type: 'm.room.join_rules',
+            state_key: '',
+            content: { join_rule: 'public' },
+          },
+        ],
+      });
 
-            matrixRoomId = createResponse.room_id;
+      matrixRoomId = createResponse.room_id;
 
-            // Wait for room to appear in client's room list (sync may take a moment)
-            let attempts = 0;
-            const maxAttempts = 50;
-            while (!client.getRoom(matrixRoomId) && attempts < maxAttempts) {
-              await new Promise(resolve => setTimeout(resolve, 100));
-              attempts++;
-            }
+      // Wait for room to appear in client's room list (sync may take a moment)
+      let attempts = 0;
+      const maxAttempts = 50;
+      while (!client.getRoom(matrixRoomId) && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
 
-            const roomInClient = client.getRoom(matrixRoomId);
-            if (!roomInClient) {
-              console.error('[home] Created room not in client after', attempts, 'attempts');
-              throw new Error('Failed to create Matrix room: room not found after creation');
-            }
+      const roomInClient = client.getRoom(matrixRoomId);
+      if (!roomInClient) {
+        console.error('[home] Created room not in client after', attempts, 'attempts');
+        throw new Error('Failed to create Matrix room: room not found after creation');
+      }
 
-            break; // Success - exit retry loop
+      // Store actual room name used (with suffix) for join path and display
+      sessionStorage.setItem('hush_actualRoomName', actualRoomName);
 
-          } catch (err) {
-
-            // Check if error is due to alias collision or encrypted room
-            const isCollision = err.errcode === 'M_ROOM_IN_USE' ||
-              (err.data && err.data.errcode === 'M_ROOM_IN_USE');
-
-            if (isCollision && retryAttempts < maxRetries - 1) {
-              // Generate random 4-character hex suffix
-              const suffix = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
-              actualRoomName = `${roomName}-${suffix}`;
-              retryAttempts++;
-              continue;
-            }
-
-            // If not a collision or max retries exceeded, rethrow
-            throw err;
-          }
-        }
-
-        // Store actual room name used (may have suffix) for join path and display
-        sessionStorage.setItem('hush_actualRoomName', actualRoomName);
-        effectiveRoomName = actualRoomName;
-
-        const createdAt = Date.now();
-        await client.sendStateEvent(matrixRoomId, 'io.hush.room.created_at', '', { created_at: createdAt });
-        try {
-          await fetch('/api/rooms/created', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ roomId: matrixRoomId, roomName: actualRoomName, createdAt }),
-          });
-        } catch (e) {
-          console.warn('[home] Failed to register room for expiry:', e);
-        }
-      } else {
-        const serverName = import.meta.env.VITE_MATRIX_SERVER_NAME || 'localhost';
-        const roomAlias = `#${roomName}:${serverName}`;
-
-        const joinResponse = await client.joinRoom(roomAlias);
-        matrixRoomId = joinResponse.roomId;
-
-        // Wait for room to appear in client's room list
-        let attempts = 0;
-        const maxAttempts = 50;
-        while (!client.getRoom(matrixRoomId) && attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          attempts++;
-        }
-
-        const roomInClient = client.getRoom(matrixRoomId);
-        if (!roomInClient) {
-          throw new Error('Failed to join Matrix room: room not found after join');
-        }
+      const createdAt = Date.now();
+      await client.sendStateEvent(matrixRoomId, 'io.hush.room.created_at', '', { created_at: createdAt });
+      try {
+        await fetch('/api/rooms/created', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId: matrixRoomId, roomName: actualRoomName, createdAt }),
+        });
+      } catch (e) {
+        console.warn('[home] Failed to register room for expiry:', e);
       }
 
       sessionStorage.setItem('hush_matrixRoomId', matrixRoomId);
-      sessionStorage.setItem('hush_roomName', effectiveRoomName);
+      sessionStorage.setItem('hush_roomName', actualRoomName);
       sessionStorage.setItem('hush_displayName', displayName);
 
-      navigate(`/room/${encodeURIComponent(effectiveRoomName)}`);
+      navigate(`/room/${encodeURIComponent(actualRoomName)}`);
     } catch (err) {
       setError(getFriendlyCreateJoinError(err));
       // Auto-end guest session on create/join failure so the disposable account is transparent
@@ -623,97 +586,84 @@ export default function Home() {
 
           {isAuthenticated || authView === AUTH_VIEW.GUEST ? (
             <>
-              {authView === AUTH_VIEW.GUEST && (
-                <>
-                  <button
-                    type="button"
-                    className="back-link"
-                    onClick={() => { setAuthView(AUTH_VIEW.CHOOSE); setError(''); }}
-                  >
-                    ← Back
-                  </button>
-                </>
+              {authView === AUTH_VIEW.GUEST && !joinParam && (
+                <button
+                  type="button"
+                  className="back-link"
+                  onClick={() => { setAuthView(AUTH_VIEW.CHOOSE); setError(''); }}
+                >
+                  ← Back
+                </button>
               )}
-              <div className="home-room-tabs" style={styles.tabs}>
-                <button
-                  type="button"
-                  style={styles.tab(mode === 'create')}
-                  data-active={mode === 'create'}
-                  onClick={() => { setMode('create'); setError(''); }}
-                >
-                  create room
-                </button>
-                <button
-                  type="button"
-                  style={styles.tab(mode === 'join')}
-                  data-active={mode === 'join'}
-                  onClick={() => { setMode('join'); setError(''); }}
-                >
-                  join
-                </button>
-              </div>
 
-              <form style={styles.form} onSubmit={handleSubmit}>
-                <div>
-                  <label style={styles.fieldLabel}>Your Name</label>
-                  <input
-                    className="input"
-                    type="text"
-                    placeholder="How others will see you"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    required
-                    maxLength={30}
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.fieldLabel}>Room Name</label>
-                  <input
-                    className="input"
-                    type="text"
-                    placeholder={mode === 'create' ? 'Choose a room name' : 'Enter room name'}
-                    value={roomName}
-                    onChange={(e) => setRoomName(e.target.value)}
-                    required
-                    maxLength={50}
-                  />
-                </div>
-
-                {mode === 'create' && (
-                  <div style={styles.toggleRow}>
-                    <label style={styles.fieldLabel} htmlFor="invite-only-toggle">
-                      Invite only
-                    </label>
-                    <div style={styles.toggleWrap}>
-                      <input
-                        id="invite-only-toggle"
-                        type="checkbox"
-                        role="switch"
-                        aria-checked={inviteOnly}
-                        checked={inviteOnly}
-                        onChange={(e) => setInviteOnly(e.target.checked)}
-                        disabled
-                        className="toggle-switch"
-                      />
-                      <span style={styles.toggleHint}>(available when invite links are ready)</span>
-                    </div>
+              {joinParam ? (
+                /* Simplified join form when ?join= is present */
+                <form style={styles.form} onSubmit={handleJoinSubmit}>
+                  <div>
+                    <label style={styles.fieldLabel}>Your Name</label>
+                    <input
+                      className="input"
+                      type="text"
+                      placeholder="How others will see you"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      required
+                      maxLength={30}
+                    />
                   </div>
-                )}
 
-                <button
-                  className="btn btn-primary"
-                  type="submit"
-                  disabled={loading || matrixLoading}
-                  style={{ width: '100%', padding: '12px' }}
-                >
-                  {loading || matrixLoading ? 'connecting...' : mode === 'create' ? 'create room' : 'join'}
-                </button>
-              </form>
+                  <button
+                    className="btn btn-primary"
+                    type="submit"
+                    disabled={loading || matrixLoading}
+                    style={{ width: '100%', padding: '12px' }}
+                  >
+                    {loading || matrixLoading ? 'connecting...' : 'join room'}
+                  </button>
+                </form>
+              ) : (
+                /* Normal create room form */
+                <form style={styles.form} onSubmit={handleSubmit}>
+                  <div>
+                    <label style={styles.fieldLabel}>Your Name</label>
+                    <input
+                      className="input"
+                      type="text"
+                      placeholder="How others will see you"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      required
+                      maxLength={30}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={styles.fieldLabel}>Room Name</label>
+                    <input
+                      className="input"
+                      type="text"
+                      placeholder="Choose a room name"
+                      value={roomName}
+                      onChange={(e) => setRoomName(e.target.value)}
+                      required
+                      maxLength={50}
+                    />
+                  </div>
+
+                  <button
+                    className="btn btn-primary"
+                    type="submit"
+                    disabled={loading || matrixLoading}
+                    style={{ width: '100%', padding: '12px' }}
+                  >
+                    {loading || matrixLoading ? 'connecting...' : 'create room'}
+                  </button>
+                </form>
+              )}
             </>
           ) : authView === AUTH_VIEW.CHOOSE ? (
             <>
-              <div className="home-auth-choices" style={{ ...styles.tabs, flexDirection: 'column' }}>
+              <div className="home-auth-choices" style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '24px', background: 'var(--hush-surface)', padding: '3px', borderRadius: 'var(--radius-md)' }}>
                 <button
                   type="button"
                   className="home-auth-choice-btn"

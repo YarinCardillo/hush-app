@@ -303,7 +303,7 @@ The `toDeviceEvent` listener is registered in `useRoom.js:211`, but it only hand
 
 2. **Implement key rotation on participant leave** — When a participant disconnects, generate a new random key and distribute it to all remaining participants. This prevents the departed participant from decrypting future media. — **Estimated complexity: M**
 
-3. **Use `trusted_private_chat` or `private_chat` preset instead of `public_chat`** — Public rooms allow anyone to join without invitation. For E2EE to be meaningful, room access should be restricted. Consider invite-only rooms with password-based invitation flow. — **Estimated complexity: M**
+3. **~~Use `trusted_private_chat` or `private_chat` preset instead of `public_chat`~~** — **Mitigated:** Guest rooms now use the `trusted_private_chat` preset with `public` join rules, combined with an unguessable 8-hex random suffix in the room alias (link-only access model). The link IS the authorization — only users who receive the link can join. Invite-only mode is deferred to persistent rooms/spaces. — **Estimated complexity: M (deferred)**
 
 4. **Handle UISI errors in Chat.jsx** — Add a listener for `m.room.encrypted` events that failed decryption. Show a user-visible warning (e.g., "Unable to decrypt message"). Implement retry logic for key request. — **Estimated complexity: M**
 

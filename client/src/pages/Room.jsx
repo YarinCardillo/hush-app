@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Track } from 'livekit-client';
 import { useAuth } from '../contexts/AuthContext';
@@ -222,6 +222,11 @@ export default function Room() {
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile';
   const [connected, setConnected] = useState(false);
+  // Track whether the user ever had a valid session in this room.
+  // If false when auth guard fires, the user opened a direct link → redirect to /?join=
+  // If true, the user was in the room and left/lost session → redirect to /
+  const hadSessionRef = useRef(!!sessionStorage.getItem('hush_matrixRoomId'));
+  const [roomDisplayName, setRoomDisplayName] = useState(() => decodeURIComponent(roomName));
   const [quality, setQuality] = useState(DEFAULT_QUALITY);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
@@ -231,6 +236,7 @@ export default function Room() {
   const [showMicPicker, setShowMicPicker] = useState(false);
   const [showWebcamPicker, setShowWebcamPicker] = useState(false);
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [roomEndTimeMs, setRoomEndTimeMs] = useState(null);
   const [countdownRemainingMs, setCountdownRemainingMs] = useState(null);
 
@@ -276,21 +282,27 @@ export default function Room() {
   // Require Matrix auth (and optional room session data)
   useEffect(() => {
     if (!rehydrationAttempted) return;
+    // Only redirect to /?join= if user opened a direct link (never had a session).
+    // If they had a session (left room, expired, etc.) go to / instead.
+    const joinRedirect = !hadSessionRef.current
+      ? '/?join=' + encodeURIComponent(roomName)
+      : '/';
     if (!isAuthenticated) {
-      navigate('/', { replace: true });
+      navigate(joinRedirect, { replace: true });
       return;
     }
     const roomId = sessionStorage.getItem('hush_matrixRoomId');
     const roomNameStored = sessionStorage.getItem('hush_roomName');
     if (!roomId || !roomNameStored) {
       if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
-        logout().then(() => navigate('/', { replace: true }));
+        logout().then(() => navigate(joinRedirect, { replace: true }));
       } else {
-        navigate('/', { replace: true });
+        navigate(joinRedirect, { replace: true });
       }
       return;
     }
-  }, [rehydrationAttempted, isAuthenticated, navigate, logout]);
+    hadSessionRef.current = true;
+  }, [rehydrationAttempted, isAuthenticated, navigate, logout, roomName]);
 
   useEffect(() => {
     if (!rehydrationAttempted || !isAuthenticated) return;
@@ -326,6 +338,24 @@ export default function Room() {
       disconnectRoom();
     };
   }, [rehydrationAttempted, isAuthenticated, navigate, connectRoom, disconnectRoom, roomName]);
+
+  // Best-effort cleanup on tab close / navigation away
+  useEffect(() => {
+    const handler = () => {
+      const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
+      if (matrixRoomId) {
+        navigator.sendBeacon(
+          '/api/rooms/delete-if-empty',
+          new Blob(
+            [JSON.stringify({ roomId: matrixRoomId })],
+            { type: 'application/json' },
+          ),
+        );
+      }
+    };
+    window.addEventListener('pagehide', handler);
+    return () => window.removeEventListener('pagehide', handler);
+  }, []);
 
   // Ensure only one sidebar is open at a time
   useEffect(() => {
@@ -371,6 +401,18 @@ export default function Room() {
       }
     })();
     return () => { cancelled = true; };
+  }, [connected, isReady]);
+
+  // Resolve the user-friendly display name from Matrix room state
+  useEffect(() => {
+    if (!connected || !isReady) return;
+    const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
+    if (!matrixRoomId) return;
+    const client = getMatrixClient();
+    const room = client?.getRoom(matrixRoomId);
+    if (room?.name) {
+      setRoomDisplayName(room.name);
+    }
   }, [connected, isReady]);
 
   // Countdown tick: update remaining every second; redirect when expired
@@ -533,6 +575,8 @@ export default function Room() {
         } catch (e) {
           // Ignore (e.g. already left, network)
         }
+        // Small delay so Synapse processes the leave before we check membership
+        await new Promise((r) => setTimeout(r, 1000));
         try {
           await fetch('/api/rooms/delete-if-empty', {
             method: 'POST',
@@ -641,7 +685,7 @@ export default function Room() {
   }
 
   if (rehydrationAttempted && !isAuthenticated) {
-    return null; // useEffect will redirect to /
+    return null; // useEffect will redirect to /?join=<roomName>
   }
 
   if (error) {
@@ -693,13 +737,32 @@ export default function Room() {
     <div style={styles.page}>
       <div style={styles.header}>
         <div style={styles.headerLeft}>
-          <span style={styles.roomTitle}>{decodeURIComponent(roomName)}</span>
+          <span style={styles.roomTitle}>{roomDisplayName}</span>
           <span style={styles.headerBadge}>
             <span className="live-dot" />
             Live
           </span>
         </div>
         <div style={styles.headerRight}>
+          <button
+            style={styles.participantCount}
+            title="Copy room link"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(window.location.href);
+                setLinkCopied(true);
+                setTimeout(() => setLinkCopied(false), 2000);
+              } catch {
+                console.warn('[room] Clipboard write failed');
+              }
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            {linkCopied ? 'copied!' : 'Link'}
+          </button>
           <button
             style={styles.participantCount}
             title="Chat"

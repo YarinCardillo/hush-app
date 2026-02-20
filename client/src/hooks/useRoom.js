@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Room, RoomEvent, ExternalE2EEKeyProvider } from 'livekit-client';
+import { Room, RoomEvent, Track, ExternalE2EEKeyProvider } from 'livekit-client';
 import { getMatrixClient } from '../lib/matrixClient';
 
 // Import E2EE worker for LiveKit encryption
@@ -225,7 +225,6 @@ export function useRoom() {
         const roomOptions = {
           dynacast: true,
           adaptiveStream: true,
-          // Disable auto-subscribe for video to enable click-to-watch
           videoCaptureDefaults: {
             resolution: {
               width: 1920,
@@ -334,7 +333,9 @@ export function useRoom() {
 
         const livekitUrl =
           import.meta.env.VITE_LIVEKIT_URL || 'ws://localhost:7880';
-        await room.connect(livekitUrl, token);
+        // autoSubscribe:false so screen shares go through click-to-watch.
+        // Non-screen tracks are manually subscribed in TrackPublished handler.
+        await room.connect(livekitUrl, token, { autoSubscribe: false });
 
         // If superseded during connect (e.g. StrictMode remount), discard this room
         if (isStale()) {
@@ -354,13 +355,33 @@ export function useRoom() {
           setIsE2EEEnabled(false);
         }
 
-        // Populate initial participants
-        const initialParticipants = Array.from(
-          room.remoteParticipants.values(),
-        ).map((p) => ({
-          id: p.identity,
-          displayName: p.name || p.identity,
-        }));
+        // Populate initial participants and subscribe to their existing tracks
+        const initialParticipants = [];
+        for (const p of room.remoteParticipants.values()) {
+          initialParticipants.push({
+            id: p.identity,
+            displayName: p.name || p.identity,
+          });
+          // With autoSubscribe:false, manually handle existing publications
+          for (const [, pub] of p.trackPublications) {
+            if (!pub.trackSid) continue;
+            if (pub.source === Track.Source.ScreenShare && pub.kind === Track.Kind.Video) {
+              // Screen share → click-to-watch
+              availableScreensRef.current.set(pub.trackSid, {
+                trackSid: pub.trackSid,
+                participantId: p.identity,
+                participantName: p.name || p.identity,
+                kind: pub.kind,
+                source: pub.source,
+                publication: pub,
+              });
+            } else if (pub.source !== Track.Source.ScreenShareAudio) {
+              // Webcam, mic → auto-subscribe
+              pub.setSubscribed(true);
+            }
+          }
+        }
+        scheduleScreensUpdate();
         setParticipants(initialParticipants);
 
         setIsReady(true);
@@ -546,6 +567,12 @@ export function useRoom() {
   const unwatchScreen = useCallback(
     async (trackSid) => {
       if (!roomRef.current) return;
+      // Immediately remove from UI so the stream disappears without a resize flash
+      remoteTracksRef.current.delete(trackSid);
+      watchedScreensRef.current.delete(trackSid);
+      scheduleRemoteTracksUpdate();
+      scheduleScreensUpdate();
+      // Then async unsubscribe in the background
       try {
         await trackUnwatchScreen(roomRef.current, {
           availableScreensRef,
@@ -555,7 +582,7 @@ export function useRoom() {
         console.error('[livekit] Unwatch screen error:', err);
       }
     },
-    [scheduleScreensUpdate],
+    [scheduleRemoteTracksUpdate, scheduleScreensUpdate],
   );
 
   // ─── Cleanup on Unmount ───────────────────────────────

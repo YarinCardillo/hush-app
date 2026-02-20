@@ -6,7 +6,7 @@ How Hush creates Matrix/LiveKit rooms, what happens when participants leave, and
 
 ## Creation
 
-- **Matrix room:** Created by the client via Matrix Client-Server API (`createRoom`) when the user clicks "create room" on Home. Before creating, the client calls `GET /api/rooms/can-create`; if the server is at capacity (`total_rooms >= MAX_GUEST_ROOMS`), creation is blocked and the user sees "All guest rooms are full." Options: name, alias, encryption, guest access, join rules. After creation, the client sends a state event `io.hush.room.created_at` with `{ created_at: ms }` and registers the room with `POST /api/rooms/created` for expiry tracking.
+- **Matrix room:** Created by the client via Matrix Client-Server API (`createRoom`) when the user clicks "create room" on Home. Before creating, the client calls `GET /api/rooms/can-create`; if the server is at capacity (`total_rooms >= MAX_GUEST_ROOMS`), creation is blocked and the user sees "All guest rooms are full." The room alias always gets a random 8-hex suffix (e.g., `my-room-a1b2c3d4`) to prevent collisions and ensure unguessability — the link IS the invite (link-only access model). The display name stays as what the user typed. Options: name, alias, encryption, guest access, join rules (`public` for guest rooms). After creation, the client sends a state event `io.hush.room.created_at` with `{ created_at: ms }` and registers the room with `POST /api/rooms/created` for expiry tracking. Invite-only mode is deferred to persistent rooms/spaces (not guest rooms).
 - **LiveKit room:** No explicit creation. The room is created implicitly when the first participant connects with a given `roomName` (used in the LiveKit token). The same name is used for both Matrix room (alias/name) and LiveKit room so that one Hush "room" is one Matrix room + one LiveKit room. The server enforces a maximum number of participants per room (`MAX_PARTICIPANTS_PER_ROOM`); when at capacity, `POST /api/livekit/token` returns 403 "This room is full."
 
 ---
@@ -122,7 +122,7 @@ Room limits (can-create, delete-if-empty, expiry) will then work. Optionally set
 
 ## Flow diagrams
 
-### Create room and join room
+### Create room
 
 ```mermaid
 sequenceDiagram
@@ -143,13 +143,13 @@ sequenceDiagram
     H-->>U: Error "All guest rooms are full"
   else allowed
     API-->>H: allowed: true
-    H->>Matrix: createRoom()
+    H->>Matrix: createRoom(name + 8-hex suffix)
     H->>Matrix: sendStateEvent(created_at)
     H->>API: POST /api/rooms/created
-    H->>U: navigate to Room
+    H->>U: navigate to /room/<name-suffix>
   end
 
-  Note over U,LK: Join room
+  Note over U,LK: Connect to LiveKit
   H->>API: POST /api/livekit/token
   API->>LK: listParticipants(roomName)
   alt participants >= max
@@ -158,6 +158,26 @@ sequenceDiagram
     API-->>H: token
     H->>LK: connect(token)
   end
+```
+
+### Join via shared link (link-only model)
+
+```mermaid
+sequenceDiagram
+  participant F as Friend
+  participant R as Room.jsx
+  participant H as Home.jsx
+  participant Matrix as Matrix client
+  participant LK as LiveKit
+
+  F->>R: Opens /room/my-room-a1b2c3d4
+  R-->>F: Not authenticated
+  R->>H: Redirect to /?join=my-room-a1b2c3d4
+  H->>F: Show "Enter your name" + "Join room"
+  F->>H: Enter name, click join
+  H->>Matrix: loginAsGuest()
+  H->>Matrix: joinRoom(#my-room-a1b2c3d4:server)
+  H->>F: navigate to /room/my-room-a1b2c3d4
 ```
 
 ### Guest room countdown and expiry
@@ -187,8 +207,8 @@ flowchart LR
 
 | Event | Matrix | LiveKit | Server |
 |-------|--------|---------|--------|
-| Create room | Client calls `createRoom()` after `GET /api/rooms/can-create` | — | can-create uses Synapse room count; creator calls `POST /api/rooms/created` |
-| Join room | — | Client gets token from `POST /api/livekit/token` | Token denied with 403 if room at `MAX_PARTICIPANTS_PER_ROOM` |
+| Create room | Client calls `createRoom()` with 8-hex suffix alias after `GET /api/rooms/can-create` | — | can-create uses Synapse room count; creator calls `POST /api/rooms/created` |
+| Join via link | Client joins via `joinRoom(#name-suffix:server)` after `/?join=` redirect | Client gets token from `POST /api/livekit/token` | Token denied with 403 if room at `MAX_PARTICIPANTS_PER_ROOM` |
 | User leaves | Client calls `leaveRoom(roomId)` | Client calls `room.disconnect()` | Client calls `POST /api/rooms/delete-if-empty` |
 | Room empty? | — | — | Server checks `joined_members`; if 0, deletes room via Admin API |
 | Room expired? | — | Server removes all participants | Periodic job: disconnect via LiveKit, delete room via Admin API |

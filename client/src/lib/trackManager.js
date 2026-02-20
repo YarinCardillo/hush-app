@@ -30,6 +30,7 @@ export function attachRemoteTrackListeners(room, refs, scheduleRemoteTracksUpdat
   });
 
   room.on(RoomEvent.TrackPublished, (publication, participant) => {
+    // Screen share video → click-to-watch (don't auto-subscribe)
     if (
       publication.source === Track.Source.ScreenShare &&
       publication.kind === Track.Kind.Video
@@ -43,10 +44,14 @@ export function attachRemoteTrackListeners(room, refs, scheduleRemoteTracksUpdat
         publication,
       });
       scheduleScreensUpdate();
+      return;
     }
-    if (publication.kind === Track.Kind.Audio) {
-      publication.setSubscribed(true);
+    // Screen share audio → don't subscribe until user watches the screen
+    if (publication.source === Track.Source.ScreenShareAudio) {
+      return;
     }
+    // Everything else (webcam, mic) → auto-subscribe
+    publication.setSubscribed(true);
   });
 
   room.on(RoomEvent.TrackUnpublished, (publication, participant) => {
