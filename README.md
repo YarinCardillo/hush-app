@@ -53,7 +53,7 @@ Main environment variables (see [.env.example](.env.example)):
 | `LIVEKIT_API_SECRET` | LiveKit API secret (dev: `devsecret`) |
 | `LIVEKIT_URL` | LiveKit WebSocket URL (dev: `ws://localhost:7880`; prod: `wss://<project>.livekit.cloud`) |
 
-For gethush.live (LiveKit Cloud): use `docker-compose.prod.yml` which drops `livekit` and `redis` services. Set LiveKit env vars from the cloud dashboard.
+For gethush.live (LiveKit Cloud): use `docker-compose.prod.yml` which drops `livekit` and `redis` services. Set LiveKit env vars from the cloud dashboard. Before production go-live, see the [Production checklist](SECURITY.md#production-checklist) in SECURITY.md (CORS, HSTS, SPF, secrets, COOP/COEP).
 
 ---
 
