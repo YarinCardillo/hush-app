@@ -86,7 +86,7 @@ Security headers can be set either at the **Caddy reverse proxy** (origin) or at
 
 ### Option A: Caddy (origin)
 
-The app’s Caddy config is the single place for response headers when not using Cloudflare for headers.
+The app’s Caddy config sets the following headers on all site responses. This is the **default**: even when using Cloudflare, Caddy sends these so scanners and clients always see them (Cloudflare may also set them; duplicate is harmless).
 
 | Header | Purpose | Where |
 |-|-|-|
@@ -111,7 +111,7 @@ If the site is **behind Cloudflare**, you can configure the same headers at the 
 - **CORS:** Cloudflare does not provide a simple UI to set a fixed `Access-Control-Allow-Origin` per path. To restrict CORS at the edge you’d use a **Worker** that checks the request `Origin` against an allowlist and sets the response header. Otherwise, keep CORS at the origin (Caddy + Express with `CORS_ORIGIN`).
 - **SPF:** If DNS is on Cloudflare, add the SPF TXT record under **DNS** → **Records** for your domain (not “in Cloudflare” as proxy — it’s DNS).
 
-Using Cloudflare for headers: ensure COOP/COEP are still sent for the app’s hostname so the LiveKit E2EE worker and `SharedArrayBuffer` keep working. If you use both Caddy and Cloudflare, avoid setting the same header in both (one value will win; prefer a single source of truth).
+Using Cloudflare for headers: Caddy already sends X-Content-Type-Options, X-Frame-Options, COOP, and COEP at origin, so the scanner and clients always receive them. You can keep or remove the same headers from Cloudflare Transform Rules (same value in both is fine). Ensure COOP/COEP remain sent for the app’s hostname so the LiveKit E2EE worker and `SharedArrayBuffer` keep working.
 
 ## Input validation
 
