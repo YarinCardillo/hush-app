@@ -93,9 +93,10 @@ const styles = {
     display: 'grid',
     gap: '6px',
     padding: '6px',
-    overflow: 'auto',
-    alignContent: 'center',
-    justifyItems: 'center',
+    overflow: 'hidden',
+    alignItems: 'stretch',
+    justifyItems: 'stretch',
+    minHeight: 0,
   },
   sidebar: (isMobile) => ({
     ...(isMobile
@@ -200,10 +201,10 @@ function getGridStyle(count, breakpoint) {
     return { gridTemplateColumns: '1fr' };
   }
   if (count === 1) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' };
-  if (count === 2) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr' };
-  if (count <= 4) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' };
-  if (count <= 6) return { gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: '1fr 1fr' };
-  return { gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(auto-fill, 1fr)' };
+  if (count === 2) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'minmax(0, 1fr)' };
+  if (count <= 4) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'repeat(2, minmax(0, 1fr))' };
+  if (count <= 6) return { gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: 'repeat(2, minmax(0, 1fr))' };
+  return { gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(auto-fill, minmax(0, 1fr))' };
 }
 
 /** Maps raw room/connection errors to short, user-facing messages. Avoids exposing URLs and stack traces. */

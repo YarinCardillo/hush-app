@@ -7,10 +7,9 @@ const styles = {
     borderRadius: isFullscreen ? 0 : 'var(--radius-md)',
     overflow: 'hidden',
     /* NO border — video containers are windows, not cards */
-    aspectRatio: isFullscreen ? 'auto' : '16 / 9',
     width: '100%',
-    maxWidth: '100%',
-    maxHeight: isFullscreen ? '100%' : '75vh',
+    height: '100%',
+    minHeight: 0,
   }),
   video: (mirrorLocal) => ({
     width: '100%',
