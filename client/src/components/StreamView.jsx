@@ -12,12 +12,13 @@ const styles = {
     maxWidth: '100%',
     maxHeight: isFullscreen ? '100%' : '75vh',
   }),
-  video: {
+  video: (mirrorLocal) => ({
     width: '100%',
     height: '100%',
     objectFit: 'contain',
     display: 'block',
-  },
+    transform: mirrorLocal ? 'scaleX(-1)' : undefined,
+  }),
   label: {
     position: 'absolute',
     bottom: '10px',
@@ -218,7 +219,7 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
         autoPlay
         playsInline
         muted={isLocal}
-        style={styles.video}
+        style={styles.video(isLocal && source === 'webcam')}
       />
 
       {/* Always render audio element so ref is available when useEffect runs */}
