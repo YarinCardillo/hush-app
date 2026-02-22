@@ -199,7 +199,7 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
           autoPlay
           playsInline
           muted={isLocal}
-          style={styles.video(objectFit)}
+          style={styles.video(isFullscreen ? 'contain' : objectFit)}
         />
       </div>
 
