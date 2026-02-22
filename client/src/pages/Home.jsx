@@ -259,9 +259,9 @@ export default function Home() {
   }, [spotlightEnabled]);
 
   useEffect(() => {
+    const el = wordmarkRef.current;
+    if (!el) return;
     const measure = () => {
-      const el = wordmarkRef.current;
-      if (!el) return;
       const textNode = el.firstChild;
       if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return;
       const range = document.createRange();
@@ -273,6 +273,10 @@ export default function Home() {
       setDotLeft(uCenter - 5);
     };
     document.fonts.ready.then(measure);
+    // Re-measure when the element resizes (e.g. after late font swap)
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   const handleMouseMove = useCallback((e) => {
