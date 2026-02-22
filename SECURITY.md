@@ -105,7 +105,7 @@ If the site is **behind Cloudflare**, you can configure the same headers at the 
 
 | Item | Where in Cloudflare |
 |-|-|
-| **X-Content-Type-Options**, **X-Frame-Options**, **COOP**, **COEP** | **Rules** → **Transform Rules** → **Modify response header**: add each header (e.g. set `X-Content-Type-Options` = `nosniff`, `X-Frame-Options` = `DENY`, `Cross-Origin-Opener-Policy` = `same-origin`, `Cross-Origin-Embedder-Policy` = `require-corp`). Apply to your domain/host. |
+| **X-Content-Type-Options**, **X-Frame-Options**, **COOP**, **COEP** | **Rules** → **Transform Rules** → **Modify response header**: add each header. **Exclude the LiveKit path** so the WebSocket upgrade is not modified: expression `(http.host eq "gethush.live" and not starts_with(http.request.uri.path, "/livekit"))`. Otherwise the room connection can drop right after join. |
 | **HSTS** | **SSL/TLS** → **Edge Certificates** → **HTTP Strict Transport Security (HSTS)** → Enable, set max-age (e.g. 12 months), enable “Include subdomains” and “No-Sniff” if offered; add to preload list if desired. |
 
 - **CORS:** Cloudflare does not provide a simple UI to set a fixed `Access-Control-Allow-Origin` per path. To restrict CORS at the edge you’d use a **Worker** that checks the request `Origin` against an allowlist and sets the response header. Otherwise, keep CORS at the origin (Caddy + Express with `CORS_ORIGIN`).
