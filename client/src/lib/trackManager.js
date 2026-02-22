@@ -245,11 +245,12 @@ export async function publishMic(room, refs, deviceId = null) {
     echoCancellation: true,
     noiseSuppression: true,
     autoGainControl: true,
+    channelCount: 1,
   };
   if (deviceId) audioConstraints.deviceId = { exact: deviceId };
   const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
   refs.rawMicStreamRef.current = stream;
-  const audioContext = new AudioContext();
+  const audioContext = new AudioContext({ sampleRate: 48000 });
   refs.audioContextRef.current = audioContext;
   const source = audioContext.createMediaStreamSource(stream);
   const hasWorklet = typeof audioContext.audioWorklet !== 'undefined';
@@ -262,16 +263,19 @@ export async function publishMic(room, refs, deviceId = null) {
       const workletNode = new AudioWorkletNode(audioContext, 'noise-gate-processor');
       refs.noiseGateNodeRef.current = workletNode;
       destination = audioContext.createMediaStreamDestination();
+      destination.channelCount = 1;
       source.connect(workletNode);
       workletNode.connect(destination);
       workletNode.port.postMessage({ type: 'updateParams', enabled: true, threshold: -50 });
     } catch (err) {
       console.warn('[livekit] AudioWorklet failed, publishing raw audio:', err);
       destination = audioContext.createMediaStreamDestination();
+      destination.channelCount = 1;
       source.connect(destination);
     }
   } else {
     destination = audioContext.createMediaStreamDestination();
+    destination.channelCount = 1;
     source.connect(destination);
   }
   const processedTrack = destination.stream.getAudioTracks()[0];
