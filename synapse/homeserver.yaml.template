@@ -42,6 +42,9 @@ enable_registration_without_verification: true
 allow_guest_access: true
 guest_access_require_3pid: false
 
+# Token lifetime — must outlast guest room max duration (default 3 h)
+nonrefreshable_access_token_lifetime: 4h
+
 # Required for register_new_matrix_user (e.g. to create admin user)
 registration_shared_secret: "REGISTRATION_SHARED_SECRET"
 

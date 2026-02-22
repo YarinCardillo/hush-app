@@ -119,8 +119,14 @@ export async function handleParticipantConnected(participant, matrixClient, refs
     );
     setKeyExchangeMessage(null);
   } catch (err) {
-    console.error('[livekit] Failed to send E2EE key to participant:', err);
-    setKeyExchangeMessage(KEY_EXCHANGE_FAIL_MESSAGE);
+    console.warn('[livekit] Failed to send E2EE key to participant:', err);
+    // If the Matrix token expired (401) but E2EE key was already set, the stream
+    // keeps working — the new participant will receive the key from another peer
+    // whose token is still valid.  Don't show a scary toast for this.
+    const isTokenExpired = /M_UNKNOWN_TOKEN|401|expired/i.test(err?.message || '');
+    if (!isTokenExpired) {
+      setKeyExchangeMessage(KEY_EXCHANGE_FAIL_MESSAGE);
+    }
   }
 }
 
@@ -184,8 +190,11 @@ export async function handleParticipantDisconnected(participant, room, matrixCli
       );
       setKeyExchangeMessage(null);
     } catch (err) {
-      console.error('[livekit] Rekey: failed to send to', userId, err);
-      rekeyFailed = true;
+      console.warn('[livekit] Rekey: failed to send to', userId, err);
+      const isTokenExpired = /M_UNKNOWN_TOKEN|401|expired/i.test(err?.message || '');
+      if (!isTokenExpired) {
+        rekeyFailed = true;
+      }
     }
   }
   if (rekeyFailed) {
