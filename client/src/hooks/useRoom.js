@@ -481,14 +481,16 @@ export function useRoom() {
   const switchScreenSource = useCallback(
     async (qualityKey = DEFAULT_QUALITY) => {
       if (!roomRef.current) throw new Error('Room not connected');
-      return trackSwitchScreenSource(
+      const result = await trackSwitchScreenSource(
         roomRef.current,
         { localTracksRef },
         qualityKey,
         unpublishScreen,
       );
+      scheduleLocalTracksUpdate();
+      return result;
     },
-    [unpublishScreen],
+    [unpublishScreen, scheduleLocalTracksUpdate],
   );
 
   // ─── Change Quality ───────────────────────────────────

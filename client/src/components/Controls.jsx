@@ -164,7 +164,7 @@ export default function Controls({
       {/* Switch Screen (only visible when sharing) */}
       {isScreenSharing && (
         <button
-          style={{ ...styles.iconBtn(false), width: btnSize, height: btnSize }}
+          style={{ ...styles.iconBtn(isScreenSharing), width: btnSize, height: btnSize }}
           onClick={onSwitchScreen}
           title="Switch screen/window"
         >
