@@ -564,7 +564,7 @@ a[href]:active {
 
 .video-container {
   position: relative;
-  background: var(--hush-black);
+  background: var(--hush-elevated);
   border-radius: var(--radius-md);
   overflow: hidden;
   /* NO border — video containers are windows, not cards */

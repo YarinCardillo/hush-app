@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 const styles = {
   container: (isFullscreen) => ({
     position: 'relative',
-    background: 'var(--hush-black)',
+    background: 'var(--hush-elevated)',
     borderRadius: isFullscreen ? 0 : 'var(--radius-md)',
     overflow: 'hidden',
     /* NO border — video containers are windows, not cards */
