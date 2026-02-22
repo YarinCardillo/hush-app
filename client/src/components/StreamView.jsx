@@ -11,12 +11,16 @@ const styles = {
     height: '100%',
     minHeight: 0,
   }),
-  video: (mirrorLocal) => ({
+  videoWrapper: (mirrorLocal) => ({
     width: '100%',
     height: '100%',
-    objectFit: 'contain',
-    display: 'block',
     transform: mirrorLocal ? 'scaleX(-1)' : undefined,
+  }),
+  video: (objectFit) => ({
+    width: '100%',
+    height: '100%',
+    objectFit: objectFit ?? 'contain',
+    display: 'block',
   }),
   label: {
     position: 'absolute',
@@ -96,7 +100,7 @@ const styles = {
   }),
 };
 
-export default function StreamView({ track, audioTrack, label, source, isLocal, onUnwatch }) {
+export default function StreamView({ track, audioTrack, label, source, isLocal, onUnwatch, objectFit }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const containerRef = useRef(null);
@@ -173,10 +177,13 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
   useEffect(() => {
     const handleChange = () => {
       const el = containerRef.current;
-      setIsFullscreen(
+      const isNowFullscreen =
         document.fullscreenElement === el ||
-        document.webkitFullscreenElement === el
-      );
+        document.webkitFullscreenElement === el;
+      setIsFullscreen(isNowFullscreen);
+      if (!isNowFullscreen && videoRef.current) {
+        videoRef.current.play().catch(() => {});
+      }
     };
 
     document.addEventListener('fullscreenchange', handleChange);
@@ -213,13 +220,15 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted={isLocal}
-        style={styles.video(isLocal && source === 'webcam')}
-      />
+      <div style={styles.videoWrapper(isLocal && source === 'webcam')}>
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={isLocal}
+          style={styles.video(objectFit)}
+        />
+      </div>
 
       {/* Always render audio element so ref is available when useEffect runs */}
       {!isLocal && (

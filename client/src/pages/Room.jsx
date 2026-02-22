@@ -88,16 +88,17 @@ const styles = {
     overflow: 'hidden',
     position: 'relative',
   },
-  streamsArea: {
+  streamsArea: (isMobile) => ({
     flex: 1,
     display: 'grid',
     gap: '6px',
     padding: '6px',
-    overflow: 'hidden',
-    alignItems: 'stretch',
+    overflow: isMobile ? 'auto' : 'hidden',
+    alignItems: isMobile ? 'start' : 'stretch',
+    alignContent: isMobile ? 'start' : undefined,
     justifyItems: 'stretch',
     minHeight: 0,
-  },
+  }),
   sidebar: (isMobile) => ({
     ...(isMobile
       ? {
@@ -198,7 +199,8 @@ function formatCountdown(remainingMs) {
 function getGridStyle(count, breakpoint) {
   if (count === 0) return {};
   if (breakpoint === 'mobile') {
-    return { gridTemplateColumns: '1fr' };
+    if (count === 1) return { gridTemplateColumns: '1fr' };
+    return { gridTemplateColumns: '1fr 1fr' };
   }
   if (count === 1) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' };
   if (count === 2) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'minmax(0, 1fr)' };
@@ -815,7 +817,7 @@ export default function Room() {
             {formatCountdown(countdownRemainingMs)}
           </div>
         )}
-        <div style={{ ...styles.streamsArea, ...gridStyle }}>
+        <div style={{ ...styles.streamsArea(isMobile), ...gridStyle }}>
           {totalCards === 0 ? (
             <div style={styles.empty}>
               <div style={styles.emptyIcon}>
@@ -833,27 +835,30 @@ export default function Room() {
           ) : (
             <>
               {allStreams.map((stream) => (
-                <StreamView
-                  key={stream.id}
-                  track={stream.track}
-                  audioTrack={stream.audioTrack}
-                  label={stream.label}
-                  source={stream.source}
-                  isLocal={stream.type === 'local'}
-                  onUnwatch={
-                    stream.type === 'remote' && stream.source === MEDIA_SOURCES.SCREEN
-                      ? () => unwatchScreen(stream.id)
-                      : undefined
-                  }
-                />
+                <div key={stream.id} style={isMobile ? { aspectRatio: '1', width: '100%', minWidth: 0 } : { display: 'contents' }}>
+                  <StreamView
+                    track={stream.track}
+                    audioTrack={stream.audioTrack}
+                    label={stream.label}
+                    source={stream.source}
+                    isLocal={stream.type === 'local'}
+                    objectFit={isMobile ? 'cover' : 'contain'}
+                    onUnwatch={
+                      stream.type === 'remote' && stream.source === MEDIA_SOURCES.SCREEN
+                        ? () => unwatchScreen(stream.id)
+                        : undefined
+                    }
+                  />
+                </div>
               ))}
               {unwatchedScreens.map((screen) => (
-                <ScreenShareCard
-                  key={screen.producerId}
-                  peerName={screen.peerName}
-                  isLoading={loadingScreens.has(screen.producerId)}
-                  onWatch={() => watchScreen(screen.producerId)}
-                />
+                <div key={screen.producerId} style={isMobile ? { aspectRatio: '1', width: '100%', minWidth: 0 } : { display: 'contents' }}>
+                  <ScreenShareCard
+                    peerName={screen.peerName}
+                    isLoading={loadingScreens.has(screen.producerId)}
+                    onWatch={() => watchScreen(screen.producerId)}
+                  />
+                </div>
               ))}
             </>
           )}
