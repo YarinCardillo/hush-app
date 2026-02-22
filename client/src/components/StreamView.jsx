@@ -2,14 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 
 const styles = {
   container: (isFullscreen) => ({
-    position: 'relative',
+    /* Virtual fullscreen: CSS position:fixed keeps video in the normal
+       rendering pipeline so CSS transforms (mirror) and playback work
+       correctly on iOS Safari, which bypasses CSS when using the native
+       Fullscreen API on <video> elements. */
+    position: isFullscreen ? 'fixed' : 'relative',
+    ...(isFullscreen
+      ? { inset: 0, zIndex: 9999 }
+      : { width: '100%', height: '100%', minHeight: 0 }),
     background: 'var(--hush-elevated)',
     borderRadius: isFullscreen ? 0 : 'var(--radius-md)',
     overflow: 'hidden',
-    /* NO border — video containers are windows, not cards */
-    width: '100%',
-    height: '100%',
-    minHeight: 0,
   }),
   videoWrapper: (mirrorLocal) => ({
     width: '100%',
@@ -103,7 +106,6 @@ const styles = {
 export default function StreamView({ track, audioTrack, label, source, isLocal, onUnwatch, objectFit }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
-  const containerRef = useRef(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -175,47 +177,18 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
   }, [audioTrack, isLocal, label]);
 
   useEffect(() => {
-    const handleChange = () => {
-      const el = containerRef.current;
-      const isNowFullscreen =
-        document.fullscreenElement === el ||
-        document.webkitFullscreenElement === el;
-      setIsFullscreen(isNowFullscreen);
-      if (!isNowFullscreen && videoRef.current) {
-        videoRef.current.play().catch(() => {});
-      }
+    if (!isFullscreen) return;
+    const handleKey = (e) => {
+      if (e.key === 'Escape') setIsFullscreen(false);
     };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isFullscreen]);
 
-    document.addEventListener('fullscreenchange', handleChange);
-    document.addEventListener('webkitfullscreenchange', handleChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleChange);
-      document.removeEventListener('webkitfullscreenchange', handleChange);
-    };
-  }, []);
-
-  const toggleFullscreen = async () => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const isCurrentlyFull =
-      document.fullscreenElement === el ||
-      document.webkitFullscreenElement === el;
-
-    if (isCurrentlyFull) {
-      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
-    } else if (el.requestFullscreen) {
-      await el.requestFullscreen();
-    } else if (el.webkitRequestFullscreen) {
-      el.webkitRequestFullscreen();
-    } else if (videoRef.current?.webkitEnterFullscreen) {
-      videoRef.current.webkitEnterFullscreen();
-    }
-  };
+  const toggleFullscreen = () => setIsFullscreen((prev) => !prev);
 
   return (
     <div
-      ref={containerRef}
       style={styles.container(isFullscreen)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
