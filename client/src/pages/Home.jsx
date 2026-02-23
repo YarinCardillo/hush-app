@@ -119,7 +119,7 @@ function TypewriterSlot() {
           left: 0,
         }}
       >
-        guilty pleasures.
+        privacy.
       </span>
       <span
         style={{
