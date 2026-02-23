@@ -96,8 +96,6 @@ const styles = `
     margin-bottom: 32px;
     transition: color 200ms var(--ease-out);
   }
-  .roadmap-back:hover { color: var(--hush-amber); }
-
   .page-eyebrow {
     font-size: 0.7rem;
     font-weight: 600;
@@ -165,8 +163,6 @@ const styles = `
     font-weight: 500;
     transition: background 120ms var(--ease-out);
   }
-  .whats-next-toggle:hover { background: var(--hush-elevated); }
-
   .whats-next-count {
     font-family: var(--font-mono);
     font-size: 0.65rem;
@@ -315,10 +311,6 @@ const styles = `
     font-family: var(--font-sans);
     position: relative;
   }
-  .rm-release-toggle:hover { background: var(--hush-surface); }
-  .rm-release-toggle:hover .release-chevron { color: var(--hush-text-secondary); }
-  .rm-release-toggle:hover .rm-release-title { color: var(--hush-text); }
-
   .rm-release-dot {
     position: absolute;
     left: -23px;
@@ -504,8 +496,6 @@ const styles = `
     font-weight: 500;
     transition: color 120ms;
   }
-  .rm-footer-link:hover { color: var(--hush-amber-bright); }
-
   /* ── ANIMATIONS ── */
   @keyframes hush-pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
@@ -528,8 +518,25 @@ const styles = `
     .roadmap-page { padding: 40px 16px 64px; }
     .page-title { font-size: 1.4rem; }
     .rm-legend { gap: 12px; }
-    .rm-release-version { min-width: 80px; }
     .rm-release-date { display: none; }
+
+    /* Release toggle: wrap version+tags row, title on its own line below */
+    .rm-release-toggle { flex-wrap: wrap; row-gap: 4px; }
+    .rm-release-version { min-width: 0; }
+    .rm-release-title { order: 10; flex: 0 0 100%; padding-left: 0; }
+    .rm-release-tags { flex-shrink: 0; }
+    .rm-current-pill { flex-shrink: 0; }
+    .release-chevron { margin-left: auto; }
+  }
+
+  /* ── HOVER (pointer devices only — fix sticky hover on touch) ── */
+  @media (hover: hover) {
+    .roadmap-back:hover { color: var(--hush-amber); }
+    .whats-next-toggle:hover { background: var(--hush-elevated); }
+    .rm-release-toggle:hover { background: var(--hush-surface); }
+    .rm-release-toggle:hover .release-chevron { color: var(--hush-text-secondary); }
+    .rm-release-toggle:hover .rm-release-title { color: var(--hush-text); }
+    .rm-footer-link:hover { color: var(--hush-amber-bright); }
   }
 `;
 
@@ -734,7 +741,7 @@ export default function Roadmap() {
                     <div className="rm-progress-note-inner">
                       <div className="rm-progress-dot" />
                       <span className="rm-progress-note-text">
-                        milestone {m.id} in progress — more releases incoming
+                        milestone {m.id} in progress, more releases incoming
                       </span>
                     </div>
                   </div>

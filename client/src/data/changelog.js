@@ -179,7 +179,7 @@ export const releases = [
       {
         label: 'features',
         items: [
-          'WebRTC rooms via mediasoup SFU — up to 4 participants',
+          'WebRTC rooms via mediasoup SFU, up to 4 participants',
           'Quality presets: best (1080p) and lite (720p)',
           'Noise gate AudioWorklet for mic processing',
           'iOS Safari compatibility fixes for remote streams',
