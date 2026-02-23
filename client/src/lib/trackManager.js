@@ -12,14 +12,16 @@ const NOISE_GATE_WORKLET_URL = new URL('./noiseGateWorklet.js', import.meta.url)
  * Safe to call multiple times; module is cached per origin.
  */
 export function preloadNoiseGateWorklet() {
-  if (typeof AudioContext === 'undefined' || typeof AudioContext.prototype.audioWorklet === 'undefined') {
-    return;
+  try {
+    if (typeof AudioContext === 'undefined' || !('audioWorklet' in AudioContext.prototype)) return;
+    const ctx = new AudioContext();
+    ctx.audioWorklet
+      .addModule(NOISE_GATE_WORKLET_URL)
+      .then(() => ctx.close())
+      .catch(() => ctx.close());
+  } catch {
+    // Best-effort preload; actual loading happens in publishMic
   }
-  const ctx = new AudioContext();
-  ctx.audioWorklet
-    .addModule(NOISE_GATE_WORKLET_URL)
-    .then(() => ctx.close())
-    .catch(() => ctx.close());
 }
 import {
   QUALITY_PRESETS,
