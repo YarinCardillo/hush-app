@@ -494,8 +494,8 @@ const styles = `
 
   /* ── ANIMATIONS ── */
   @keyframes hush-pulse {
-    0%, 100% { opacity: 1; }
-    50%      { opacity: 0.4; }
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.4; transform: scale(0.85); }
   }
   @keyframes fade-up {
     from { opacity: 0; transform: translateY(8px); }
@@ -515,7 +515,84 @@ const styles = `
   }
 `;
 
-/* ── Component ── */
+/* ── Sub-components ── */
+
+function MilestoneCard({ milestone }) {
+  const cls = STATUS_CLASS[milestone.status];
+  const badge = BADGE_CLASS[milestone.status];
+  const s = STATUS[milestone.status];
+
+  return (
+    <div className={`rm-milestone ${cls}`}>
+      <div className="rm-milestone-dot">
+        <div className="rm-milestone-dot-inner" />
+      </div>
+      <div className="rm-milestone-card">
+        <div className="rm-milestone-header">
+          <span className="rm-milestone-id">Milestone {milestone.id}</span>
+          <span className={`rm-milestone-badge ${badge}`}>{s.label}</span>
+        </div>
+        <div className="rm-milestone-title">{milestone.title}</div>
+        <div className="rm-milestone-desc">{milestone.summary}</div>
+      </div>
+    </div>
+  );
+}
+
+function ReleaseEntry({ release, isOpen, onToggle }) {
+  const isCurrent = release.current === true;
+  const releaseClass = [
+    'rm-release',
+    isOpen ? 'open' : '',
+    isCurrent ? 'current' : '',
+  ].filter(Boolean).join(' ');
+
+  return (
+    <div className={releaseClass}>
+      <button
+        className="rm-release-toggle"
+        onClick={() => onToggle(release.version)}
+        type="button"
+      >
+        <span className="rm-release-dot" />
+        <span className="rm-release-version">v{release.version}</span>
+        <span className="rm-release-date">{formatDate(release.date)}</span>
+        <span className="rm-release-title">{release.title}</span>
+        <div className="rm-release-tags">
+          {release.tags.map((tag) => {
+            const ts = TAG_STYLE[tag];
+            return (
+              <span
+                className="rm-release-tag"
+                key={tag}
+                style={ts ? { color: ts.color, background: ts.bg } : undefined}
+              >
+                {tag}
+              </span>
+            );
+          })}
+        </div>
+        {isCurrent && <span className="rm-current-pill">current</span>}
+        <Chevron />
+      </button>
+
+      <div className="rm-release-body">
+        {release.groups.map((g) => (
+          <div className="rm-change-group" key={g.label}>
+            <div className="rm-change-group-label">{g.label}</div>
+            <ul className="rm-change-list">
+              {g.items.map((item) => (
+                <li className="rm-change-item" key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Main component ── */
 
 export default function Roadmap() {
   const [openReleases, setOpenReleases] = useState(new Set());
@@ -562,92 +639,6 @@ export default function Roadmap() {
     });
   }
 
-  function renderMilestoneCard(m) {
-    const cls = STATUS_CLASS[m.status];
-    const badge = BADGE_CLASS[m.status];
-    const s = STATUS[m.status];
-
-    return (
-      <div className={`rm-milestone ${cls}`} key={m.id}>
-        <div className="rm-milestone-dot">
-          <div className="rm-milestone-dot-inner" />
-        </div>
-        <div className="rm-milestone-card">
-          <div className="rm-milestone-header">
-            <span className="rm-milestone-id">Milestone {m.id}</span>
-            <span className={`rm-milestone-badge ${badge}`}>{s.label}</span>
-          </div>
-          <div className="rm-milestone-title">{m.title}</div>
-          <div className="rm-milestone-desc">{m.summary}</div>
-        </div>
-      </div>
-    );
-  }
-
-  function renderRelease(r) {
-    const isOpen = openReleases.has(r.version);
-    const isCurrent = r.current === true;
-    const releaseClass = [
-      'rm-release',
-      isOpen ? 'open' : '',
-      isCurrent ? 'current' : '',
-    ].filter(Boolean).join(' ');
-
-    return (
-      <div className={releaseClass} key={r.version}>
-        <button
-          className="rm-release-toggle"
-          onClick={() => toggleRelease(r.version)}
-          type="button"
-        >
-          <span className="rm-release-dot" />
-          <span className="rm-release-version">v{r.version}</span>
-          <span className="rm-release-date">{formatDate(r.date)}</span>
-          <span className="rm-release-title">{r.title}</span>
-          <div className="rm-release-tags">
-            {r.tags.map((tag) => {
-              const ts = TAG_STYLE[tag];
-              return (
-                <span
-                  className="rm-release-tag"
-                  key={tag}
-                  style={ts ? { color: ts.color, background: ts.bg } : undefined}
-                >
-                  {tag}
-                </span>
-              );
-            })}
-          </div>
-          {isCurrent && <span className="rm-current-pill">current</span>}
-          <Chevron />
-        </button>
-
-        <div className="rm-release-body">
-          {r.groups.map((g) => (
-            <div className="rm-change-group" key={g.label}>
-              <div className="rm-change-group-label">{g.label}</div>
-              <ul className="rm-change-list">
-                {g.items.map((item, i) => (
-                  <li className="rm-change-item" key={i}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  function renderReleases(milestoneId) {
-    const rels = releasesForMilestone(milestoneId);
-    if (rels.length === 0) return null;
-    return (
-      <div className="rm-releases">
-        {rels.map(renderRelease)}
-      </div>
-    );
-  }
-
   return (
     <>
       <style>{styles}</style>
@@ -690,7 +681,7 @@ export default function Roadmap() {
               <div className="rm-timeline">
                 {whatsNextMilestones.map((m, i) => (
                   <div key={m.id}>
-                    {renderMilestoneCard(m)}
+                    <MilestoneCard milestone={m} />
                     {i < whatsNextMilestones.length - 1 && <div className="rm-spacer" />}
                   </div>
                 ))}
@@ -701,26 +692,40 @@ export default function Roadmap() {
 
         {/* Main timeline */}
         <div className="rm-timeline">
-          {timelineMilestones.map((m, i) => (
-            <div key={m.id}>
-              {renderMilestoneCard(m)}
-              {renderReleases(m.id)}
-
-              {/* Progress note after the active milestone's releases */}
-              {m.status === 'active' && (
-                <div className="rm-progress-note">
-                  <div className="rm-progress-note-inner">
-                    <div className="rm-progress-dot" />
-                    <span className="rm-progress-note-text">
-                      milestone {m.id} in progress — more releases incoming
-                    </span>
+          {timelineMilestones.map((m, i) => {
+            const rels = releasesForMilestone(m.id);
+            return (
+              <div key={m.id}>
+                <MilestoneCard milestone={m} />
+                {rels.length > 0 && (
+                  <div className="rm-releases">
+                    {rels.map((r) => (
+                      <ReleaseEntry
+                        key={r.version}
+                        release={r}
+                        isOpen={openReleases.has(r.version)}
+                        onToggle={toggleRelease}
+                      />
+                    ))}
                   </div>
-                </div>
-              )}
+                )}
 
-              {i < timelineMilestones.length - 1 && <div className="rm-spacer" />}
-            </div>
-          ))}
+                {/* Progress note after the active milestone's releases */}
+                {m.status === 'active' && (
+                  <div className="rm-progress-note">
+                    <div className="rm-progress-note-inner">
+                      <div className="rm-progress-dot" />
+                      <span className="rm-progress-note-text">
+                        milestone {m.id} in progress — more releases incoming
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {i < timelineMilestones.length - 1 && <div className="rm-spacer" />}
+              </div>
+            );
+          })}
         </div>
 
         {/* Footer */}
