@@ -196,17 +196,45 @@ function formatCountdown(remainingMs) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+function getColumnCount(count) {
+  if (count <= 1) return 1;
+  if (count <= 5) return 2;
+  return 3;
+}
+
 function getGridStyle(count, breakpoint) {
   if (count === 0) return {};
   if (breakpoint === 'mobile') {
     if (count === 1) return { gridTemplateColumns: '1fr' };
     return { gridTemplateColumns: '1fr 1fr' };
   }
-  if (count === 1) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' };
-  if (count === 2) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'minmax(0, 1fr)' };
-  if (count <= 4) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'repeat(2, minmax(0, 1fr))' };
-  if (count <= 6) return { gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: 'repeat(2, minmax(0, 1fr))' };
-  return { gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(auto-fill, minmax(0, 1fr))' };
+  const cols = getColumnCount(count);
+  const rows = Math.ceil(count / cols);
+  if (cols === 1) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' };
+  return {
+    gridTemplateColumns: `repeat(${cols}, 1fr)`,
+    gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+  };
+}
+
+/** Returns the id of the tile that should be the "hero" (placed last, bigger when alone). Priority:
+ *  1. Exactly one screen share in the room → that screen share
+ *  2. Otherwise → local webcam
+ *  3. Fallback → first stream */
+function pickHeroId(streams) {
+  if (streams.length === 0) return null;
+  const screenShares = streams.filter((s) => isScreenShareSource(s.source));
+  if (screenShares.length === 1) return screenShares[0].id;
+  const localWebcam = streams.find((s) => s.type === 'local' && !isScreenShareSource(s.source));
+  if (localWebcam) return localWebcam.id;
+  return streams[0].id;
+}
+
+function orderWithHeroLast(streams, heroId) {
+  if (!heroId) return streams;
+  const hero = streams.find((s) => s.id === heroId);
+  if (!hero) return streams;
+  return [...streams.filter((s) => s.id !== heroId), hero];
 }
 
 /** Maps raw room/connection errors to short, user-facing messages. Avoids exposing URLs and stack traces. */
@@ -679,6 +707,25 @@ export default function Room() {
   const totalCards = allStreams.length + unwatchedScreens.length;
   const gridStyle = getGridStyle(totalCards, breakpoint);
 
+  const heroId = pickHeroId(allStreams);
+  // Hero is alone in its row only when there are no unwatchedScreens padding the grid
+  const cols = isMobile ? 2 : getColumnCount(totalCards);
+  const heroIsAlone = totalCards > 1 && totalCards % cols === 1 && unwatchedScreens.length === 0;
+  const orderedStreams = orderWithHeroLast(allStreams, heroId);
+
+  const getTileStyle = (streamId) => {
+    if (!heroIsAlone || streamId !== heroId) {
+      return isMobile ? { aspectRatio: '1', width: '100%', minWidth: 0 } : { display: 'contents' };
+    }
+    if (isMobile) {
+      // Hero alone at bottom on mobile: full-width square
+      return { gridColumn: '1 / -1', aspectRatio: '1', width: '100%', minWidth: 0 };
+    }
+    // Hero alone at bottom on desktop: centered, same width as one column
+    const widthPct = cols === 2 ? 'calc(50% - 3px)' : 'calc(33.33% - 4px)';
+    return { gridColumn: '1 / -1', justifySelf: 'center', width: widthPct, display: 'block', minHeight: 0 };
+  };
+
   if (!rehydrationAttempted) {
     return (
       <div style={{ ...styles.page, alignItems: 'center', justifyContent: 'center' }}>
@@ -834,8 +881,8 @@ export default function Room() {
             </div>
           ) : (
             <>
-              {allStreams.map((stream) => (
-                <div key={stream.id} style={isMobile ? { aspectRatio: '1', width: '100%', minWidth: 0 } : { display: 'contents' }}>
+              {orderedStreams.map((stream) => (
+                <div key={stream.id} style={getTileStyle(stream.id)}>
                   <StreamView
                     track={stream.track}
                     audioTrack={stream.audioTrack}
