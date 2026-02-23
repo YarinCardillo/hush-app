@@ -126,6 +126,8 @@ function TypewriterSlot() {
           display: 'inline-block',
           minWidth: slotWidth != null ? `${slotWidth}px` : undefined,
           whiteSpace: 'nowrap',
+          textAlign: 'left',
+          verticalAlign: 'bottom',
         }}
       >
         {displayed}
