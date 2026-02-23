@@ -124,10 +124,10 @@ function TypewriterSlot() {
       <span
         style={{
           display: 'inline-block',
-          minWidth: slotWidth != null ? `${slotWidth}px` : undefined,
+          width: slotWidth != null ? `${slotWidth}px` : undefined,
+          overflow: 'visible',
           whiteSpace: 'nowrap',
           textAlign: 'left',
-          verticalAlign: 'bottom',
         }}
       >
         {displayed}

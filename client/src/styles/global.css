@@ -754,7 +754,7 @@ a[href]:active {
   height: 0.85em;
   background: var(--hush-amber);
   margin-left: 1px;
-  vertical-align: text-bottom;
+  vertical-align: middle;
   animation: cursor-blink 1.1s step-end infinite;
 }
 
