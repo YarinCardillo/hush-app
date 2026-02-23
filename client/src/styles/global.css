@@ -541,6 +541,15 @@ a[href]:active {
 .gap-md { gap: 16px; }
 .gap-lg { gap: 24px; }
 
+/* ── Prevent iOS Safari auto-zoom on input focus ── */
+/* iOS zooms the viewport when an input's font-size < 16px; the zoom
+   persists across SPA navigation and makes the room UI look zoomed in. */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select {
+    font-size: 16px;
+  }
+}
+
 /* ── Scrollbar ─────────────────────────────────── */
 
 ::-webkit-scrollbar {
