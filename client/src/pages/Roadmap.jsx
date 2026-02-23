@@ -1,475 +1,542 @@
-import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { milestones, releases } from '../data/changelog.js';
 
-const milestones = [
-  {
-    id: "A",
-    label: "Milestone A",
-    title: "Foundation",
-    status: "done",
-    summary: "Core prototype: auth, persistent chat, voice and video rooms.",
-    tasks: [
-      "User auth with login, register, and guest access",
-      "Persistent text chat with E2EE",
-      "Voice and video rooms via LiveKit SFU",
-      "Noise gate AudioWorklet for mic processing",
-      "Docker Compose deployment with Caddy reverse proxy",
-    ],
-  },
-  {
-    id: "B",
-    label: "Milestone B",
-    title: "End-to-End Encryption",
-    status: "done",
-    summary: "E2EE on everything: chat messages, voice, video, and screen sharing.",
-    tasks: [
-      "Encrypted chat messages (zero plaintext on server)",
-      "Encrypted media via LiveKit Insertable Streams (AES-GCM)",
-      "E2EE key distribution and leader election",
-      "Automatic rekeying on participant join/leave",
-      "Graceful failure: no silent E2EE degradation",
-      "SECURITY.md documenting the threat model",
-    ],
-  },
-  {
-    id: "C",
-    label: "Milestone C",
-    title: "Signal Protocol + Go Backend",
-    status: "active",
-    summary: "Replacing the crypto and backend with battle-tested Signal Protocol and a purpose-built Go server.",
-    tasks: [
-      "Go backend with Chi router, PostgreSQL, WebSocket hub",
-      "Signal Protocol (X3DH + Double Ratchet) for chat E2EE",
-      "Pre-key server for Signal key exchange",
-      "Media E2EE key distribution via Signal sessions",
-      "JWT auth replacing previous auth system",
-      "Encrypted message history with cursor-based pagination",
-    ],
-  },
-  {
-    id: "D",
-    label: "Milestone D",
-    title: "Servers & Channels",
-    status: "planned",
-    summary: "Discord-like community structure. Servers, text and voice channels with two distinct modes, invites, and moderation.",
-    tasks: [
-      "Server creation, membership, and role-based permissions",
-      "Text channels with Signal-encrypted messaging and configurable retention and media limits",
-      "Always-on voice channels — the channel is the call, join and leave freely",
-      "Voice channels in two modes: Performance (low-latency, audio only) and Quality (webcam, screen sharing, audio filters)",
-      "Admins can switch a voice channel's mode on the fly without dropping participants",
-      "Invite links with expiration and usage limits",
-      "Moderation: kick, ban, mute, role management",
-      "Server list sidebar, channel list, member list with presence",
-    ],
-  },
-  {
-    id: "E",
-    label: "Milestone E",
-    title: "Production & Launch",
-    status: "planned",
-    summary: "Self-hosting in under 10 minutes. Managed hosting for communities. Public launch.",
-    tasks: [
-      "Self-hosting setup script and documentation",
-      "GitHub README, SECURITY.md, architecture docs",
-      "Managed instance hosting on gethush.live for communities",
-      "Multi-region infrastructure on gethush.live (EU, US East, US West) for lower latency",
-      "Security audit and code quality pass",
-      "Public launch: Show HN, Product Hunt, r/selfhosted",
-    ],
-  },
-  {
-    id: "F",
-    label: "Milestone F",
-    title: "Desktop & Mobile",
-    status: "future",
-    summary: "Native apps with the same E2EE guarantees.",
-    tasks: [
-      "Tauri desktop app (macOS, Windows, Linux)",
-      "React Native mobile app (iOS, Android)",
-      "Native Signal Protocol via Rust crate + UniFFI bindings",
-      "Push notifications and background audio for voice channels",
-    ],
-  },
-  {
-    id: "G",
-    label: "Milestone G",
-    title: "Key Backup & Multi-Device",
-    status: "future",
-    summary: "Losing a device no longer means losing chat history.",
-    tasks: [
-      "Encrypted key backup (user passphrase, stored server-side)",
-      "Device verification via Safety Numbers or QR code",
-      "Multi-device support with Signal Protocol",
-      "Cross-device session sync",
-    ],
-  },
-];
+/* ── Status config ── */
 
 const STATUS = {
-  done: { label: "SHIPPED", color: "#4ade80", bg: "rgba(74,222,128,0.08)", border: "rgba(74,222,128,0.33)", dot: "#4ade80" },
-  active: { label: "IN PROGRESS", color: "#38bdf8", bg: "rgba(56,189,248,0.08)", border: "rgba(56,189,248,0.33)", dot: "#38bdf8" },
-  planned: { label: "PLANNED", color: "#a78bfa", bg: "rgba(167,139,250,0.08)", border: "rgba(167,139,250,0.33)", dot: "#a78bfa" },
-  future: { label: "FUTURE", color: "#64748b", bg: "rgba(100,116,139,0.06)", border: "var(--hush-border)", dot: "#475569" },
+  done:    { label: 'shipped',     color: 'var(--hush-live)',       bg: 'var(--hush-live-glow)' },
+  active:  { label: 'in progress', color: 'var(--hush-amber)',      bg: 'var(--hush-amber-ghost)' },
+  planned: { label: 'planned',     color: 'var(--hush-text-muted)', bg: 'var(--hush-elevated)' },
+  future:  { label: 'future',      color: 'var(--hush-text-ghost)', bg: 'var(--hush-elevated)' },
 };
 
+const TAG_STYLE = {
+  release:  { color: 'var(--hush-amber)',  bg: 'var(--hush-amber-ghost)' },
+  fix:      { color: 'var(--hush-live)',    bg: 'var(--hush-live-glow)' },
+  security: { color: 'var(--hush-danger)',  bg: 'var(--hush-danger-ghost)' },
+  breaking: { color: 'var(--hush-danger)',  bg: 'var(--hush-danger-ghost)' },
+};
+
+/* ── Derived data ── */
+
+const STATUS_CLASS = { done: 'shipped', active: 'progress', planned: 'planned', future: 'future' };
+const BADGE_CLASS  = { done: 'badge-shipped', active: 'badge-progress', planned: 'badge-planned', future: 'badge-future' };
+
+const shippedOrActive = milestones.filter((m) => m.status === 'done' || m.status === 'active');
+const plannedOrFuture = milestones.filter((m) => m.status === 'planned' || m.status === 'future');
+
+/** Milestones rendered in the main timeline: newest first (reverse chronological). */
+const timelineMilestones = [...shippedOrActive].reverse();
+
+/**
+ * "What's next" milestones: reversed so furthest future is at top,
+ * nearest planned at bottom (reading top-down = far future to near future).
+ */
+const whatsNextMilestones = [...plannedOrFuture].reverse();
+
+/** Map milestone ID to its releases (preserves source order: newest first). */
+function releasesForMilestone(milestoneId) {
+  return releases.filter((r) => r.milestone === milestoneId);
+}
+
+/* ── Helpers ── */
+
+/** Format ISO date string to readable short form (e.g. "23 feb 2026"). */
+function formatDate(iso) {
+  const d = new Date(iso);
+  const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  return `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/* ── Chevron SVG ── */
+
+function Chevron() {
+  return (
+    <svg className="release-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
+}
+
+/* ── Styles ── */
+
 const styles = `
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  .roadmap-root {
-    min-height: 100vh;
-    background: transparent;
-    color: var(--hush-text);
-    font-family: var(--font-sans);
-    padding: 64px 24px 96px;
-    position: relative;
-    overflow-x: hidden;
-    user-select: none;
-    z-index: 1;
-  }
-
-  .container {
-    max-width: 760px;
+  /* ── PAGE ── */
+  .roadmap-page {
+    max-width: 700px;
     margin: 0 auto;
-    position: relative;
+    padding: 72px 40px 120px;
+    font-family: var(--font-sans);
+    color: var(--hush-text);
+    -webkit-font-smoothing: antialiased;
   }
 
-  .header {
-    margin-bottom: 64px;
-  }
-
-  .eyebrow {
+  .roadmap-back {
     font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.15em;
-    color: var(--hush-amber);
-    text-transform: uppercase;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .eyebrow::before {
-    content: '';
-    display: block;
-    width: 24px;
-    height: 1px;
-    background: var(--hush-amber);
-    opacity: 0.6;
-  }
-
-  .back-link {
-    font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 0.75rem;
     color: var(--hush-text-muted);
     text-decoration: none;
     letter-spacing: 0.05em;
-    margin-bottom: 24px;
     display: inline-block;
-    transition: color 0.2s;
+    margin-bottom: 32px;
+    transition: color 200ms var(--ease-out);
   }
+  .roadmap-back:hover { color: var(--hush-amber); }
 
-  .back-link:hover {
-    color: var(--hush-amber);
-  }
-
-  .roadmap-root h1 {
-    font-family: var(--font-mono);
-    font-size: clamp(28px, 5vw, 42px);
+  .page-eyebrow {
+    font-size: 0.7rem;
     font-weight: 600;
-    color: var(--hush-text);
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-    margin-bottom: 16px;
+    color: var(--hush-amber);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
   }
-
-  .subtitle {
-    font-size: 15px;
-    color: var(--hush-text-secondary);
+  .page-title {
+    font-size: 2rem;
     font-weight: 300;
+    letter-spacing: -0.03em;
+    margin-bottom: 8px;
+  }
+  .page-sub {
+    font-size: 0.9rem;
+    color: var(--hush-text-secondary);
     line-height: 1.6;
-    max-width: 480px;
+    margin-bottom: 40px;
   }
 
-  .legend {
+  /* ── LEGEND ── */
+  .rm-legend {
     display: flex;
     gap: 20px;
     flex-wrap: wrap;
-    margin-top: 32px;
-    padding-top: 24px;
-    border-top: 1px solid var(--hush-border);
+    margin-bottom: 64px;
   }
-
-  .legend-item {
+  .rm-legend-item {
     display: flex;
     align-items: center;
     gap: 7px;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.1em;
+    font-size: 0.7rem;
+    font-weight: 500;
     color: var(--hush-text-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
-
-  .legend-dot {
-    width: 6px;
-    height: 6px;
+  .rm-legend-dot {
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
   }
+  .dot-shipped  { background: var(--hush-live); }
+  .dot-progress { background: var(--hush-amber); }
+  .dot-planned  { background: var(--hush-border-focus); border: 1px solid var(--hush-border-focus); }
+  .dot-future   { background: transparent; border: 1px solid var(--hush-text-ghost); }
 
-  .timeline {
-    position: relative;
-  }
+  /* ── WHAT'S NEXT ACCORDION ── */
+  .whats-next { margin-bottom: 40px; }
 
-  .timeline-line {
-    position: absolute;
-    left: 19.5px;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: linear-gradient(
-      to bottom,
-      transparent 0%,
-      var(--hush-border) 5%,
-      var(--hush-border) 95%,
-      transparent 100%
-    );
-  }
-
-  .milestone {
+  .whats-next-toggle {
+    width: 100%;
     display: flex;
-    gap: 24px;
-    margin-bottom: 8px;
-    position: relative;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--hush-surface);
+    border: 1px solid transparent;
+    border-radius: 0;
+    cursor: pointer;
+    color: var(--hush-text);
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: background 120ms var(--ease-out);
+  }
+  .whats-next-toggle:hover { background: var(--hush-elevated); }
+
+  .whats-next-count {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--hush-text-muted);
+    letter-spacing: 0.08em;
+    padding: 1px 7px;
+    background: var(--hush-elevated);
   }
 
-  .milestone-dot-col {
+  .whats-next-chevron {
+    margin-left: auto;
+    color: var(--hush-text-ghost);
+    transition: transform 200ms var(--ease-out);
     flex-shrink: 0;
-    width: 40px;
+  }
+  .whats-next.open .whats-next-chevron { transform: rotate(90deg); }
+
+  .whats-next-body {
+    display: none;
+    padding-top: 4px;
+  }
+  .whats-next.open .whats-next-body { display: block; }
+
+  /* ── TIMELINE ── */
+  .rm-timeline {
+    position: relative;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    padding-top: 18px;
+  }
+  .rm-timeline::before {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 10px;
+    bottom: 10px;
+    width: 1px;
+    background: var(--hush-border);
+    z-index: 0;
   }
 
-  .milestone-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    border: 1px solid;
+  /* ── MILESTONE ── */
+  .rm-milestone {
     position: relative;
-    z-index: 1;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    flex-shrink: 0;
+    padding-left: 36px;
+    margin-bottom: 4px;
   }
-
-  .milestone-dot.done {
-    background: #4ade80;
-    border-color: #4ade80;
-    box-shadow: 0 0 8px rgba(74,222,128,0.4);
-  }
-
-  .milestone-dot.active {
-    background: #38bdf8;
-    border-color: #38bdf8;
-    box-shadow: 0 0 12px rgba(56,189,248,0.6);
-    animation: roadmap-pulse 2s ease-in-out infinite;
-  }
-
-  .milestone-dot.planned {
-    background: transparent;
-    border-color: #a78bfa;
-  }
-
-  .milestone-dot.future {
-    background: transparent;
-    border-color: var(--hush-text-ghost);
-  }
-
-  @keyframes roadmap-pulse {
-    0%, 100% { box-shadow: 0 0 8px rgba(56,189,248,0.4); }
-    50% { box-shadow: 0 0 16px rgba(56,189,248,0.8), 0 0 32px rgba(56,189,248,0.2); }
-  }
-
-  .milestone-card {
-    flex: 1;
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
-    padding: 18px 20px;
-    cursor: pointer;
-    transition: background 0.2s ease;
-    margin-bottom: 12px;
-    background: var(--hush-surface);
-    user-select: none;
-  }
-
-  @media (hover: hover) {
-    .milestone-card:hover,
-    .milestone-card.open:hover {
-      background: var(--hush-elevated);
-    }
-  }
-
-  .milestone-card.open {
-    background: var(--hush-surface);
-  }
-
-  .card-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .card-meta {
+  .rm-milestone-dot {
+    position: absolute;
+    left: 0;
+    top: 12px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 1px solid var(--hush-border-hover);
+    background: var(--hush-black);
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
+    z-index: 1;
+  }
+  .rm-milestone-dot-inner {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+  .rm-milestone.shipped .rm-milestone-dot-inner  { background: var(--hush-live); box-shadow: 0 0 6px var(--hush-live-glow); }
+  .rm-milestone.progress .rm-milestone-dot-inner { background: var(--hush-amber); box-shadow: 0 0 6px var(--hush-amber-glow); }
+  .rm-milestone.planned .rm-milestone-dot-inner  { background: var(--hush-border-focus); }
+  .rm-milestone.future .rm-milestone-dot-inner   { background: transparent; border: 1px solid var(--hush-text-ghost); }
+
+  .rm-milestone-card {
+    background: var(--hush-surface);
+    padding: 20px 24px;
+    margin-bottom: 2px;
+    border: 1px solid transparent;
+    border-radius: 0;
+  }
+  .rm-milestone.planned .rm-milestone-card,
+  .rm-milestone.future  .rm-milestone-card { opacity: 0.55; }
+
+  .rm-milestone-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .rm-milestone-id {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--hush-text-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .rm-milestone-badge {
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 0;
+  }
+  .badge-shipped  { color: var(--hush-live);        background: var(--hush-live-glow); }
+  .badge-progress { color: var(--hush-amber);       background: var(--hush-amber-ghost); border: 1px solid var(--hush-amber-dim); }
+  .badge-planned  { color: var(--hush-text-muted);  background: var(--hush-elevated); }
+  .badge-future   { color: var(--hush-text-ghost);  background: var(--hush-elevated); }
+
+  .rm-milestone-title {
+    font-size: 1.1rem;
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    margin-top: 8px;
     margin-bottom: 6px;
   }
-
-  .milestone-id {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--hush-text-ghost);
-    letter-spacing: 0.08em;
-  }
-
-  .status-badge {
-    font-family: var(--font-mono);
-    font-size: 9px;
-    font-weight: 500;
-    letter-spacing: 0.12em;
-    padding: 2px 7px;
-    border-radius: 0;
-    border: 1px solid;
-  }
-
-  .card-title {
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--hush-text);
-    letter-spacing: -0.01em;
-    line-height: 1.3;
-  }
-
-  .card-summary {
-    font-size: 13px;
+  .rm-milestone-desc {
+    font-size: 0.85rem;
     color: var(--hush-text-secondary);
-    line-height: 1.6;
-    margin-top: 8px;
-    font-weight: 300;
+    line-height: 1.55;
   }
 
-  .chevron {
-    color: var(--hush-text-ghost);
-    font-size: 12px;
-    transition: transform 0.2s ease, color 0.2s ease;
-    flex-shrink: 0;
-    margin-top: 2px;
-    font-family: var(--font-mono);
-  }
-
-  .chevron.open {
-    transform: rotate(90deg);
-    color: var(--hush-text-muted);
-  }
-
-  .tasks {
-    overflow: hidden;
-    max-height: 0;
-    transition: max-height 0.3s ease, opacity 0.3s ease;
-    opacity: 0;
-  }
-
-  .tasks.open {
-    max-height: 400px;
-    opacity: 1;
-  }
-
-  .tasks-inner {
-    padding-top: 16px;
-    border-top: 1px solid var(--hush-border);
-    margin-top: 14px;
+  /* ── RELEASES ── */
+  .rm-releases {
+    padding-left: 36px;
+    margin-bottom: 4px;
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 2px;
   }
 
-  .task-item {
+  .rm-release { position: relative; }
+
+  .rm-release-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+    text-align: left;
+    transition: background 120ms;
+    color: var(--hush-text);
+    font-family: var(--font-sans);
+    position: relative;
+  }
+  .rm-release-toggle:hover { background: var(--hush-surface); }
+  .rm-release-toggle:hover .release-chevron { color: var(--hush-text-secondary); }
+  .rm-release-toggle:hover .rm-release-title { color: var(--hush-text); }
+
+  .rm-release-dot {
+    position: absolute;
+    left: -23px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--hush-border-focus);
+    border: 1px solid var(--hush-border-hover);
+    flex-shrink: 0;
+    z-index: 1;
+  }
+  .rm-release.current .rm-release-dot {
+    background: var(--hush-amber);
+    border-color: var(--hush-amber);
+    box-shadow: 0 0 0 3px var(--hush-amber-ghost);
+    animation: hush-pulse 2s ease-in-out infinite;
+  }
+
+  .rm-release-version {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--hush-text);
+    min-width: 110px;
+  }
+  .rm-release.current .rm-release-version { color: var(--hush-amber); }
+
+  .rm-release-date {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--hush-text-muted);
+    min-width: 80px;
+  }
+
+  .rm-release-title {
+    font-size: 0.85rem;
+    color: var(--hush-text-secondary);
+    flex: 1;
+    transition: color 120ms;
+  }
+
+  .rm-release-tags {
+    display: flex;
+    gap: 6px;
+  }
+  .rm-release-tag {
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 0;
+  }
+
+  .rm-current-pill {
+    font-size: 0.6rem;
+    font-weight: 500;
+    color: var(--hush-amber);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 1px 7px;
+    background: var(--hush-amber-ghost);
+    border: 1px solid var(--hush-amber-dim);
+    border-radius: 0;
+  }
+
+  .release-chevron {
+    color: var(--hush-text-ghost);
+    transition: transform 200ms var(--ease-out), color 120ms;
+    flex-shrink: 0;
+  }
+  .rm-release.open .release-chevron { transform: rotate(90deg); }
+
+  /* ── RELEASE BODY ── */
+  .rm-release-body {
+    display: none;
+    padding: 0 16px 12px 16px;
+    background: var(--hush-surface);
+    border-top: 1px solid var(--hush-border);
+  }
+  .rm-release.open .rm-release-body { display: block; }
+  .rm-release.open .rm-release-toggle { background: var(--hush-surface); }
+
+  .rm-change-group { margin-top: 16px; }
+  .rm-change-group:first-child { margin-top: 12px; }
+
+  .rm-change-group-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--hush-text-muted);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .rm-change-group-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--hush-border);
+  }
+
+  .rm-change-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .rm-change-item {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    font-family: var(--font-mono);
-    font-size: 11.5px;
+    gap: 8px;
+    font-size: 0.82rem;
     color: var(--hush-text-secondary);
     line-height: 1.5;
   }
-
-  .task-check {
+  .rm-change-item::before {
+    content: '\\2014';
+    color: var(--hush-text-ghost);
     flex-shrink: 0;
+    font-size: 0.75rem;
     margin-top: 1px;
-    font-size: 10px;
   }
 
-  .footer-note {
-    margin-top: 56px;
-    padding-top: 24px;
+  /* ── PROGRESS NOTE ── */
+  .rm-progress-note {
+    padding-left: 36px;
+    margin-bottom: 4px;
+  }
+  .rm-progress-note-inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--hush-amber-ghost);
+    border-left: 2px solid var(--hush-amber-dim);
+    border-radius: 0;
+  }
+  .rm-progress-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--hush-amber);
+    animation: hush-pulse 2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  .rm-progress-note-text {
+    font-size: 0.8rem;
+    color: var(--hush-amber);
+    font-weight: 400;
+  }
+
+  /* ── SPACER ── */
+  .rm-spacer { height: 28px; }
+
+  /* ── FOOTER ── */
+  .rm-footer {
+    margin-top: 96px;
+    padding-top: 32px;
     border-top: 1px solid var(--hush-border);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    flex-wrap: gap;
+    flex-wrap: wrap;
     gap: 12px;
   }
-
-  .footer-text {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--hush-text-ghost);
-    letter-spacing: 0.05em;
-  }
-
-  .footer-link {
-    font-family: var(--font-mono);
-    font-size: 11px;
+  .rm-footer-text {
+    font-size: 0.75rem;
     color: var(--hush-text-muted);
-    text-decoration: none;
-    letter-spacing: 0.05em;
-    transition: color 0.2s;
   }
-
-  .footer-link:hover {
+  .rm-footer-links {
+    display: flex;
+    gap: 24px;
+  }
+  .rm-footer-link {
     color: var(--hush-amber);
+    text-decoration: none;
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: color 120ms;
+  }
+  .rm-footer-link:hover { color: var(--hush-amber-bright); }
+
+  /* ── ANIMATIONS ── */
+  @keyframes hush-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .rm-milestone, .rm-releases, .rm-progress-note {
+    animation: fade-up 0.35s var(--ease-out) both;
   }
 
-  @media (max-width: 520px) {
-    .roadmap-root { padding: 40px 16px 64px; }
-    h1 { font-size: 26px; }
-    .legend { gap: 14px; }
+  /* ── RESPONSIVE ── */
+  @media (max-width: 640px) {
+    .roadmap-page { padding: 40px 16px 64px; }
+    .page-title { font-size: 1.4rem; }
+    .rm-legend { gap: 12px; }
+    .rm-release-version { min-width: 80px; }
+    .rm-release-date { display: none; }
   }
 `;
 
+/* ── Component ── */
+
 export default function Roadmap() {
-  const [open, setOpen] = useState(null);
+  const [openReleases, setOpenReleases] = useState(new Set());
+  const [whatsNextOpen, setWhatsNextOpen] = useState(false);
 
   useEffect(() => {
     const html = document.documentElement;
     const body = document.body;
-    const root = document.getElementById("root");
+    const root = document.getElementById('root');
     const prev = {
       html: { overflow: html.style.overflow, height: html.style.height },
       body: { overflow: body.style.overflow, height: body.style.height },
       root: root ? { overflow: root.style.overflow, height: root.style.height } : null,
     };
-    html.style.overflow = "auto";
-    html.style.height = "auto";
-    body.style.overflow = "auto";
-    body.style.height = "auto";
+    html.style.overflow = 'auto';
+    html.style.height = 'auto';
+    body.style.overflow = 'auto';
+    body.style.height = 'auto';
     if (root) {
-      root.style.overflow = "auto";
-      root.style.height = "auto";
+      root.style.overflow = 'auto';
+      root.style.height = 'auto';
     }
     return () => {
       html.style.overflow = prev.html.overflow;
@@ -483,100 +550,188 @@ export default function Roadmap() {
     };
   }, []);
 
-  const toggle = (id) => setOpen((prev) => (prev === id ? null : id));
+  function toggleRelease(version) {
+    setOpenReleases((prev) => {
+      const next = new Set(prev);
+      if (next.has(version)) {
+        next.delete(version);
+      } else {
+        next.add(version);
+      }
+      return next;
+    });
+  }
+
+  function renderMilestoneCard(m) {
+    const cls = STATUS_CLASS[m.status];
+    const badge = BADGE_CLASS[m.status];
+    const s = STATUS[m.status];
+
+    return (
+      <div className={`rm-milestone ${cls}`} key={m.id}>
+        <div className="rm-milestone-dot">
+          <div className="rm-milestone-dot-inner" />
+        </div>
+        <div className="rm-milestone-card">
+          <div className="rm-milestone-header">
+            <span className="rm-milestone-id">Milestone {m.id}</span>
+            <span className={`rm-milestone-badge ${badge}`}>{s.label}</span>
+          </div>
+          <div className="rm-milestone-title">{m.title}</div>
+          <div className="rm-milestone-desc">{m.summary}</div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderRelease(r) {
+    const isOpen = openReleases.has(r.version);
+    const isCurrent = r.current === true;
+    const releaseClass = [
+      'rm-release',
+      isOpen ? 'open' : '',
+      isCurrent ? 'current' : '',
+    ].filter(Boolean).join(' ');
+
+    return (
+      <div className={releaseClass} key={r.version}>
+        <button
+          className="rm-release-toggle"
+          onClick={() => toggleRelease(r.version)}
+          type="button"
+        >
+          <span className="rm-release-dot" />
+          <span className="rm-release-version">v{r.version}</span>
+          <span className="rm-release-date">{formatDate(r.date)}</span>
+          <span className="rm-release-title">{r.title}</span>
+          <div className="rm-release-tags">
+            {r.tags.map((tag) => {
+              const ts = TAG_STYLE[tag];
+              return (
+                <span
+                  className="rm-release-tag"
+                  key={tag}
+                  style={ts ? { color: ts.color, background: ts.bg } : undefined}
+                >
+                  {tag}
+                </span>
+              );
+            })}
+          </div>
+          {isCurrent && <span className="rm-current-pill">current</span>}
+          <Chevron />
+        </button>
+
+        <div className="rm-release-body">
+          {r.groups.map((g) => (
+            <div className="rm-change-group" key={g.label}>
+              <div className="rm-change-group-label">{g.label}</div>
+              <ul className="rm-change-list">
+                {g.items.map((item, i) => (
+                  <li className="rm-change-item" key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderReleases(milestoneId) {
+    const rels = releasesForMilestone(milestoneId);
+    if (rels.length === 0) return null;
+    return (
+      <div className="rm-releases">
+        {rels.map(renderRelease)}
+      </div>
+    );
+  }
 
   return (
     <>
       <style>{styles}</style>
-      <div className="roadmap-root">
-        <div className="container">
+      <div className="roadmap-page">
 
-          <div className="header">
-            <Link to="/" className="back-link">← Hush</Link>
-            <div className="eyebrow">gethush.live</div>
-            <h1>Product Roadmap</h1>
-            <p className="subtitle">
-              E2EE communication built on Signal Protocol + LiveKit.
-              Open source, self-hostable, no tracking.
-            </p>
-            <div className="legend">
-              {Object.entries(STATUS).map(([key, s]) => (
-                <div className="legend-item" key={key}>
-                  <div className="legend-dot" style={{ background: s.dot }} />
-                  {s.label}
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* Back link */}
+        <Link to="/" className="roadmap-back">&larr; hush</Link>
 
-          <div className="timeline">
-            <div className="timeline-line" />
+        {/* Header */}
+        <p className="page-eyebrow">gethush.live</p>
+        <h1 className="page-title">product roadmap</h1>
+        <p className="page-sub">
+          E2EE communication built on Signal Protocol + LiveKit.<br />
+          Open source, self-hostable, no tracking.
+        </p>
 
-            {milestones.map((m) => {
-              const s = STATUS[m.status];
-              const isOpen = open === m.id;
-
-              return (
-                <div className="milestone" key={m.id}>
-                  <div className="milestone-dot-col">
-                    <div className={`milestone-dot ${m.status}`} />
-                  </div>
-
-                  <div
-                    className={`milestone-card ${isOpen ? "open" : ""}`}
-                    onClick={() => toggle(m.id)}
-                  >
-                    <div className="card-header">
-                      <div style={{ flex: 1 }}>
-                        <div className="card-meta">
-                          <span className="milestone-id">{m.label}</span>
-                          <span
-                            className="status-badge"
-                            style={{
-                              color: s.color,
-                              borderColor: s.border,
-                              background: s.bg,
-                            }}
-                          >
-                            {s.label}
-                          </span>
-                        </div>
-                        <div className="card-title">{m.title}</div>
-                        <div className="card-summary">{m.summary}</div>
-                      </div>
-                      <span className={`chevron ${isOpen ? "open" : ""}`}>▶</span>
-                    </div>
-
-                    <div className={`tasks ${isOpen ? "open" : ""}`}>
-                      <div className="tasks-inner">
-                        {m.tasks.map((t, i) => (
-                          <div className="task-item" key={i}>
-                            <span
-                              className="task-check"
-                              style={{ color: s.color, opacity: m.status === "future" ? 0.3 : 0.7 }}
-                            >
-                              {m.status === "done" ? "✓" : "·"}
-                            </span>
-                            <span>{t}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="footer-note">
-            <div>
-              <span className="footer-text">// open source, </span>
-              <a className="footer-link" href="https://github.com/YarinCardillo/hush-app" target="_blank" rel="noopener noreferrer">github.com/YarinCardillo/hush-app</a>
-            </div>
-            <a className="footer-link" href="https://gethush.live" target="_blank" rel="noopener noreferrer">gethush.live →</a>
-          </div>
-
+        {/* Legend */}
+        <div className="rm-legend">
+          <div className="rm-legend-item"><div className="rm-legend-dot dot-shipped" /> shipped</div>
+          <div className="rm-legend-item"><div className="rm-legend-dot dot-progress" /> in progress</div>
+          <div className="rm-legend-item"><div className="rm-legend-dot dot-planned" /> planned</div>
+          <div className="rm-legend-item"><div className="rm-legend-dot dot-future" /> future</div>
         </div>
+
+        {/* What's next accordion */}
+        {plannedOrFuture.length > 0 && (
+          <div className={`whats-next ${whatsNextOpen ? 'open' : ''}`}>
+            <button
+              className="whats-next-toggle"
+              onClick={() => setWhatsNextOpen((v) => !v)}
+              type="button"
+            >
+              <span>what&rsquo;s next</span>
+              <span className="whats-next-count">{plannedOrFuture.length}</span>
+              <svg className="whats-next-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+            <div className="whats-next-body">
+              <div className="rm-timeline">
+                {whatsNextMilestones.map((m, i) => (
+                  <div key={m.id}>
+                    {renderMilestoneCard(m)}
+                    {i < whatsNextMilestones.length - 1 && <div className="rm-spacer" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Main timeline */}
+        <div className="rm-timeline">
+          {timelineMilestones.map((m, i) => (
+            <div key={m.id}>
+              {renderMilestoneCard(m)}
+              {renderReleases(m.id)}
+
+              {/* Progress note after the active milestone's releases */}
+              {m.status === 'active' && (
+                <div className="rm-progress-note">
+                  <div className="rm-progress-note-inner">
+                    <div className="rm-progress-dot" />
+                    <span className="rm-progress-note-text">
+                      milestone {m.id} in progress — more releases incoming
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {i < timelineMilestones.length - 1 && <div className="rm-spacer" />}
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <footer className="rm-footer">
+          <span className="rm-footer-text">hush is open source and self-hostable.</span>
+          <div className="rm-footer-links">
+            <a className="rm-footer-link" href="https://github.com/YarinCardillo/hush-app" target="_blank" rel="noopener noreferrer">github</a>
+            <a className="rm-footer-link" href="https://github.com/YarinCardillo/hush-app/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">raw changelog</a>
+          </div>
+        </footer>
+
       </div>
     </>
   );
