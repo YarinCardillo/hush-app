@@ -304,8 +304,10 @@ const styles = `
     user-select: none;
   }
 
-  .milestone-card:hover {
-    background: var(--hush-elevated);
+  @media (hover: hover) {
+    .milestone-card:hover {
+      background: var(--hush-elevated);
+    }
   }
 
   .milestone-card.open {
