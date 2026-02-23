@@ -34,7 +34,7 @@ Audit performed to address third-party scan results (SafeToShip, target gethush.
 | Area | Status | Action |
 |-|-|-|
 | `roomName`, `participantName` (LiveKit token API) | Resolved | Validation added in server; limits and pattern documented in SECURITY.md. |
-| `roomId`, `roomName`, `createdAt` (rooms/created, delete-if-empty) | Resolved | Validation and limits documented and enforced in server. |
+| `roomId`, `roomName`, `createdAt` (rooms/created) | Resolved | Validation and limits documented and enforced in server. |
 
 ### Secrets and dependencies
 

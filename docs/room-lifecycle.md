@@ -30,28 +30,19 @@ Clients show a small countdown (bottom-right); when time reaches zero or the ser
 ## When a user leaves
 
 1. **LiveKit:** The client calls `disconnectRoom()`: local tracks are stopped, mic pipeline cleaned up, `room.disconnect()` is called. The participant leaves the LiveKit room.
-2. **Matrix:** The client calls `client.leaveRoom(matrixRoomId)` so the user’s membership in the Matrix room is updated (they are no longer in the room).
-3. **Delete-if-empty:** The client sends `POST /api/rooms/delete-if-empty` with body `{ roomId: matrixRoomId }`. The server checks whether that Matrix room has zero members; if so, it deletes the room from Synapse via the Admin API (purge). If the room still has members, nothing is deleted.
-4. **Client cleanup:** Session storage is cleared (token, room name, matrix room id, etc.). If the user was a guest, logout is triggered. The app navigates to Home.
+2. **Client cleanup:** Session storage is cleared (token, room name, matrix room id, etc.). If the user was a guest, logout is triggered. The app navigates to Home.
 
-So: every leaver leaves the Matrix room and then asks the server to delete the room **only if it is empty**. The last person to leave triggers the actual deletion when the server sees 0 members.
+Room deletion is handled server-side by the orphan cleanup job (see below) — the client does not attempt to delete the room on leave.
 
 ---
 
-## Server: delete-if-empty endpoint
+## Orphan room cleanup
 
-| Item | Detail |
-|------|--------|
-| Endpoint | `POST /api/rooms/delete-if-empty` |
-| Body | `{ "roomId": "<Matrix room ID, e.g. !xxx:server>" }` |
-| Response | `{ "deleted": true }` or `{ "deleted": false, "reason": "..." }` |
+The server runs a periodic job (every 5 seconds) that deletes rooms abandoned by all participants. A room is considered orphaned when it has had **0 active LiveKit participants for longer than 2 minutes** (grace period). The grace period prevents false positives during the link-join flow, where Matrix membership is created a few seconds before the LiveKit connection.
 
-The server uses the **Synapse Admin API**:
+When the grace period expires the server calls `DELETE /_synapse/admin/v1/rooms/<room_id>` with `{ "purge": true }`, which force-kicks any remaining Matrix members and removes the room from the database in one call.
 
-1. `GET /_synapse/admin/v1/rooms/<room_id>` to read `joined_members`.
-2. If `joined_members === 0`, `DELETE /_synapse/admin/v1/rooms/<room_id>` with body `{ "purge": true, "block": false }` to remove the room from the database.
-
-This requires a Synapse admin access token (see below). If the token is not configured, the server cannot call the Admin API and will return `deleted: false` with an appropriate reason; rooms then accumulate until the token is set.
+This handles all leave scenarios: clean leave via button, tab crash, network drop, or iOS Safari closing the page without firing JS cleanup.
 
 ---
 
@@ -65,12 +56,12 @@ This requires a Synapse admin access token (see below). If the token is not conf
 
 ### Required for deletion and limits
 
-- **`SYNAPSE_ADMIN_TOKEN`** (server env): Access token of a Synapse **admin** user. Used for Admin API (delete-if-empty, room count for can-create, expiry delete). If unset, empty rooms are not deleted and room count is unavailable (can-create will deny).
+- **`SYNAPSE_ADMIN_TOKEN`** (server env): Access token of a Synapse **admin** user. Used for Admin API (room count for can-create, orphan cleanup, expiry delete). If unset, empty rooms are not deleted and room count is unavailable (can-create will deny).
 - **`MATRIX_HOMESERVER_URL`** (server env): Base URL of the Synapse server (e.g. `http://localhost:8008` or `http://synapse:8008` in Docker). The server uses it for both whoami (token validation) and Admin API (`/_synapse/admin/...`).
 
 ### How to get a Synapse admin token (self-hosting)
 
-The Hush server needs a Synapse **admin** access token to call the Admin API (room count for can-create, delete-if-empty, room expiry). Without it, room creation is blocked with "Room availability check unavailable" and empty rooms are not deleted.
+The Hush server needs a Synapse **admin** access token to call the Admin API (room count for can-create, orphan cleanup, room expiry). Without it, room creation is blocked with "Room availability check unavailable" and empty rooms are not deleted.
 
 **Prerequisites:** Synapse running (e.g. `docker-compose up -d`), and `registration_shared_secret` present in `synapse/data/homeserver.yaml`. The config generator (`./scripts/generate-synapse-config.sh`) and template include it; the value comes from `.env` as `SYNAPSE_REGISTRATION_SHARED_SECRET` (default `changeme`). If you generated config before that was added, add manually under "Registration and guests":
 
@@ -116,7 +107,7 @@ Replace `admin` and `YOUR_ADMIN_PASSWORD`. In the JSON response, copy the value 
    docker-compose up -d
    ```
 
-Room limits (can-create, delete-if-empty, expiry) will then work. Optionally set `MAX_GUEST_ROOMS`, `GUEST_ROOM_MAX_DURATION_MS`, and `MAX_PARTICIPANTS_PER_ROOM` in `.env`; they are passed through to the Hush container with defaults (30, 3h, 10).
+Room limits (can-create, orphan cleanup, expiry) will then work. Optionally set `MAX_GUEST_ROOMS`, `GUEST_ROOM_MAX_DURATION_MS`, and `MAX_PARTICIPANTS_PER_ROOM` in `.env`; they are passed through to the Hush container with defaults (30, 3h, 10).
 
 ---
 
@@ -209,8 +200,8 @@ flowchart LR
 |-------|--------|---------|--------|
 | Create room | Client calls `createRoom()` with 8-hex suffix alias after `GET /api/rooms/can-create` | — | can-create uses Synapse room count; creator calls `POST /api/rooms/created` |
 | Join via link | Client joins via `joinRoom(#name-suffix:server)` after `/?join=` redirect | Client gets token from `POST /api/livekit/token` | Token denied with 403 if room at `MAX_PARTICIPANTS_PER_ROOM` |
-| User leaves | Client calls `leaveRoom(roomId)` | Client calls `room.disconnect()` | Client calls `POST /api/rooms/delete-if-empty` |
-| Room empty? | — | — | Server checks `joined_members`; if 0, deletes room via Admin API |
+| User leaves | — | Client calls `room.disconnect()` | — |
+| Room orphaned? | — | — | Orphan cleanup job: after 2-min grace with 0 LK participants, deletes room via Admin API |
 | Room expired? | — | Server removes all participants | Periodic job: disconnect via LiveKit, delete room via Admin API |
 
-Rooms are removed from Synapse when: (1) the last participant has left and the server has confirmed the room has zero members (delete-if-empty), or (2) the guest room duration has elapsed (expiry job).
+Rooms are removed from Synapse when: (1) the orphan cleanup job detects the room has had no active LiveKit participants for 2 minutes (handles all leave/crash scenarios), or (2) the guest room duration has elapsed (expiry job).

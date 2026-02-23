@@ -375,23 +375,6 @@ export default function Room() {
     };
   }, [rehydrationAttempted, isAuthenticated, navigate, connectRoom, disconnectRoom, roomName]);
 
-  // Best-effort cleanup on tab close / navigation away
-  useEffect(() => {
-    const handler = () => {
-      const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
-      if (matrixRoomId) {
-        navigator.sendBeacon(
-          '/api/rooms/delete-if-empty',
-          new Blob(
-            [JSON.stringify({ roomId: matrixRoomId })],
-            { type: 'application/json' },
-          ),
-        );
-      }
-    };
-    window.addEventListener('pagehide', handler);
-    return () => window.removeEventListener('pagehide', handler);
-  }, []);
 
   // Ensure only one sidebar is open at a time
   useEffect(() => {
@@ -630,26 +613,6 @@ export default function Room() {
     } catch (err) {
       console.error('[Room] Leave/disconnect error:', err);
     } finally {
-      // Leave Matrix room so membership drops; then ask server to delete room if now empty
-      if (matrixRoomId) {
-        try {
-          const client = getMatrixClient();
-          if (client) await client.leaveRoom(matrixRoomId);
-        } catch (e) {
-          // Ignore (e.g. already left, network)
-        }
-        // Small delay so Synapse processes the leave before we check membership
-        await new Promise((r) => setTimeout(r, 1000));
-        try {
-          await fetch('/api/rooms/delete-if-empty', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ roomId: matrixRoomId }),
-          });
-        } catch (e) {
-          // Best-effort; don't block navigation
-        }
-      }
       await cleanupAndNavigate();
     }
   };

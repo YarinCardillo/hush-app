@@ -121,7 +121,7 @@ API request body fields are validated server-side. Rules are implemented in `ser
 |-|-|-|
 | `roomName` | `POST /api/livekit/token`, `POST /api/rooms/created` | Non-empty string, pattern `[a-zA-Z0-9._=-]+`, max 256 chars. Matches client room/join alias local part. |
 | `participantName` | `POST /api/livekit/token` | Optional; trimmed; max 128 chars; no control characters. Default `Participant` if empty. |
-| `roomId` | `POST /api/rooms/delete-if-empty`, `POST /api/rooms/created` | Matrix room ID format `!opaque:server`, max 255 chars. |
+| `roomId` | `POST /api/rooms/created` | Matrix room ID format `!opaque:server`, max 255 chars. |
 | `createdAt` | `POST /api/rooms/created` | Number (ms); must be within the last 24 hours and not in the future. |
 
 Chat message content is handled by the client (trimmed) and by Matrix/Synapse; the future Go backend will define message length and sanitization policy (no HTML/script injection).

@@ -9,7 +9,7 @@ Index of project documentation. Root-level docs stay in the repo root; detailed 
 | Doc | Description |
 |-----|-------------|
 | [reference/MATRIX_REFERENCE.md](reference/MATRIX_REFERENCE.md) | Matrix protocol reference for Hush: Client-Server API, auth, sync, rooms, E2EE, to-device, media. Spec v1.17. |
-| [room-lifecycle.md](room-lifecycle.md) | Room creation, leave flow, empty-room deletion, and limits: `MAX_GUEST_ROOMS`, `GUEST_ROOM_MAX_DURATION_MS`, `MAX_PARTICIPANTS_PER_ROOM`; `delete-if-empty` and expiry job; Synapse Admin API, [SYNAPSE_ADMIN_TOKEN setup](room-lifecycle.md#how-to-get-a-synapse-admin-token-self-hosting). |
+| [room-lifecycle.md](room-lifecycle.md) | Room creation, leave flow, orphan cleanup (2-min grace), and limits: `MAX_GUEST_ROOMS`, `GUEST_ROOM_MAX_DURATION_MS`, `MAX_PARTICIPANTS_PER_ROOM`; expiry job; Synapse Admin API, [SYNAPSE_ADMIN_TOKEN setup](room-lifecycle.md#how-to-get-a-synapse-admin-token-self-hosting). |
 
 ---
 
