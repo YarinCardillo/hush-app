@@ -689,6 +689,8 @@ a[href]:active {
 
 .sidebar-desktop.sidebar-desktop-open {
   width: 260px;
+  position: relative;
+  z-index: 50;
 }
 
 .sidebar-desktop-inner {

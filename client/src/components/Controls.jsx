@@ -117,7 +117,7 @@ export default function Controls({
   isMobile = false,
   mediaE2EEUnavailable = false,
   onScreenShare,
-  onSwitchScreen,
+  onOpenQualityOrWindow,
   onMic,
   onWebcam,
   onMicDeviceSwitch,
@@ -154,12 +154,12 @@ export default function Controls({
         </button>
       )}
 
-      {/* Switch Screen (only visible when sharing) */}
+      {/* Change quality or window (only visible when sharing) */}
       {isScreenSharing && (
         <button
           style={{ ...styles.iconBtn(isScreenSharing), width: btnSize, height: btnSize }}
-          onClick={onSwitchScreen}
-          title="Switch screen/window"
+          onClick={onOpenQualityOrWindow}
+          title="Change quality or window"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points="16 3 21 3 21 8" />

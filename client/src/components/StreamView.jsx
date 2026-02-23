@@ -103,9 +103,11 @@ const styles = {
   }),
 };
 
-export default function StreamView({ track, audioTrack, label, source, isLocal, onUnwatch, objectFit }) {
+export default function StreamView({ track, audioTrack, label, source, isLocal, onUnwatch, objectFit, standByAfterMs }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
+  const containerRef = useRef(null);
+  const standbyTimerRef = useRef(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -185,10 +187,60 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
     return () => document.removeEventListener('keydown', handleKey);
   }, [isFullscreen]);
 
+  // Stand-by: when view is out of focus (not in viewport or tab hidden) for standByAfterMs, call onUnwatch
+  useEffect(() => {
+    if (!onUnwatch || !standByAfterMs || standByAfterMs <= 0 || !containerRef.current) return;
+
+    const el = containerRef.current;
+    const inViewRef = { current: false };
+
+    const clearStandbyTimer = () => {
+      if (standbyTimerRef.current) {
+        clearTimeout(standbyTimerRef.current);
+        standbyTimerRef.current = null;
+      }
+    };
+
+    const scheduleStandby = () => {
+      clearStandbyTimer();
+      standbyTimerRef.current = setTimeout(() => {
+        standbyTimerRef.current = null;
+        onUnwatch();
+      }, standByAfterMs);
+    };
+
+    const updateFocus = (inView, docVisible) => {
+      inViewRef.current = inView;
+      const nowInFocus = inView && docVisible;
+      if (nowInFocus) {
+        clearStandbyTimer();
+      } else {
+        scheduleStandby();
+      }
+    };
+
+    const observer = new IntersectionObserver(
+      ([entry]) => updateFocus(entry.isIntersecting, document.visibilityState === 'visible'),
+      { threshold: 0 }
+    );
+    observer.observe(el);
+
+    const onVisibility = () => updateFocus(inViewRef.current, document.visibilityState === 'visible');
+
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearStandbyTimer();
+    };
+  }, [onUnwatch, standByAfterMs]);
+
   const toggleFullscreen = () => setIsFullscreen((prev) => !prev);
 
   return (
     <div
+      ref={containerRef}
       style={styles.container(isFullscreen)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -248,7 +300,7 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
 
       {isLocal && <div style={styles.localBadge}>You</div>}
 
-      {!isLocal && onUnwatch && (
+      {onUnwatch && (
         <button
           style={styles.unwatchBtn(isHovered)}
           onClick={(e) => { e.stopPropagation(); onUnwatch(); }}

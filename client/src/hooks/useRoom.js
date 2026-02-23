@@ -494,10 +494,14 @@ export function useRoom() {
   );
 
   // ─── Change Quality ───────────────────────────────────
-  const changeQuality = useCallback(async (qualityKey) => {
-    if (!roomRef.current) return;
-    await trackChangeQuality(roomRef.current, { localTracksRef }, qualityKey);
-  }, []);
+  const changeQuality = useCallback(
+    async (qualityKey) => {
+      if (!roomRef.current) return;
+      await trackChangeQuality(roomRef.current, { localTracksRef }, qualityKey);
+      scheduleLocalTracksUpdate();
+    },
+    [scheduleLocalTracksUpdate],
+  );
 
   // ─── Publish Webcam ───────────────────────────────────
   const publishWebcam = useCallback(

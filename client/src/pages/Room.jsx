@@ -7,13 +7,17 @@ import { getMatrixClient } from '../lib/matrixClient';
 import { useRoom } from '../hooks/useRoom';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDevices } from '../hooks/useDevices';
-import { DEFAULT_QUALITY, MEDIA_SOURCES, isScreenShareSource } from '../utils/constants';
-import { estimateUploadSpeed, getRecommendedQuality } from '../lib/bandwidthEstimator';
+import { DEFAULT_QUALITY, MEDIA_SOURCES, STANDBY_AFTER_MS, isScreenShareSource } from '../utils/constants';
+import {
+  estimateUploadSpeed,
+  getRecommendedQuality,
+  measureLiveUploadMbps,
+} from '../lib/bandwidthEstimator';
 import StreamView from '../components/StreamView';
 import ScreenShareCard from '../components/ScreenShareCard';
 import Controls from '../components/Controls';
-import QualitySelector from '../components/QualitySelector';
 import QualityPickerModal from '../components/QualityPickerModal';
+import QualityOrWindowModal from '../components/QualityOrWindowModal';
 import DevicePickerModal from '../components/DevicePickerModal';
 import Chat from '../components/Chat';
 
@@ -259,11 +263,17 @@ export default function Room() {
   const hadSessionRef = useRef(!!sessionStorage.getItem('hush_matrixRoomId'));
   const [roomDisplayName, setRoomDisplayName] = useState(() => decodeURIComponent(roomName));
   const [quality, setQuality] = useState(DEFAULT_QUALITY);
+  const [recommendedQualityKey, setRecommendedQualityKey] = useState(null);
+  const [recommendedUploadMbps, setRecommendedUploadMbps] = useState(null);
+  const [liveUploadMbps, setLiveUploadMbps] = useState(null);
+  const liveUploadPrevRef = useRef({ bytesSent: null, timestamp: null });
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
   const [isWebcamOn, setIsWebcamOn] = useState(false);
   const [showQualityPanel, setShowQualityPanel] = useState(false);
   const [showQualityPicker, setShowQualityPicker] = useState(false);
+  const [qualityOrWindowStep, setQualityOrWindowStep] = useState(null);
+  const [localScreenWatched, setLocalScreenWatched] = useState(false);
   const [showMicPicker, setShowMicPicker] = useState(false);
   const [showWebcamPicker, setShowWebcamPicker] = useState(false);
   const [showChatPanel, setShowChatPanel] = useState(false);
@@ -364,17 +374,48 @@ export default function Room() {
       }
     });
 
-    // Estimate upload speed for quality recommendation
-    estimateUploadSpeed().then((speed) => {
-      const rec = getRecommendedQuality(speed);
-      setQuality(rec.key);
-    });
+    // Estimate upload speed for quality recommendation (skip on localhost: assume high bandwidth)
+    const isLocalhost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    if (isLocalhost) {
+      setRecommendedQualityKey('source');
+      setRecommendedUploadMbps(100);
+      setQuality('source');
+    } else {
+      estimateUploadSpeed().then((speed) => {
+        const rec = getRecommendedQuality(speed);
+        setRecommendedQualityKey(rec.key);
+        setRecommendedUploadMbps(rec.uploadMbps);
+        setQuality(rec.key);
+      });
+    }
 
     return () => {
       disconnectRoom();
     };
   }, [rehydrationAttempted, isAuthenticated, navigate, connectRoom, disconnectRoom, roomName]);
 
+
+  // Live upload bitrate: poll outbound video stats when streaming (screen or webcam)
+  useEffect(() => {
+    const videoEntries = Array.from(localTracks.entries()).filter(
+      ([, info]) => info.source === MEDIA_SOURCES.SCREEN || info.source === MEDIA_SOURCES.WEBCAM,
+    );
+    const videoTracks = videoEntries.map(([, info]) => info.track);
+    if (videoTracks.length === 0) {
+      setLiveUploadMbps(null);
+      liveUploadPrevRef.current = { bytesSent: null, timestamp: null };
+      return;
+    }
+    const intervalId = setInterval(async () => {
+      const { bytesSent, timestamp } = liveUploadPrevRef.current;
+      const result = await measureLiveUploadMbps(videoTracks, bytesSent, timestamp);
+      liveUploadPrevRef.current = { bytesSent: result.bytesSent, timestamp: result.timestamp };
+      setLiveUploadMbps(result.mbps > 0 ? Math.round(result.mbps * 10) / 10 : null);
+    }, 2000);
+    return () => clearInterval(intervalId);
+  }, [localTracks]);
 
   // Ensure only one sidebar is open at a time
   useEffect(() => {
@@ -404,6 +445,10 @@ export default function Room() {
     showQualityPanelRef.current = showQualityPanel;
     if (showQualityPanel) setParticipantsBadge(false);
   }, [showQualityPanel]);
+
+  useEffect(() => {
+    if (!isScreenSharing) setLocalScreenWatched(false);
+  }, [isScreenSharing]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -620,12 +665,12 @@ export default function Room() {
   const allStreams = [];
   const pairedAudioTracks = new Set();
 
-  // Render local tracks (screen share, webcam)
+  // Render local tracks (screen share, webcam). Local screen only in grid when user chose "watch".
   for (const [trackSid, info] of localTracks.entries()) {
     if (info.track.kind === 'video') {
-      let audioTrack = null;
+      if (info.source === MEDIA_SOURCES.SCREEN && !localScreenWatched) continue;
 
-      // Pair screen video with screen audio
+      let audioTrack = null;
       if (info.source === MEDIA_SOURCES.SCREEN) {
         for (const [, localInfo] of localTracks.entries()) {
           if (localInfo.source === MEDIA_SOURCES.SCREEN_AUDIO) {
@@ -699,7 +744,8 @@ export default function Room() {
     }
   }
 
-  const totalCards = allStreams.length + unwatchedScreens.length;
+  const localScreenCard = isScreenSharing && !localScreenWatched;
+  const totalCards = allStreams.length + unwatchedScreens.length + (localScreenCard ? 1 : 0);
   const gridStyle = getGridStyle(totalCards, breakpoint);
 
   const heroId = pickHeroId(allStreams);
@@ -723,6 +769,9 @@ export default function Room() {
     heroIsAlone && index === unwatchedScreens.length - 1
       ? heroAloneStyle()
       : normalTileStyle;
+  // Local "You're sharing" card: hero when it's the last card (no unwatched after it)
+  const getLocalScreenCardStyle = () =>
+    heroIsAlone && unwatchedScreens.length === 0 ? heroAloneStyle() : normalTileStyle;
 
   if (!rehydrationAttempted) {
     return (
@@ -897,11 +946,19 @@ export default function Room() {
                     onUnwatch={
                       stream.type === 'remote' && stream.source === MEDIA_SOURCES.SCREEN
                         ? () => unwatchScreen(stream.id)
-                        : undefined
+                        : stream.type === 'local' && stream.source === MEDIA_SOURCES.SCREEN
+                          ? () => setLocalScreenWatched(false)
+                          : undefined
                     }
+                    standByAfterMs={stream.source === MEDIA_SOURCES.SCREEN ? STANDBY_AFTER_MS : undefined}
                   />
                 </div>
               ))}
+              {localScreenCard && (
+                <div key="local-screen-card" style={getLocalScreenCardStyle()}>
+                  <ScreenShareCard isSelf onWatch={() => setLocalScreenWatched(true)} />
+                </div>
+              )}
               {unwatchedScreens.map((screen, index) => (
                 <div key={screen.producerId} style={getUnwatchedStyle(index)}>
                   <ScreenShareCard
@@ -938,15 +995,6 @@ export default function Room() {
                   </div>
                 ))}
               </div>
-              {isScreenSharing && (
-                <div style={styles.sidebarSection}>
-                  <div style={styles.sidebarLabel}>Stream Quality</div>
-                  <QualitySelector
-                    currentQuality={quality}
-                    onSelect={handleQualityChange}
-                  />
-                </div>
-              )}
             </div>
             <div
               className={`sidebar-overlay ${showChatPanel ? 'sidebar-overlay-open' : ''}`}
@@ -968,6 +1016,14 @@ export default function Room() {
         ) : (
           <>
             <div
+              className={`sidebar-overlay ${showQualityPanel || showChatPanel ? 'sidebar-overlay-open' : ''}`}
+              onClick={() => {
+                setShowQualityPanel(false);
+                setShowChatPanel(false);
+              }}
+              aria-hidden={!showQualityPanel && !showChatPanel}
+            />
+            <div
               className={`sidebar-desktop ${showQualityPanel ? 'sidebar-desktop-open' : ''}`}
             >
               <div className="sidebar-desktop-inner" style={styles.sidebar(false)}>
@@ -984,15 +1040,6 @@ export default function Room() {
                     </div>
                   ))}
                 </div>
-                {isScreenSharing && (
-                  <div style={styles.sidebarSection}>
-                    <div style={styles.sidebarLabel}>Stream Quality</div>
-                    <QualitySelector
-                      currentQuality={quality}
-                      onSelect={handleQualityChange}
-                    />
-                  </div>
-                )}
               </div>
             </div>
             <div
@@ -1016,8 +1063,30 @@ export default function Room() {
         <OrphanAudio key={oa.id} track={oa.track} />
       ))}
 
+      {qualityOrWindowStep != null && (
+        <QualityOrWindowModal
+          step={qualityOrWindowStep}
+          currentQualityKey={quality}
+          onCancel={() => setQualityOrWindowStep(null)}
+          onGoToQualityStep={() => setQualityOrWindowStep('quality')}
+          onSelectQualityPreset={(key) => {
+            handleQualityChange(key);
+            setQualityOrWindowStep(null);
+          }}
+          onSelectWindow={() => {
+            handleSwitchScreen();
+            setQualityOrWindowStep(null);
+          }}
+          onBack={() => setQualityOrWindowStep('choice')}
+          recommendedQualityKey={recommendedQualityKey}
+          recommendedUploadMbps={recommendedUploadMbps}
+        />
+      )}
+
       {showQualityPicker && (
         <QualityPickerModal
+          recommendedQualityKey={recommendedQualityKey}
+          recommendedUploadMbps={recommendedUploadMbps}
           onSelect={handleQualityPick}
           onCancel={() => setShowQualityPicker(false)}
         />
@@ -1052,7 +1121,7 @@ export default function Room() {
         isMobile={isMobile}
         mediaE2EEUnavailable={mediaE2EEUnavailable}
         onScreenShare={handleScreenShare}
-        onSwitchScreen={handleSwitchScreen}
+        onOpenQualityOrWindow={() => setQualityOrWindowStep('choice')}
         onMic={handleMic}
         onWebcam={handleWebcam}
         onMicDeviceSwitch={handleMicDeviceSwitch}

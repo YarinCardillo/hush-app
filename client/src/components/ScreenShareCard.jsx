@@ -45,8 +45,10 @@ const styles = {
   },
 };
 
-export default function ScreenShareCard({ peerName, isLoading = false, onWatch }) {
+export default function ScreenShareCard({ peerName, isSelf = false, isLoading = false, onWatch }) {
   const [isHovered, setIsHovered] = useState(false);
+  const title = isSelf ? "You're sharing" : peerName;
+  const hint = isLoading ? 'loading stream...' : isSelf ? 'Tap to watch' : 'click to watch';
 
   return (
     <div
@@ -58,8 +60,8 @@ export default function ScreenShareCard({ peerName, isLoading = false, onWatch }
       {isLoading ? (
         <>
           <div style={styles.spinner} />
-          <div style={styles.peerName}>{peerName}</div>
-          <div style={styles.hint}>loading stream...</div>
+          <div style={styles.peerName}>{title}</div>
+          <div style={styles.hint}>{hint}</div>
         </>
       ) : (
         <>
@@ -77,8 +79,8 @@ export default function ScreenShareCard({ peerName, isLoading = false, onWatch }
               <line x1="12" y1="17" x2="12" y2="21" />
             </svg>
           </div>
-          <div style={styles.peerName}>{peerName}</div>
-          <div style={styles.hint}>click to watch</div>
+          <div style={styles.peerName}>{title}</div>
+          <div style={styles.hint}>{hint}</div>
         </>
       )}
     </div>

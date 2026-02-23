@@ -46,7 +46,7 @@ export async function estimateUploadSpeed() {
 
 /**
  * Get recommended quality preset based on estimated upload speed.
- * With two presets (source: 12 Mbps, lite: 2.5 Mbps), picks the
+ * With two presets (source: 20 Mbps, lite: 2.5 Mbps), picks the
  * highest preset the connection can sustain.
  */
 export function getRecommendedQuality(uploadMbps) {
@@ -101,4 +101,43 @@ export async function getLiveStats(peerConnection) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Sum outbound video bytesSent from one or more RTCStatsReport (e.g. from track.getRTCStatsReport()).
+ * Used to compute live upload bitrate of the stream toward the server.
+ */
+function sumOutboundVideoBytesSent(reports) {
+  let total = 0;
+  for (const report of reports) {
+    if (!report) continue;
+    report.forEach((r) => {
+      if (r.type === 'outbound-rtp' && r.kind === 'video' && typeof r.bytesSent === 'number') {
+        total += r.bytesSent;
+      }
+    });
+  }
+  return total;
+}
+
+/**
+ * Compute current upload bitrate (Mbps) from local video tracks.
+ * Call every 2s with the same prev refs; returns { mbps, bytesSent, timestamp } for next call.
+ * First call: pass prevBytesSent and prevTimestamp as null to initialise; mbps will be 0.
+ */
+export async function measureLiveUploadMbps(localVideoTracks, prevBytesSent, prevTimestamp) {
+  if (!localVideoTracks || localVideoTracks.length === 0) {
+    return { mbps: 0, bytesSent: 0, timestamp: prevTimestamp };
+  }
+  const reports = await Promise.all(
+    localVideoTracks.map((t) => (t.getRTCStatsReport ? t.getRTCStatsReport() : Promise.resolve(null))),
+  );
+  const bytesSent = sumOutboundVideoBytesSent(reports);
+  const now = performance.now();
+  if (prevTimestamp == null || prevBytesSent == null) {
+    return { mbps: 0, bytesSent, timestamp: now };
+  }
+  const deltaSec = (now - prevTimestamp) / 1000;
+  const mbps = deltaSec > 0 ? (Math.max(0, bytesSent - prevBytesSent) * 8) / (deltaSec * 1_000_000) : 0;
+  return { mbps, bytesSent, timestamp: now };
 }

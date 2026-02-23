@@ -49,10 +49,10 @@ export default defineConfig({
       allow: ['..'],
     },
     proxy: {
-      '/api': 'http://localhost:80',
-      '/_matrix': 'http://localhost:80',
+      '/api': 'http://localhost:3001',
+      '/_matrix': 'http://localhost:8081',
       '/livekit': {
-        target: 'http://localhost:80',
+        target: 'http://localhost:8081',
         ws: true,
       },
     },

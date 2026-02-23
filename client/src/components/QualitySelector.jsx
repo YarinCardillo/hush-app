@@ -40,7 +40,7 @@ const styles = {
   },
 };
 
-export default function QualitySelector({ currentQuality, onSelect }) {
+export default function QualitySelector({ currentQuality, liveUploadMbps, onSelect }) {
   const presetEntries = Object.entries(QUALITY_PRESETS);
 
   return (
@@ -58,7 +58,11 @@ export default function QualitySelector({ currentQuality, onSelect }) {
               <span style={styles.itemLabel}>{preset.label}</span>
               <span style={styles.itemDetail}>{preset.description}</span>
             </div>
-            {isActive && <span style={styles.active}>Active</span>}
+            {isActive && (
+              <span style={styles.active}>
+                {liveUploadMbps != null ? `Active (${liveUploadMbps} Mbps)` : 'Active'}
+              </span>
+            )}
           </div>
         );
       })}

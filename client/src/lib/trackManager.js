@@ -4,7 +4,13 @@
  */
 
 import { RoomEvent, Track, LocalVideoTrack, LocalAudioTrack } from 'livekit-client';
-import { QUALITY_PRESETS, DEFAULT_QUALITY, MEDIA_SOURCES } from '../utils/constants';
+import {
+  QUALITY_PRESETS,
+  DEFAULT_QUALITY,
+  MEDIA_SOURCES,
+  WEBCAM_PRESET,
+  SCREEN_SHARE_MIN_FPS,
+} from '../utils/constants';
 
 /**
  * Registers room event listeners for remote track and screen share updates.
@@ -73,6 +79,7 @@ export function attachRemoteTrackListeners(room, refs, scheduleRemoteTracksUpdat
 export async function publishScreen(room, refs, options = {}) {
   const qualityKey = options.qualityKey ?? DEFAULT_QUALITY;
   const quality = QUALITY_PRESETS[qualityKey];
+  // getDisplayMedia does not allow frameRate.min/exact (TypeError); use ideal only.
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: { cursor: 'always', frameRate: { ideal: quality.frameRate } },
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
@@ -83,21 +90,43 @@ export async function publishScreen(room, refs, options = {}) {
     stream.getTracks().forEach((t) => t.stop());
     return null;
   }
+  // Hint encoder to prefer framerate over static detail (reduces FPS drops under load).
+  if (quality.frameRate >= SCREEN_SHARE_MIN_FPS && typeof videoTrack.contentHint !== 'undefined') {
+    videoTrack.contentHint = 'motion';
+  }
+  const frameRateConstraint =
+    quality.frameRate >= SCREEN_SHARE_MIN_FPS
+      ? { ideal: quality.frameRate, min: SCREEN_SHARE_MIN_FPS }
+      : { ideal: quality.frameRate };
   if (quality.width && quality.height) {
     try {
+      // min ensures we get full resolution (e.g. 1080p) when the source supports it, not a lower scale.
       await videoTrack.applyConstraints({
-        width: { ideal: quality.width },
-        height: { ideal: quality.height },
-        frameRate: { ideal: quality.frameRate },
+        width: { ideal: quality.width, min: quality.width },
+        height: { ideal: quality.height, min: quality.height },
+        frameRate: frameRateConstraint,
       });
     } catch (err) {
       console.warn('[livekit] Could not apply track constraints:', err);
+    }
+  } else if (quality.frameRate >= SCREEN_SHARE_MIN_FPS) {
+    try {
+      await videoTrack.applyConstraints({ frameRate: frameRateConstraint });
+    } catch (err) {
+      console.warn('[livekit] Could not apply frameRate constraints:', err);
     }
   }
   const localVideoTrack = new LocalVideoTrack(videoTrack);
   await room.localParticipant.publishTrack(localVideoTrack, {
     source: Track.Source.ScreenShare,
-    videoEncoding: { maxBitrate: quality.bitrate },
+    screenShareEncoding: {
+      maxBitrate: quality.bitrate,
+      maxFramerate: quality.frameRate,
+      ...(quality.frameRate >= SCREEN_SHARE_MIN_FPS && { priority: 'high' }),
+    },
+    simulcast: false,
+    // Keep resolution (1080p); allow framerate to vary under load. maintain-framerate was crushing resolution to 144p.
+    degradationPreference: 'maintain-resolution',
   });
   refs.localTracksRef.current.set(localVideoTrack.sid, {
     track: localVideoTrack,
@@ -145,25 +174,39 @@ export async function unpublishScreen(room, refs) {
  */
 export async function switchScreenSource(room, refs, qualityKey, unpublishScreenCb) {
   const quality = QUALITY_PRESETS[qualityKey];
+  const frameRateConstraint =
+    quality.frameRate >= SCREEN_SHARE_MIN_FPS
+      ? { ideal: quality.frameRate, min: SCREEN_SHARE_MIN_FPS }
+      : { ideal: quality.frameRate };
   const screenEntry = Array.from(refs.localTracksRef.current.entries()).find(
     ([, info]) => info.source === MEDIA_SOURCES.SCREEN,
   );
   if (!screenEntry) throw new Error('No active screen share');
   const [, info] = screenEntry;
+  // getDisplayMedia does not allow frameRate.min; use ideal only.
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: { cursor: 'always', frameRate: { ideal: quality.frameRate } },
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
   });
   const newTrack = stream.getVideoTracks()[0];
+  if (quality.frameRate >= SCREEN_SHARE_MIN_FPS && typeof newTrack.contentHint !== 'undefined') {
+    newTrack.contentHint = 'motion';
+  }
   if (quality.width && quality.height) {
     try {
       await newTrack.applyConstraints({
-        width: { ideal: quality.width },
-        height: { ideal: quality.height },
-        frameRate: { ideal: quality.frameRate },
+        width: { ideal: quality.width, min: quality.width },
+        height: { ideal: quality.height, min: quality.height },
+        frameRate: frameRateConstraint,
       });
     } catch (err) {
       console.warn('[livekit] Could not apply track constraints:', err);
+    }
+  } else {
+    try {
+      await newTrack.applyConstraints({ frameRate: frameRateConstraint });
+    } catch (err) {
+      console.warn('[livekit] Could not apply frameRate constraints:', err);
     }
   }
   await info.track.replaceTrack(newTrack);
@@ -174,6 +217,11 @@ export async function switchScreenSource(room, refs, qualityKey, unpublishScreen
 }
 
 /**
+ * Change screen share capture resolution and framerate via applyConstraints.
+ * Does not unpublish: getDisplayMedia capture is revoked if the track is unpublished,
+ * so we only update the live track. Max bitrate stays at publish value until the user
+ * uses "Change window/screen" (full replace with new quality).
+ *
  * @param {import('livekit-client').Room} room
  * @param {{ localTracksRef: import('react').MutableRefObject<Map> }} refs
  * @param {string} qualityKey
@@ -187,16 +235,33 @@ export async function changeQuality(room, refs, qualityKey) {
   if (!screenEntry) return;
   const [, info] = screenEntry;
   const track = info.track.mediaStreamTrack;
-  if (track && track.readyState === 'live') {
-    if (quality.width && quality.height) {
+  if (!track || track.readyState !== 'live') return;
+
+  const frameRateConstraint =
+    quality.frameRate >= SCREEN_SHARE_MIN_FPS
+      ? { ideal: quality.frameRate, min: SCREEN_SHARE_MIN_FPS }
+      : { ideal: quality.frameRate };
+
+  if (quality.width && quality.height) {
+    try {
       await track.applyConstraints({
         width: { ideal: quality.width },
         height: { ideal: quality.height },
-        frameRate: { ideal: quality.frameRate },
+        frameRate: frameRateConstraint,
       });
-    } else {
-      await track.applyConstraints({ frameRate: { ideal: quality.frameRate } });
+    } catch (err) {
+      console.warn('[livekit] changeQuality applyConstraints:', err);
     }
+  } else {
+    try {
+      await track.applyConstraints({ frameRate: frameRateConstraint });
+    } catch (err) {
+      console.warn('[livekit] changeQuality applyConstraints:', err);
+    }
+  }
+
+  if (quality.frameRate >= SCREEN_SHARE_MIN_FPS && typeof track.contentHint !== 'undefined') {
+    track.contentHint = 'motion';
   }
 }
 
@@ -206,14 +271,20 @@ export async function changeQuality(room, refs, qualityKey) {
  * @param {string|null} deviceId
  */
 export async function publishWebcam(room, refs, deviceId = null) {
-  const videoConstraints = { width: 640, height: 480, frameRate: 30 };
+  const preset = WEBCAM_PRESET;
+  const videoConstraints = {
+    width: { ideal: preset.width },
+    height: { ideal: preset.height },
+    frameRate: { ideal: preset.frameRate },
+  };
   if (deviceId) videoConstraints.deviceId = { exact: deviceId };
   const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
   const videoTrack = stream.getVideoTracks()[0];
   const localVideoTrack = new LocalVideoTrack(videoTrack);
   await room.localParticipant.publishTrack(localVideoTrack, {
     source: Track.Source.Camera,
-    videoEncoding: { maxBitrate: 500000 },
+    videoEncoding: { maxBitrate: preset.bitrate, maxFramerate: preset.frameRate },
+    simulcast: false,
   });
   refs.localTracksRef.current.set(localVideoTrack.sid, {
     track: localVideoTrack,
