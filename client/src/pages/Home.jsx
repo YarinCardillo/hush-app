@@ -91,6 +91,21 @@ const styles = {
     fontSize: '0.9rem',
     fontWeight: 400,
   },
+  e2eeBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+    padding: '3px 10px',
+    background: 'var(--hush-amber-ghost)',
+    color: 'var(--hush-amber)',
+    fontSize: '0.65rem',
+    fontWeight: 500,
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    border: '1px solid transparent',
+    borderRadius: 0,
+    userSelect: 'none',
+  },
   form: {
     display: 'flex',
     flexDirection: 'column',
@@ -559,6 +574,32 @@ export default function Home() {
           </motion.div>
         </motion.div>
 
+
+        {/* E2EE badge — trust signal between logo and form */}
+        <motion.div
+          style={{ textAlign: 'center', marginBottom: '16px' }}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1], delay: 0.6 }}
+        >
+          <span style={styles.e2eeBadge}>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            end-to-end encrypted
+          </span>
+        </motion.div>
         {/* Form card — slides up on mount, glass panel */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
