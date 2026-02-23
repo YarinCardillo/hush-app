@@ -225,13 +225,6 @@ export function useRoom() {
         const roomOptions = {
           dynacast: true,
           adaptiveStream: true,
-          videoCaptureDefaults: {
-            resolution: {
-              width: 1920,
-              height: 1080,
-              frameRate: 60,
-            },
-          },
         };
 
         // Add E2EE options if initialized successfully
@@ -497,10 +490,12 @@ export function useRoom() {
   const changeQuality = useCallback(
     async (qualityKey) => {
       if (!roomRef.current) return;
-      await trackChangeQuality(roomRef.current, { localTracksRef }, qualityKey);
+      await trackChangeQuality(roomRef.current, { localTracksRef }, qualityKey, {
+        onTrackEnded: unpublishScreen,
+      });
       scheduleLocalTracksUpdate();
     },
-    [scheduleLocalTracksUpdate],
+    [unpublishScreen, scheduleLocalTracksUpdate],
   );
 
   // ─── Publish Webcam ───────────────────────────────────

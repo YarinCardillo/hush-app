@@ -17,7 +17,6 @@ import StreamView from '../components/StreamView';
 import ScreenShareCard from '../components/ScreenShareCard';
 import Controls from '../components/Controls';
 import QualityPickerModal from '../components/QualityPickerModal';
-import QualityOrWindowModal from '../components/QualityOrWindowModal';
 import DevicePickerModal from '../components/DevicePickerModal';
 import Chat from '../components/Chat';
 
@@ -272,7 +271,7 @@ export default function Room() {
   const [isWebcamOn, setIsWebcamOn] = useState(false);
   const [showQualityPanel, setShowQualityPanel] = useState(false);
   const [showQualityPicker, setShowQualityPicker] = useState(false);
-  const [qualityOrWindowStep, setQualityOrWindowStep] = useState(null);
+  const [qualityChangeError, setQualityChangeError] = useState(null);
   const [localScreenWatched, setLocalScreenWatched] = useState(false);
   const [showMicPicker, setShowMicPicker] = useState(false);
   const [showWebcamPicker, setShowWebcamPicker] = useState(false);
@@ -296,7 +295,6 @@ export default function Room() {
     disconnectRoom,
     publishScreen,
     unpublishScreen,
-    switchScreenSource,
     changeQuality,
     publishWebcam,
     unpublishWebcam,
@@ -450,6 +448,13 @@ export default function Room() {
     if (!isScreenSharing) setLocalScreenWatched(false);
   }, [isScreenSharing]);
 
+  // Auto-clear quality change error toast after 4s
+  useEffect(() => {
+    if (!qualityChangeError) return;
+    const t = setTimeout(() => setQualityChangeError(null), 4000);
+    return () => clearTimeout(t);
+  }, [qualityChangeError]);
+
   useEffect(() => {
     if (!isReady) return;
     if (seenParticipantIdsRef.current === null) {
@@ -545,14 +550,9 @@ export default function Room() {
     setShowQualityPicker(false);
     setQuality(qualityKey);
 
-    console.log('[room] handleQualityPick:', qualityKey);
-
     try {
       const stream = await publishScreen(qualityKey);
-      if (!stream) {
-        console.warn('[room] publishScreen returned null (user cancelled)');
-        return;
-      }
+      if (!stream) return;
 
       setIsScreenSharing(true);
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
@@ -560,6 +560,20 @@ export default function Room() {
       });
     } catch (err) {
       console.error('[room] Screen share failed:', err);
+    }
+  };
+
+  /** Unified: start share (picker) or change quality/window (re-publish). Same flow as "not streaming → share". */
+  const handleScreenShareQualitySelect = async (qualityKey) => {
+    if (isScreenSharing) {
+      try {
+        await handleQualityChange(qualityKey);
+        setShowQualityPicker(false);
+      } catch {
+        // Toast and state revert handled in handleQualityChange
+      }
+    } else {
+      await handleQualityPick(qualityKey);
     }
   };
 
@@ -616,20 +630,20 @@ export default function Room() {
     setShowWebcamPicker(true);
   };
 
-  const handleSwitchScreen = async () => {
-    try {
-      await switchScreenSource(quality);
-    } catch (err) {
-      console.error('Switch failed:', err);
-    }
-  };
-
   const handleQualityChange = async (newQuality) => {
-    setQuality(newQuality);
-    if (isScreenSharing) {
-      await changeQuality(newQuality);
+    const previousQuality = quality;
+    setQualityChangeError(null);
+    try {
+      if (isScreenSharing) {
+        await changeQuality(newQuality);
+      }
+      setQuality(newQuality);
+      setShowQualityPanel(false);
+    } catch (err) {
+      setQuality(previousQuality);
+      setQualityChangeError(err?.message || 'Quality change failed');
+      throw err;
     }
-    setShowQualityPanel(false);
   };
 
   const handleLeave = async () => {
@@ -1063,31 +1077,11 @@ export default function Room() {
         <OrphanAudio key={oa.id} track={oa.track} />
       ))}
 
-      {qualityOrWindowStep != null && (
-        <QualityOrWindowModal
-          step={qualityOrWindowStep}
-          currentQualityKey={quality}
-          onCancel={() => setQualityOrWindowStep(null)}
-          onGoToQualityStep={() => setQualityOrWindowStep('quality')}
-          onSelectQualityPreset={(key) => {
-            handleQualityChange(key);
-            setQualityOrWindowStep(null);
-          }}
-          onSelectWindow={() => {
-            handleSwitchScreen();
-            setQualityOrWindowStep(null);
-          }}
-          onBack={() => setQualityOrWindowStep('choice')}
-          recommendedQualityKey={recommendedQualityKey}
-          recommendedUploadMbps={recommendedUploadMbps}
-        />
-      )}
-
       {showQualityPicker && (
         <QualityPickerModal
           recommendedQualityKey={recommendedQualityKey}
           recommendedUploadMbps={recommendedUploadMbps}
-          onSelect={handleQualityPick}
+          onSelect={handleScreenShareQualitySelect}
           onCancel={() => setShowQualityPicker(false)}
         />
       )}
@@ -1121,7 +1115,7 @@ export default function Room() {
         isMobile={isMobile}
         mediaE2EEUnavailable={mediaE2EEUnavailable}
         onScreenShare={handleScreenShare}
-        onOpenQualityOrWindow={() => setQualityOrWindowStep('choice')}
+        onOpenQualityOrWindow={() => setShowQualityPicker(true)}
         onMic={handleMic}
         onWebcam={handleWebcam}
         onMicDeviceSwitch={handleMicDeviceSwitch}
@@ -1132,6 +1126,11 @@ export default function Room() {
       {keyExchangeMessage && (
         <div className="toast" role="alert">
           {keyExchangeMessage}
+        </div>
+      )}
+      {qualityChangeError && (
+        <div className="toast" role="alert">
+          {qualityChangeError}
         </div>
       )}
     </div>

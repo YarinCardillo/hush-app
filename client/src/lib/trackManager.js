@@ -217,52 +217,29 @@ export async function switchScreenSource(room, refs, qualityKey, unpublishScreen
 }
 
 /**
- * Change screen share capture resolution and framerate via applyConstraints.
- * Does not unpublish: getDisplayMedia capture is revoked if the track is unpublished,
- * so we only update the live track. Max bitrate stays at publish value until the user
- * uses "Change window/screen" (full replace with new quality).
+ * Apply new screen-share quality by re-publishing the screen track so encoder
+ * options (e.g. maxBitrate) and capture match the preset. Unpublishes then
+ * publishes with the new qualityKey; user may need to re-select source in the
+ * browser picker.
  *
  * @param {import('livekit-client').Room} room
  * @param {{ localTracksRef: import('react').MutableRefObject<Map> }} refs
  * @param {string} qualityKey
+ * @param {{ onTrackEnded?: () => void }} [options]
  */
-export async function changeQuality(room, refs, qualityKey) {
+export async function changeQuality(room, refs, qualityKey, options = {}) {
   const quality = QUALITY_PRESETS[qualityKey];
   if (!quality) return;
   const screenEntry = Array.from(refs.localTracksRef.current.entries()).find(
     ([, info]) => info.source === MEDIA_SOURCES.SCREEN,
   );
   if (!screenEntry) return;
-  const [, info] = screenEntry;
-  const track = info.track.mediaStreamTrack;
-  if (!track || track.readyState !== 'live') return;
 
-  const frameRateConstraint =
-    quality.frameRate >= SCREEN_SHARE_MIN_FPS
-      ? { ideal: quality.frameRate, min: SCREEN_SHARE_MIN_FPS }
-      : { ideal: quality.frameRate };
-
-  if (quality.width && quality.height) {
-    try {
-      await track.applyConstraints({
-        width: { ideal: quality.width },
-        height: { ideal: quality.height },
-        frameRate: frameRateConstraint,
-      });
-    } catch (err) {
-      console.warn('[livekit] changeQuality applyConstraints:', err);
-    }
-  } else {
-    try {
-      await track.applyConstraints({ frameRate: frameRateConstraint });
-    } catch (err) {
-      console.warn('[livekit] changeQuality applyConstraints:', err);
-    }
-  }
-
-  if (quality.frameRate >= SCREEN_SHARE_MIN_FPS && typeof track.contentHint !== 'undefined') {
-    track.contentHint = 'motion';
-  }
+  await unpublishScreen(room, refs);
+  await publishScreen(room, refs, {
+    qualityKey,
+    onTrackEnded: options.onTrackEnded,
+  });
 }
 
 /**
