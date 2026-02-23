@@ -1038,7 +1038,7 @@ export default function Home() {
             <div style={styles.footerMeta}>
               <span style={{ display: 'inline-block' }}>
                 <span>v{APP_VERSION}</span>
-                <span>·</span>
+                <span>{' · '}</span>
                 <span>powered by{' '}
                 <a href="https://matrix.org/" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>
                   Matrix

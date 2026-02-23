@@ -1,6 +1,6 @@
 export const API_URL = import.meta.env.VITE_API_URL || '';
 
-export const APP_VERSION = '0.6.0-alpha';
+export const APP_VERSION = '0.6.1-alpha';
 
 export const QUALITY_PRESETS = {
   source: {
