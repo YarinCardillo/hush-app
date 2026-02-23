@@ -9,8 +9,7 @@ import { GUEST_SESSION_KEY } from '../lib/authStorage';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your'];
 
-const TYPEWRITER_WORDS = [
-  'privacy',
+const _TYPEWRITER_POOL = [
   'secrets',
   'identity',
   'data',
@@ -19,7 +18,7 @@ const TYPEWRITER_WORDS = [
   'screen time',
   'browser history',
   'DMs',
-  'playlists',
+  'chats',
   'burner phone',
   'read receipts',
   'inner monologue',
@@ -27,6 +26,17 @@ const TYPEWRITER_WORDS = [
   'villain arc',
   'guilty pleasures',
 ];
+
+function _buildShuffledSequence() {
+  const pool = [..._TYPEWRITER_POOL];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return ['privacy', ...pool];
+}
+
+const TYPEWRITER_WORDS = _buildShuffledSequence();
 
 const TYPE_SPEED_MS   = 65;
 const DELETE_SPEED_MS = 40;
@@ -43,12 +53,13 @@ const wordVariants = {
 };
 
 function TypewriterSlot() {
+  const sequenceRef = useRef(TYPEWRITER_WORDS);
   const [wordIndex, setWordIndex] = useState(0);
   const [displayed, setDisplayed] = useState('');
   const [phase, setPhase] = useState('typing');
 
   useEffect(() => {
-    const word = TYPEWRITER_WORDS[wordIndex];
+    const word = sequenceRef.current[wordIndex];
     const fullText = word + '.';
 
     if (phase === 'typing') {
@@ -82,7 +93,14 @@ function TypewriterSlot() {
 
     if (phase === 'waiting') {
       const t = setTimeout(() => {
-        setWordIndex((i) => (i + 1) % TYPEWRITER_WORDS.length);
+        setWordIndex((i) => {
+          const next = i + 1;
+          if (next >= sequenceRef.current.length) {
+            sequenceRef.current = _buildShuffledSequence();
+            return 0;
+          }
+          return next;
+        });
         setPhase('typing');
       }, PAUSE_BEFORE_MS);
       return () => clearTimeout(t);
