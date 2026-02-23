@@ -43,22 +43,9 @@ const wordVariants = {
 };
 
 function TypewriterSlot() {
-  const ghostRef = useRef(null);
-  const [slotWidth, setSlotWidth] = useState(null);
   const [wordIndex, setWordIndex] = useState(0);
   const [displayed, setDisplayed] = useState('');
   const [phase, setPhase] = useState('typing');
-
-  useEffect(() => {
-    let cancelled = false;
-    document.fonts.ready.then(() => {
-      if (!cancelled && ghostRef.current) {
-        const w = ghostRef.current.getBoundingClientRect().width;
-        if (w > 0) setSlotWidth(w);
-      }
-    });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     const word = TYPEWRITER_WORDS[wordIndex];
@@ -104,35 +91,11 @@ function TypewriterSlot() {
 
   return (
     <motion.span
-      style={{ display: 'inline-block', marginRight: '0.25em', position: 'relative' }}
+      style={{ display: 'inline-block', marginRight: '0.25em', whiteSpace: 'nowrap' }}
       variants={wordVariants}
     >
-      <span
-        ref={ghostRef}
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          visibility: 'hidden',
-          pointerEvents: 'none',
-          whiteSpace: 'nowrap',
-          top: 0,
-          left: 0,
-        }}
-      >
-        privacy.
-      </span>
-      <span
-        style={{
-          display: 'inline-block',
-          width: slotWidth != null ? `${slotWidth}px` : undefined,
-          overflow: 'visible',
-          whiteSpace: 'nowrap',
-          textAlign: 'left',
-        }}
-      >
-        {displayed}
-        <span className="typewriter-cursor" aria-hidden="true" />
-      </span>
+      {displayed}
+      <span className="typewriter-cursor" aria-hidden="true" />
     </motion.span>
   );
 }
