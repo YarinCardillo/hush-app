@@ -305,7 +305,8 @@ const styles = `
   }
 
   @media (hover: hover) {
-    .milestone-card:hover {
+    .milestone-card:hover,
+    .milestone-card.open:hover {
       background: var(--hush-elevated);
     }
   }
