@@ -11,13 +11,6 @@ const STATUS = {
   future:  { label: 'future',      color: 'var(--hush-text-ghost)', bg: 'var(--hush-elevated)' },
 };
 
-const TAG_STYLE = {
-  release:  { color: 'var(--hush-amber)',  bg: 'var(--hush-amber-ghost)' },
-  fix:      { color: 'var(--hush-live)',    bg: 'var(--hush-live-glow)' },
-  security: { color: 'var(--hush-danger)',  bg: 'var(--hush-danger-ghost)' },
-  breaking: { color: 'var(--hush-danger)',  bg: 'var(--hush-danger-ghost)' },
-};
-
 /* ── Derived data ── */
 
 const STATUS_CLASS = { done: 'shipped', active: 'progress', planned: 'planned', future: 'future' };
@@ -354,19 +347,6 @@ const styles = `
     transition: color 120ms;
   }
 
-  .rm-release-tags {
-    display: flex;
-    gap: 6px;
-  }
-  .rm-release-tag {
-    font-size: 0.6rem;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 1px 6px;
-    border-radius: 0;
-  }
-
   .rm-current-pill {
     font-size: 0.6rem;
     font-weight: 500;
@@ -524,7 +504,6 @@ const styles = `
     .rm-release-toggle { flex-wrap: wrap; row-gap: 4px; }
     .rm-release-version { min-width: 0; }
     .rm-release-title { order: 10; flex: 0 0 100%; padding-left: 0; }
-    .rm-release-tags { flex-shrink: 0; }
     .rm-current-pill { flex-shrink: 0; }
     .release-chevron { margin-left: auto; }
   }
@@ -583,20 +562,6 @@ function ReleaseEntry({ release, isOpen, onToggle }) {
         <span className="rm-release-version">v{release.version}</span>
         <span className="rm-release-date">{formatDate(release.date)}</span>
         <span className="rm-release-title">{release.title}</span>
-        <div className="rm-release-tags">
-          {release.tags.map((tag) => {
-            const ts = TAG_STYLE[tag];
-            return (
-              <span
-                className="rm-release-tag"
-                key={tag}
-                style={ts ? { color: ts.color, background: ts.bg } : undefined}
-              >
-                {tag}
-              </span>
-            );
-          })}
-        </div>
         {isCurrent && <span className="rm-current-pill">current</span>}
         <Chevron />
       </button>
