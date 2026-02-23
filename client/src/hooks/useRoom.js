@@ -14,6 +14,7 @@ import {
 } from '../lib/e2eeKeyManager';
 import {
   attachRemoteTrackListeners,
+  preloadNoiseGateWorklet,
   publishScreen as trackPublishScreen,
   unpublishScreen as trackUnpublishScreen,
   switchScreenSource as trackSwitchScreenSource,
@@ -378,6 +379,7 @@ export function useRoom() {
         setParticipants(initialParticipants);
 
         setIsReady(true);
+        preloadNoiseGateWorklet();
         console.log('[livekit] Connected to room:', roomName);
       } catch (err) {
         if (isStale()) return;

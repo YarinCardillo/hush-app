@@ -4,6 +4,23 @@
  */
 
 import { RoomEvent, Track, LocalVideoTrack, LocalAudioTrack } from 'livekit-client';
+
+const NOISE_GATE_WORKLET_URL = new URL('./noiseGateWorklet.js', import.meta.url);
+
+/**
+ * Preload the noise-gate AudioWorklet so the first publishMic() doesn't wait on addModule.
+ * Safe to call multiple times; module is cached per origin.
+ */
+export function preloadNoiseGateWorklet() {
+  if (typeof AudioContext === 'undefined' || typeof AudioContext.prototype.audioWorklet === 'undefined') {
+    return;
+  }
+  const ctx = new AudioContext();
+  ctx.audioWorklet
+    .addModule(NOISE_GATE_WORKLET_URL)
+    .then(() => ctx.close())
+    .catch(() => ctx.close());
+}
 import {
   QUALITY_PRESETS,
   DEFAULT_QUALITY,
@@ -305,9 +322,7 @@ export async function publishMic(room, refs, deviceId = null) {
   let destination;
   if (hasWorklet) {
     try {
-      await audioContext.audioWorklet.addModule(
-        new URL('./noiseGateWorklet.js', import.meta.url),
-      );
+      await audioContext.audioWorklet.addModule(NOISE_GATE_WORKLET_URL);
       const workletNode = new AudioWorkletNode(audioContext, 'noise-gate-processor');
       refs.noiseGateNodeRef.current = workletNode;
       destination = audioContext.createMediaStreamDestination();
@@ -325,6 +340,10 @@ export async function publishMic(room, refs, deviceId = null) {
     destination = audioContext.createMediaStreamDestination();
     destination.channelCount = 1;
     source.connect(destination);
+  }
+  // Resume so audio flows immediately; browsers often start AudioContext suspended.
+  if (audioContext.state === 'suspended') {
+    await audioContext.resume();
   }
   const processedTrack = destination.stream.getAudioTracks()[0];
   const localAudioTrack = new LocalAudioTrack(processedTrack);

@@ -20,7 +20,7 @@ class NoiseGateProcessor extends AudioWorkletProcessor {
     this.gateOpen = false;
     this.holdTimeRemaining = 0;
     this.enabled = true;
-    this.thresholdDb = -50;
+    this.thresholdDb = -70;
 
     // Smoothing coefficients (calculated per-sample)
     this.attackCoef = 0;

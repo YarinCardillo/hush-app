@@ -11,20 +11,30 @@ const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your'];
 
 const _TYPEWRITER_POOL = [
   'secrets',
-  'identity',
+  'aliases',       // was 'identity'
   'data',
   'silence',
-  'manifesto',
-  'screen time',
-  'browser history',
+  'whispers',      // was 'manifesto'
+  'scrolls',       // was 'screen time'
+  'cookies',       // was 'browser history'
   'DMs',
   'chats',
-  'burner phone',
-  'read receipts',
-  'inner monologue',
-  'situationship',
-  'villain arc',
-  'guilty pleasures',
+  'burners',       // was 'burner phone'
+  'typing',        // was 'read receipts' (humor: "keep your typing.")
+  'thoughts',      // was 'inner monologue'
+  'flings',        // was 'situationship'
+  'villain',       // was 'villain arc'
+  'binges',        // was 'guilty pleasures'
+  // 'identity',
+  // 'manifesto',
+  // 'screen time',
+  // 'browser history',
+  // 'burner phone',
+  // 'read receipts',
+  // 'inner monologue',
+  // 'situationship',
+  // 'villain arc',
+  // 'guilty pleasures',
 ];
 
 function _buildShuffledSequence() {
@@ -37,6 +47,9 @@ function _buildShuffledSequence() {
 }
 
 const TYPEWRITER_WORDS = _buildShuffledSequence();
+
+/** Width of slot is fixed to first word "privacy." so centering is based on that; longer words overflow to the right */
+const FIRST_TYPEWRITER_WORD = 'privacy.';
 
 const TYPE_SPEED_MS   = 65;
 const DELETE_SPEED_MS = 40;
@@ -54,9 +67,26 @@ const wordVariants = {
 
 function TypewriterSlot() {
   const sequenceRef = useRef(TYPEWRITER_WORDS);
+  const ghostRef = useRef(null);
+  const [slotWidthPx, setSlotWidthPx] = useState(null);
   const [wordIndex, setWordIndex] = useState(0);
   const [displayed, setDisplayed] = useState('');
   const [phase, setPhase] = useState('typing');
+
+  useEffect(() => {
+    if (!ghostRef.current) return;
+    const measure = () => {
+      if (ghostRef.current) {
+        const w = ghostRef.current.getBoundingClientRect().width;
+        setSlotWidthPx(w);
+      }
+    };
+    if (document.fonts?.ready) {
+      document.fonts.ready.then(measure);
+    } else {
+      measure();
+    }
+  }, []);
 
   useEffect(() => {
     const word = sequenceRef.current[wordIndex];
@@ -108,13 +138,35 @@ function TypewriterSlot() {
   }, [phase, displayed, wordIndex]);
 
   return (
-    <motion.span
-      style={{ display: 'inline-block', marginRight: '0.25em', whiteSpace: 'nowrap' }}
-      variants={wordVariants}
+    <span
+      style={{
+        position: 'relative',
+        display: 'inline-block',
+        marginRight: '0.25em',
+        whiteSpace: 'nowrap',
+        minWidth: slotWidthPx ?? `${FIRST_TYPEWRITER_WORD.length}ch`,
+        textAlign: 'left',
+      }}
     >
-      {displayed}
-      <span className="typewriter-cursor" aria-hidden="true" />
-    </motion.span>
+      <span
+        ref={ghostRef}
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          visibility: 'hidden',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+        }}
+        aria-hidden="true"
+      >
+        {FIRST_TYPEWRITER_WORD}
+      </span>
+      <motion.span style={{ display: 'inline-block', whiteSpace: 'nowrap' }} variants={wordVariants}>
+        {displayed}
+        <span className="typewriter-cursor" aria-hidden="true" />
+      </motion.span>
+    </span>
   );
 }
 
@@ -151,7 +203,7 @@ const styles = {
     zIndex: 2,
   },
   logo: {
-    marginBottom: '40px',
+    marginBottom: '56px',
     textAlign: 'center',
   },
   logoInner: {
@@ -186,7 +238,7 @@ const styles = {
     pointerEvents: 'none',
   },
   logoSub: {
-    marginTop: '8px',
+    marginTop: '0px',
     color: 'var(--hush-text-secondary)',
     fontSize: '0.9rem',
     fontWeight: 400,
@@ -325,6 +377,8 @@ export default function Home() {
   const posRef = useRef({ x: -1000, y: -1000 });
   const smoothRef = useRef({ x: -1000, y: -1000 });
   const wordmarkRef = useRef(null);
+  const subtitleGhostRef = useRef(null);
+  const [subtitleWidthPx, setSubtitleWidthPx] = useState(null);
   const [dotLeft, setDotLeft] = useState(null);
   const [spotlightEnabled, setSpotlightEnabled] = useState(
     () => (typeof window !== 'undefined' ? !window.matchMedia('(pointer: coarse)').matches : false)
@@ -392,6 +446,21 @@ export default function Home() {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!subtitleGhostRef.current) return;
+    const measure = () => {
+      if (subtitleGhostRef.current) {
+        const w = subtitleGhostRef.current.getBoundingClientRect().width;
+        setSubtitleWidthPx(w);
+      }
+    };
+    if (document.fonts?.ready) {
+      document.fonts.ready.then(measure);
+    } else {
+      measure();
+    }
   }, []);
 
   const handleMouseMove = useCallback((e) => {
@@ -650,9 +719,18 @@ export default function Home() {
             />
           </div>
 
-          {/* Subtitle — word by word staggered reveal */}
+          {/* Subtitle — fixed width so "share your screen. keep your privacy." is centered; longer words overflow right */}
           <motion.div
-            style={styles.logoSub}
+            style={{
+              ...styles.logoSub,
+              display: 'inline-block',
+              width: subtitleWidthPx ?? 'auto',
+              textAlign: 'left',
+              overflow: 'visible',
+              position: 'relative',
+              whiteSpace: 'nowrap',
+              marginLeft: '-6px', // positive = shift right, negative = shift left (e.g. '12px' or '-8px')
+            }}
             initial="hidden"
             animate="visible"
             variants={{
@@ -662,6 +740,25 @@ export default function Home() {
               },
             }}
           >
+            <span
+              ref={subtitleGhostRef}
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                visibility: 'hidden',
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+              }}
+              aria-hidden="true"
+            >
+              {SUBTITLE_WORDS.map((word, i) => (
+                <span key={i} style={{ display: 'inline-block', marginRight: '0.25em' }}>
+                  {word}
+                </span>
+              ))}
+              <span style={{ display: 'inline-block' }}>{FIRST_TYPEWRITER_WORD}</span>
+            </span>
             {SUBTITLE_WORDS.map((word, i) => (
               <motion.span
                 key={i}

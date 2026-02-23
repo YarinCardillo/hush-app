@@ -115,7 +115,7 @@ export async function handleParticipantConnected(participant, matrixClient, refs
           console.log('[livekit] E2EE key sent to', participant.identity);
         }
       },
-      { onRetry: () => setKeyExchangeMessage(KEY_EXCHANGE_RETRY_MESSAGE) },
+      {},
     );
     setKeyExchangeMessage(null);
   } catch (err) {
@@ -186,7 +186,7 @@ export async function handleParticipantDisconnected(participant, room, matrixCli
             });
           }
         },
-        { onRetry: () => setKeyExchangeMessage(KEY_EXCHANGE_RETRY_MESSAGE) },
+        {},
       );
       setKeyExchangeMessage(null);
     } catch (err) {
