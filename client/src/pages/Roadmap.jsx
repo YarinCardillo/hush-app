@@ -5,9 +5,9 @@ import { milestones, releases } from '../data/changelog.js';
 /* ── Status config ── */
 
 const STATUS = {
-  done:    { label: 'shipped',     color: 'var(--hush-live)',       bg: 'var(--hush-live-glow)' },
-  active:  { label: 'in progress', color: 'var(--hush-amber)',      bg: 'var(--hush-amber-ghost)' },
-  planned: { label: 'planned',     color: 'var(--hush-text-muted)', bg: 'var(--hush-elevated)' },
+  done:    { label: 'shipped',     color: 'var(--rm-green)',   bg: 'var(--rm-green-ghost)' },
+  active:  { label: 'in progress', color: 'var(--rm-blue)',    bg: 'var(--rm-blue-ghost)' },
+  planned: { label: 'planned',     color: 'var(--rm-purple)',  bg: 'var(--rm-purple-ghost)' },
   future:  { label: 'future',      color: 'var(--hush-text-ghost)', bg: 'var(--hush-elevated)' },
 };
 
@@ -62,6 +62,20 @@ function Chevron() {
 /* ── Styles ── */
 
 const styles = `
+  /* ── Roadmap-scoped status colors (match original palette) ── */
+  .roadmap-page {
+    --rm-green:        #4ade80;
+    --rm-green-ghost:  rgba(74, 222, 128, 0.08);
+    --rm-green-glow:   rgba(74, 222, 128, 0.4);
+    --rm-blue:         #38bdf8;
+    --rm-blue-ghost:   rgba(56, 189, 248, 0.08);
+    --rm-blue-glow:    rgba(56, 189, 248, 0.6);
+    --rm-blue-border:  rgba(56, 189, 248, 0.33);
+    --rm-purple:       #a78bfa;
+    --rm-purple-ghost: rgba(167, 139, 250, 0.08);
+    --rm-purple-border:rgba(167, 139, 250, 0.33);
+  }
+
   /* ── PAGE ── */
   .roadmap-page {
     max-width: 700px;
@@ -127,9 +141,9 @@ const styles = `
     height: 8px;
     border-radius: 50%;
   }
-  .dot-shipped  { background: var(--hush-live); }
-  .dot-progress { background: var(--hush-amber); }
-  .dot-planned  { background: var(--hush-border-focus); border: 1px solid var(--hush-border-focus); }
+  .dot-shipped  { background: var(--rm-green); }
+  .dot-progress { background: var(--rm-blue); }
+  .dot-planned  { background: var(--rm-purple); }
   .dot-future   { background: transparent; border: 1px solid var(--hush-text-ghost); }
 
   /* ── WHAT'S NEXT ACCORDION ── */
@@ -219,9 +233,9 @@ const styles = `
     height: 7px;
     border-radius: 50%;
   }
-  .rm-milestone.shipped .rm-milestone-dot-inner  { background: var(--hush-live); box-shadow: 0 0 6px var(--hush-live-glow); }
-  .rm-milestone.progress .rm-milestone-dot-inner { background: var(--hush-amber); box-shadow: 0 0 6px var(--hush-amber-glow); }
-  .rm-milestone.planned .rm-milestone-dot-inner  { background: var(--hush-border-focus); }
+  .rm-milestone.shipped .rm-milestone-dot-inner  { background: var(--rm-green); box-shadow: 0 0 6px var(--rm-green-glow); }
+  .rm-milestone.progress .rm-milestone-dot-inner { background: var(--rm-blue); box-shadow: 0 0 8px var(--rm-blue-glow); animation: roadmap-pulse 2s ease-in-out infinite; }
+  .rm-milestone.planned .rm-milestone-dot-inner  { background: transparent; border-color: var(--rm-purple); }
   .rm-milestone.future .rm-milestone-dot-inner   { background: transparent; border: 1px solid var(--hush-text-ghost); }
 
   .rm-milestone-card {
@@ -256,9 +270,9 @@ const styles = `
     padding: 2px 8px;
     border-radius: 0;
   }
-  .badge-shipped  { color: var(--hush-live);        background: var(--hush-live-glow); }
-  .badge-progress { color: var(--hush-amber);       background: var(--hush-amber-ghost); border: 1px solid var(--hush-amber-dim); }
-  .badge-planned  { color: var(--hush-text-muted);  background: var(--hush-elevated); }
+  .badge-shipped  { color: var(--rm-green);   background: var(--rm-green-ghost); }
+  .badge-progress { color: var(--rm-blue);    background: var(--rm-blue-ghost); border: 1px solid var(--rm-blue-border); }
+  .badge-planned  { color: var(--rm-purple);  background: var(--rm-purple-ghost); border: 1px solid var(--rm-purple-border); }
   .badge-future   { color: var(--hush-text-ghost);  background: var(--hush-elevated); }
 
   .rm-milestone-title {
@@ -496,6 +510,10 @@ const styles = `
   @keyframes hush-pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50%      { opacity: 0.4; transform: scale(0.85); }
+  }
+  @keyframes roadmap-pulse {
+    0%, 100% { box-shadow: 0 0 8px var(--rm-blue-glow); }
+    50%      { box-shadow: 0 0 16px var(--rm-blue-glow), 0 0 32px rgba(56, 189, 248, 0.2); }
   }
   @keyframes fade-up {
     from { opacity: 0; transform: translateY(8px); }
