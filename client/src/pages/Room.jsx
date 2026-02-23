@@ -91,14 +91,14 @@ const styles = {
     overflow: 'hidden',
     position: 'relative',
   },
-  streamsArea: (isMobile) => ({
+  streamsArea: (isMobile, count) => ({
     flex: 1,
     display: 'grid',
     gap: '6px',
     padding: '6px',
-    overflow: isMobile ? 'auto' : 'hidden',
-    alignItems: isMobile ? 'start' : 'stretch',
-    alignContent: isMobile ? 'start' : undefined,
+    overflow: isMobile && count !== 2 ? 'auto' : 'hidden',
+    alignItems: isMobile && count !== 2 ? 'start' : 'stretch',
+    alignContent: isMobile && count !== 2 ? 'start' : undefined,
     justifyItems: 'stretch',
     minHeight: 0,
   }),
@@ -209,6 +209,7 @@ function getGridStyle(count, breakpoint) {
   if (count === 0) return {};
   if (breakpoint === 'mobile') {
     if (count === 1) return { gridTemplateColumns: '1fr' };
+    if (count === 2) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr 1fr' };
     return { gridTemplateColumns: '1fr 1fr' };
   }
   const cols = getColumnCount(count);
@@ -767,7 +768,7 @@ export default function Room() {
   const heroIsAlone = totalCards > 1 && totalCards % cols === 1;
   const orderedStreams = orderWithHeroLast(allStreams, heroId);
 
-  const normalTileStyle = isMobile ? { aspectRatio: '1', width: '100%', minWidth: 0 } : { display: 'contents' };
+  const normalTileStyle = isMobile && totalCards !== 2 ? { aspectRatio: '1', width: '100%', minWidth: 0 } : { display: 'contents' };
   const heroAloneStyle = () => {
     if (isMobile) return { gridColumn: '1 / -1', aspectRatio: '1', width: '100%', minWidth: 0 };
     const widthPct = cols === 2 ? 'calc(50% - 3px)' : 'calc(33.33% - 4px)';
@@ -931,7 +932,7 @@ export default function Room() {
             {formatCountdown(countdownRemainingMs)}
           </div>
         )}
-        <div style={{ ...styles.streamsArea(isMobile), ...gridStyle }}>
+        <div style={{ ...styles.streamsArea(isMobile, totalCards), ...gridStyle }}>
           {totalCards === 0 ? (
             <div style={styles.empty}>
               <div style={styles.emptyIcon}>

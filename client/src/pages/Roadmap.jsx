@@ -155,6 +155,8 @@ const styles = `
     font-size: 0.85rem;
     font-weight: 500;
     transition: background 120ms var(--ease-out);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
   .whats-next-count {
     font-family: var(--font-mono);
@@ -303,6 +305,8 @@ const styles = `
     color: var(--hush-text);
     font-family: var(--font-sans);
     position: relative;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
   .rm-release-dot {
     position: absolute;
