@@ -143,13 +143,14 @@ const styles = {
   },
 };
 
-export default function Chat({ currentPeerId }) {
+export default function Chat({ currentPeerId, onNewMessage }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const lastSentTempIdRef = useRef(null);
+  const knownMessageIdsRef = useRef(new Set());
   const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
 
   // Load existing messages and listen for new ones
@@ -197,6 +198,7 @@ export default function Chat({ currentPeerId }) {
     const existingMessages = events
       .map(eventToMessage)
       .filter(Boolean);
+    existingMessages.forEach((m) => knownMessageIdsRef.current.add(m.id));
     setMessages(existingMessages);
 
     // Listen for new messages (merge with existing, including optimistic sends)
@@ -206,6 +208,13 @@ export default function Chat({ currentPeerId }) {
 
       const msg = eventToMessage(event);
       if (!msg) return;
+
+      const eventId = event.getId();
+      const isNew = !knownMessageIdsRef.current.has(eventId);
+      knownMessageIdsRef.current.add(eventId);
+      const currentUserId = client.getUserId();
+      if (isNew && msg.sender !== currentUserId) onNewMessage?.();
+
       setMessages((prev) => {
         const id = event.getId();
         const idx = prev.findIndex((m) => m.id === id);
@@ -215,7 +224,6 @@ export default function Chat({ currentPeerId }) {
         }
 
         // If this is our own message, try to merge with an optimistic "pending" one
-        const client = getMatrixClient();
         const currentUserId = client.getUserId();
         if (currentUserId && msg.sender === currentUserId) {
           const optimisticIdx = prev.findIndex(

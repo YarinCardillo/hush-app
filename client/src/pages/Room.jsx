@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Track } from 'livekit-client';
 import { useAuth } from '../contexts/AuthContext';
@@ -270,6 +270,11 @@ export default function Room() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [roomEndTimeMs, setRoomEndTimeMs] = useState(null);
   const [countdownRemainingMs, setCountdownRemainingMs] = useState(null);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [participantsBadge, setParticipantsBadge] = useState(false);
+  const showChatPanelRef = useRef(false);
+  const showQualityPanelRef = useRef(false);
+  const seenParticipantIdsRef = useRef(null);
 
   const {
     isReady,
@@ -400,6 +405,33 @@ export default function Room() {
       setShowChatPanel(false);
     }
   }, [showQualityPanel, showChatPanel]);
+
+  // Chat unread badge: track panel open state in a ref to avoid stale closure in callback
+  useEffect(() => {
+    showChatPanelRef.current = showChatPanel;
+    if (showChatPanel) setUnreadChatCount(0);
+  }, [showChatPanel]);
+
+  const handleNewChatMessage = useCallback(() => {
+    if (!showChatPanelRef.current) setUnreadChatCount((c) => c + 1);
+  }, []);
+
+  // Participants badge: track panel open state and watch for new joins after initial load
+  useEffect(() => {
+    showQualityPanelRef.current = showQualityPanel;
+    if (showQualityPanel) setParticipantsBadge(false);
+  }, [showQualityPanel]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    if (seenParticipantIdsRef.current === null) {
+      seenParticipantIdsRef.current = new Set(participants.map((p) => p.id));
+      return;
+    }
+    const hasNew = participants.some((p) => !seenParticipantIdsRef.current.has(p.id));
+    if (hasNew && !showQualityPanelRef.current) setParticipantsBadge(true);
+    participants.forEach((p) => seenParticipantIdsRef.current.add(p.id));
+  }, [participants, isReady]);
 
   // Guest room countdown: read created_at from Matrix state and limits from server
   useEffect(() => {
@@ -708,23 +740,26 @@ export default function Room() {
   const gridStyle = getGridStyle(totalCards, breakpoint);
 
   const heroId = pickHeroId(allStreams);
-  // Hero is alone in its row only when there are no unwatchedScreens padding the grid
   const cols = isMobile ? 2 : getColumnCount(totalCards);
-  const heroIsAlone = totalCards > 1 && totalCards % cols === 1 && unwatchedScreens.length === 0;
+  const heroIsAlone = totalCards > 1 && totalCards % cols === 1;
   const orderedStreams = orderWithHeroLast(allStreams, heroId);
 
-  const getTileStyle = (streamId) => {
-    if (!heroIsAlone || streamId !== heroId) {
-      return isMobile ? { aspectRatio: '1', width: '100%', minWidth: 0 } : { display: 'contents' };
-    }
-    if (isMobile) {
-      // Hero alone at bottom on mobile: full-width square
-      return { gridColumn: '1 / -1', aspectRatio: '1', width: '100%', minWidth: 0 };
-    }
-    // Hero alone at bottom on desktop: centered, same width as one column
+  const normalTileStyle = isMobile ? { aspectRatio: '1', width: '100%', minWidth: 0 } : { display: 'contents' };
+  const heroAloneStyle = () => {
+    if (isMobile) return { gridColumn: '1 / -1', aspectRatio: '1', width: '100%', minWidth: 0 };
     const widthPct = cols === 2 ? 'calc(50% - 3px)' : 'calc(33.33% - 4px)';
     return { gridColumn: '1 / -1', justifySelf: 'center', width: widthPct, display: 'block', minHeight: 0 };
   };
+  // Stream tile: hero style only when it's the last card overall (no unwatched screens after it)
+  const getTileStyle = (streamId) =>
+    heroIsAlone && unwatchedScreens.length === 0 && streamId === heroId
+      ? heroAloneStyle()
+      : normalTileStyle;
+  // Unwatched screen tile: hero style only for the last one in the list
+  const getUnwatchedStyle = (index) =>
+    heroIsAlone && index === unwatchedScreens.length - 1
+      ? heroAloneStyle()
+      : normalTileStyle;
 
   if (!rehydrationAttempted) {
     return (
@@ -814,7 +849,7 @@ export default function Room() {
             {linkCopied ? 'copied!' : 'Link'}
           </button>
           <button
-            style={styles.participantCount}
+            style={{ ...styles.participantCount, position: 'relative' }}
             title="Chat"
             onClick={() => {
               setShowQualityPanel(false);
@@ -825,9 +860,12 @@ export default function Room() {
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
             Chat
+            {unreadChatCount > 0 && (
+              <span style={{ position: 'absolute', top: '3px', right: '3px', width: '7px', height: '7px', background: 'var(--hush-amber)', borderRadius: '50%', pointerEvents: 'none' }} />
+            )}
           </button>
           <button
-            style={styles.participantCount}
+            style={{ ...styles.participantCount, position: 'relative' }}
             title="Room panel"
             onClick={() => {
               setShowChatPanel(false);
@@ -841,6 +879,9 @@ export default function Room() {
               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
             {participants.length + 1}
+            {participantsBadge && (
+              <span style={{ position: 'absolute', top: '3px', right: '3px', width: '7px', height: '7px', background: 'var(--hush-amber)', borderRadius: '50%', pointerEvents: 'none' }} />
+            )}
           </button>
         </div>
       </div>
@@ -898,8 +939,8 @@ export default function Room() {
                   />
                 </div>
               ))}
-              {unwatchedScreens.map((screen) => (
-                <div key={screen.producerId} style={isMobile ? { aspectRatio: '1', width: '100%', minWidth: 0 } : { display: 'contents' }}>
+              {unwatchedScreens.map((screen, index) => (
+                <div key={screen.producerId} style={getUnwatchedStyle(index)}>
                   <ScreenShareCard
                     peerName={screen.peerName}
                     isLoading={loadingScreens.has(screen.producerId)}
@@ -956,6 +997,7 @@ export default function Room() {
                 <div style={styles.sidebarLabel}>Chat</div>
                 <Chat
                   currentPeerId={sessionStorage.getItem('hush_peerId')}
+                  onNewMessage={handleNewChatMessage}
                 />
               </div>
             </div>
@@ -998,6 +1040,7 @@ export default function Room() {
                   <div style={styles.sidebarLabel}>Chat</div>
                   <Chat
                     currentPeerId={sessionStorage.getItem('hush_peerId')}
+                  onNewMessage={handleNewChatMessage}
                   />
                 </div>
               </div>
