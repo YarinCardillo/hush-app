@@ -309,7 +309,7 @@ const styles = `
   }
 
   .milestone-card.open {
-    background: var(--hush-elevated);
+    background: var(--hush-surface);
   }
 
   .card-header {
