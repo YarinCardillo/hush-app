@@ -347,18 +347,6 @@ const styles = `
     transition: color 120ms;
   }
 
-  .rm-current-pill {
-    font-size: 0.6rem;
-    font-weight: 500;
-    color: var(--rm-blue);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: 1px 7px;
-    background: var(--rm-blue-ghost);
-    border: 1px solid var(--rm-blue-border);
-    border-radius: 0;
-  }
-
   .release-chevron {
     color: var(--hush-text-ghost);
     transition: transform 200ms var(--ease-out), color 120ms;
@@ -419,34 +407,6 @@ const styles = `
     margin-top: 1px;
   }
 
-  /* ── PROGRESS NOTE ── */
-  .rm-progress-note {
-    padding-left: 36px;
-    margin-bottom: 4px;
-  }
-  .rm-progress-note-inner {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 16px;
-    background: var(--rm-blue-ghost);
-    border-left: 2px solid var(--rm-blue-border);
-    border-radius: 0;
-  }
-  .rm-progress-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--rm-blue);
-    animation: hush-pulse 2s ease-in-out infinite;
-    flex-shrink: 0;
-  }
-  .rm-progress-note-text {
-    font-size: 0.8rem;
-    color: var(--rm-blue);
-    font-weight: 400;
-  }
-
   /* ── SPACER ── */
   .rm-spacer { height: 28px; }
 
@@ -489,7 +449,7 @@ const styles = `
     from { opacity: 0; transform: translateY(8px); }
     to   { opacity: 1; transform: translateY(0); }
   }
-  .rm-milestone, .rm-releases, .rm-progress-note {
+  .rm-milestone, .rm-releases {
     animation: fade-up 0.35s var(--ease-out) both;
   }
 
@@ -504,7 +464,6 @@ const styles = `
     .rm-release-toggle { flex-wrap: wrap; row-gap: 4px; }
     .rm-release-version { min-width: 0; }
     .rm-release-title { order: 10; flex: 0 0 100%; padding-left: 0; }
-    .rm-current-pill { flex-shrink: 0; }
     .release-chevron { margin-left: auto; }
   }
 
@@ -562,7 +521,6 @@ function ReleaseEntry({ release, isOpen, onToggle }) {
         <span className="rm-release-version">v{release.version}</span>
         <span className="rm-release-date">{formatDate(release.date)}</span>
         <span className="rm-release-title">{release.title}</span>
-        {isCurrent && <span className="rm-current-pill">current</span>}
         <Chevron />
       </button>
 
@@ -700,17 +658,6 @@ export default function Roadmap() {
                   </div>
                 )}
 
-                {/* Progress note after the active milestone's releases */}
-                {m.status === 'active' && (
-                  <div className="rm-progress-note">
-                    <div className="rm-progress-note-inner">
-                      <div className="rm-progress-dot" />
-                      <span className="rm-progress-note-text">
-                        milestone {m.id} in progress, more releases incoming
-                      </span>
-                    </div>
-                  </div>
-                )}
 
                 {i < timelineMilestones.length - 1 && <div className="rm-spacer" />}
               </div>
