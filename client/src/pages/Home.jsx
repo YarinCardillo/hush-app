@@ -7,7 +7,31 @@ import { useAuth } from '../contexts/AuthContext';
 import { getMatrixClient } from '../lib/matrixClient';
 import { GUEST_SESSION_KEY } from '../lib/authStorage';
 
-const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your', 'privacy.'];
+const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your'];
+
+const TYPEWRITER_WORDS = [
+  'privacy',
+  'secrets',
+  'identity',
+  'data',
+  'silence',
+  'manifesto',
+  'screen time',
+  'browser history',
+  'DMs',
+  'playlists',
+  'burner phone',
+  'read receipts',
+  'inner monologue',
+  'situationship',
+  'villain arc',
+  'guilty pleasures',
+];
+
+const TYPE_SPEED_MS   = 65;
+const DELETE_SPEED_MS = 40;
+const PAUSE_AFTER_MS  = 1400;
+const PAUSE_BEFORE_MS = 200;
 
 const wordVariants = {
   hidden: { opacity: 0, y: 8 },
@@ -17,6 +41,96 @@ const wordVariants = {
     transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] },
   },
 };
+
+function TypewriterSlot() {
+  const ghostRef = useRef(null);
+  const [slotWidth, setSlotWidth] = useState(null);
+  const [wordIndex, setWordIndex] = useState(0);
+  const [displayed, setDisplayed] = useState('');
+  const [phase, setPhase] = useState('typing');
+
+  useEffect(() => {
+    document.fonts.ready.then(() => {
+      if (ghostRef.current) {
+        setSlotWidth(ghostRef.current.getBoundingClientRect().width);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    const word = TYPEWRITER_WORDS[wordIndex];
+    const fullText = word + '.';
+
+    if (phase === 'typing') {
+      if (displayed.length < fullText.length) {
+        const t = setTimeout(
+          () => setDisplayed(fullText.slice(0, displayed.length + 1)),
+          TYPE_SPEED_MS,
+        );
+        return () => clearTimeout(t);
+      }
+      setPhase('pausing');
+      return;
+    }
+
+    if (phase === 'pausing') {
+      const t = setTimeout(() => setPhase('deleting'), PAUSE_AFTER_MS);
+      return () => clearTimeout(t);
+    }
+
+    if (phase === 'deleting') {
+      if (displayed.length > 0) {
+        const t = setTimeout(
+          () => setDisplayed((d) => d.slice(0, -1)),
+          DELETE_SPEED_MS,
+        );
+        return () => clearTimeout(t);
+      }
+      setPhase('waiting');
+      return;
+    }
+
+    if (phase === 'waiting') {
+      const t = setTimeout(() => {
+        setWordIndex((i) => (i + 1) % TYPEWRITER_WORDS.length);
+        setPhase('typing');
+      }, PAUSE_BEFORE_MS);
+      return () => clearTimeout(t);
+    }
+  }, [phase, displayed, wordIndex]);
+
+  return (
+    <motion.span
+      style={{ display: 'inline-block', marginRight: '0.25em', position: 'relative' }}
+      variants={wordVariants}
+    >
+      <span
+        ref={ghostRef}
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          visibility: 'hidden',
+          pointerEvents: 'none',
+          whiteSpace: 'nowrap',
+          top: 0,
+          left: 0,
+        }}
+      >
+        guilty pleasures.
+      </span>
+      <span
+        style={{
+          display: 'inline-block',
+          minWidth: slotWidth != null ? `${slotWidth}px` : undefined,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {displayed}
+        <span className="typewriter-cursor" aria-hidden="true" />
+      </span>
+    </motion.span>
+  );
+}
 
 const styles = {
   page: {
@@ -571,6 +685,7 @@ export default function Home() {
                 {word}
               </motion.span>
             ))}
+            <TypewriterSlot />
           </motion.div>
         </motion.div>
 
