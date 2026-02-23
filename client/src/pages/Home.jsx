@@ -50,11 +50,14 @@ function TypewriterSlot() {
   const [phase, setPhase] = useState('typing');
 
   useEffect(() => {
+    let cancelled = false;
     document.fonts.ready.then(() => {
-      if (ghostRef.current) {
-        setSlotWidth(ghostRef.current.getBoundingClientRect().width);
+      if (!cancelled && ghostRef.current) {
+        const w = ghostRef.current.getBoundingClientRect().width;
+        if (w > 0) setSlotWidth(w);
       }
     });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
