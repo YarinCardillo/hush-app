@@ -1,6 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
-import { getMatrixClient } from '../lib/matrixClient';
-import { RoomEvent, EventType } from 'matrix-js-sdk';
+import * as api from '../lib/api';
+import { useSignal } from '../hooks/useSignal';
+
+const DEFAULT_DEVICE_ID = 'default';
+
+function base64ToUint8Array(base64) {
+  const bin = atob(base64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+
+function uint8ArrayToBase64(u8) {
+  let bin = '';
+  for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+  return btoa(bin);
+}
 
 const styles = {
   container: {
@@ -9,7 +24,6 @@ const styles = {
     height: '100%',
     minHeight: 0,
   },
-
   messagesSection: {
     flex: 1,
     minHeight: 0,
@@ -17,7 +31,6 @@ const styles = {
     flexDirection: 'column',
     overflow: 'hidden',
   },
-
   messagesScroll: {
     flex: 1,
     minHeight: 0,
@@ -27,11 +40,9 @@ const styles = {
     flexDirection: 'column',
     gap: '12px',
   },
-
   messagesScrollWithMessages: {
     justifyContent: 'flex-end',
   },
-
   message: (isOwn) => ({
     display: 'flex',
     flexDirection: 'column',
@@ -41,26 +52,22 @@ const styles = {
     background: isOwn ? 'var(--hush-amber-ghost)' : 'var(--hush-elevated)',
     border: '1px solid transparent',
   }),
-
   messageHeader: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: '8px',
   },
-
   senderName: (isOwn) => ({
     fontSize: '0.75rem',
     fontWeight: 500,
     color: isOwn ? 'var(--hush-amber)' : 'var(--hush-text-secondary)',
   }),
-
   timestamp: {
     fontSize: '0.65rem',
     color: 'var(--hush-text-muted)',
     fontFamily: 'var(--font-mono)',
   },
-
   messageText: {
     fontSize: '0.85rem',
     color: 'var(--hush-text)',
@@ -68,7 +75,6 @@ const styles = {
     whiteSpace: 'pre-wrap',
     lineHeight: 1.4,
   },
-
   inputSection: {
     flexShrink: 0,
     display: 'flex',
@@ -77,12 +83,10 @@ const styles = {
     borderTop: '1px solid var(--hush-border)',
     paddingTop: '12px',
   },
-
   inputWrapper: {
     display: 'flex',
     gap: '8px',
   },
-
   input: {
     flex: 1,
     padding: '10px 12px',
@@ -97,7 +101,6 @@ const styles = {
     resize: 'none',
     maxHeight: '120px',
   },
-
   sendButton: (disabled) => ({
     padding: '10px 16px',
     background: disabled ? 'var(--hush-surface)' : 'var(--hush-amber)',
@@ -110,7 +113,6 @@ const styles = {
     transition: 'all var(--duration-fast) var(--ease-out)',
     opacity: disabled ? 0.5 : 1,
   }),
-
   empty: {
     display: 'flex',
     flexDirection: 'column',
@@ -123,7 +125,6 @@ const styles = {
     textAlign: 'center',
     padding: '40px 20px',
   },
-
   emptyIcon: {
     width: '48px',
     height: '48px',
@@ -135,7 +136,6 @@ const styles = {
     border: '1px solid transparent',
     color: 'var(--hush-text-ghost)',
   },
-
   emptyText: {
     fontSize: '0.85rem',
     color: 'var(--hush-text-muted)',
@@ -143,7 +143,15 @@ const styles = {
   },
 };
 
-export default function Chat({ currentPeerId, onNewMessage }) {
+export default function Chat({
+  channelId,
+  currentUserId,
+  getToken,
+  getStore,
+  wsClient: wsClientProp,
+  recipientUserIds = [],
+  onNewMessage,
+}) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -151,144 +159,123 @@ export default function Chat({ currentPeerId, onNewMessage }) {
   const inputRef = useRef(null);
   const lastSentTempIdRef = useRef(null);
   const knownMessageIdsRef = useRef(new Set());
-  const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
+  const wsClientRef = useRef(wsClientProp);
+  wsClientRef.current = wsClientProp;
 
-  // Load existing messages and listen for new ones
+  const { encryptForUser, decryptFromUser } = useSignal({
+    getStore: getStore ?? (() => Promise.resolve(null)),
+    getToken: getToken ?? (() => null),
+  });
+
+  const wsClient = wsClientProp;
+
+  // Load history and subscribe to channel
   useEffect(() => {
-    if (!matrixRoomId) return;
+    if (!channelId || !getToken) return;
+    const token = getToken();
+    if (!token) return;
 
-    const client = getMatrixClient();
-    const room = client.getRoom(matrixRoomId);
-
-    if (!room) {
-      console.warn('[chat] Room not found:', matrixRoomId);
-      return;
-    }
-
-    // Helper to convert a timeline event to a message object
-    const eventToMessage = (e) => {
-      const eventType = e.getType();
-      if (eventType === EventType.RoomMessage) {
-        return {
-          id: e.getId(),
-          sender: e.getSender(),
-          displayName: e.sender?.name || e.getSender(),
-          content: e.getContent().body,
-          timestamp: e.getTs(),
-          decryptionFailed: false,
-        };
-      }
-      if (eventType === 'm.room.encrypted') {
-        // Event could not be decrypted
-        return {
-          id: e.getId(),
-          sender: e.getSender(),
-          displayName: e.sender?.name || e.getSender(),
-          content: null,
-          timestamp: e.getTs(),
-          decryptionFailed: true,
-        };
-      }
-      return null;
-    };
-
-    // Load existing messages from room timeline
-    const timeline = room.getLiveTimeline();
-    const events = timeline.getEvents();
-    const existingMessages = events
-      .map(eventToMessage)
-      .filter(Boolean);
-    existingMessages.forEach((m) => knownMessageIdsRef.current.add(m.id));
-    setMessages(existingMessages);
-
-    // Listen for new messages (merge with existing, including optimistic sends)
-    const handleTimelineEvent = (event, _room, toStartOfTimeline) => {
-      if (toStartOfTimeline) return; // Ignore backfill
-      if (event.getRoomId() !== matrixRoomId) return;
-
-      const msg = eventToMessage(event);
-      if (!msg) return;
-
-      const eventId = event.getId();
-      const isNew = !knownMessageIdsRef.current.has(eventId);
-      knownMessageIdsRef.current.add(eventId);
-      const currentUserId = client.getUserId();
-      if (isNew && msg.sender !== currentUserId) onNewMessage?.();
-
-      setMessages((prev) => {
-        const id = event.getId();
-        const idx = prev.findIndex((m) => m.id === id);
-        if (idx >= 0) {
-          // Replace existing message with same event id
-          return prev.map((m, i) => (i === idx ? msg : m));
-        }
-
-        // If this is our own message, try to merge with an optimistic "pending" one
-        const currentUserId = client.getUserId();
-        if (currentUserId && msg.sender === currentUserId) {
-          const optimisticIdx = prev.findIndex(
-            (m) =>
-              m.pending === true &&
-              m.sender === currentUserId &&
-              m.content === msg.content,
-          );
-          if (optimisticIdx >= 0) {
-            const next = [...prev];
-            next[optimisticIdx] = {
-              ...msg,
-              pending: false,
-              failed: false,
-            };
-            return next;
+    const loadHistory = async () => {
+      try {
+        const list = await api.getChannelMessages(token, channelId, { limit: 50 });
+        const decrypted = [];
+        for (let i = list.length - 1; i >= 0; i--) {
+          const m = list[i];
+          const ts = new Date(m.timestamp).getTime();
+          let content = null;
+          let decryptionFailed = false;
+          try {
+            const ct = base64ToUint8Array(m.ciphertext);
+            const pt = await decryptFromUser(m.senderId, DEFAULT_DEVICE_ID, ct);
+            content = new TextDecoder().decode(pt);
+          } catch (_) {
+            decryptionFailed = true;
           }
+          decrypted.push({
+            id: m.id,
+            sender: m.senderId,
+            displayName: m.senderId === currentUserId ? 'You' : truncateUserId(m.senderId),
+            content,
+            timestamp: ts,
+            decryptionFailed,
+          });
+          knownMessageIdsRef.current.add(m.id);
         }
+        setMessages(decrypted);
+      } catch (err) {
+        console.error('[chat] Load history failed:', err.message);
+      }
+    };
+    loadHistory();
+  }, [channelId, getToken, currentUserId, decryptFromUser]);
 
-        // Otherwise append as new message
+  // Subscribe to channel and listen for message.new
+  useEffect(() => {
+    if (!wsClient || !channelId) return;
+    wsClient.send('subscribe', { channel_id: channelId });
+    const onMessageNew = async (data) => {
+      if (data.channel_id !== channelId) return;
+      const id = data.id || `msg-${Date.now()}`;
+      if (knownMessageIdsRef.current.has(id)) return;
+      knownMessageIdsRef.current.add(id);
+      const senderId = data.sender_id;
+      const ts = data.timestamp ? new Date(data.timestamp).getTime() : Date.now();
+      let content = null;
+      let decryptionFailed = false;
+      let ciphertext = data.ciphertext;
+      if (data.ciphertext_by_recipient && data.ciphertext_by_recipient[currentUserId]) {
+        ciphertext = data.ciphertext_by_recipient[currentUserId];
+      }
+      if (ciphertext) {
+        try {
+          const ct = base64ToUint8Array(ciphertext);
+          const pt = await decryptFromUser(senderId, DEFAULT_DEVICE_ID, ct);
+          content = new TextDecoder().decode(pt);
+        } catch (_) {
+          decryptionFailed = true;
+        }
+      }
+      const msg = {
+        id,
+        sender: senderId,
+        displayName: senderId === currentUserId ? 'You' : truncateUserId(senderId),
+        content,
+        timestamp: ts,
+        decryptionFailed,
+      };
+      if (senderId !== currentUserId) onNewMessage?.();
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.pending && m.sender === currentUserId && m.content === content);
+        if (idx >= 0) {
+          return prev.map((m, i) => (i === idx ? { ...msg, id: m.id, pending: false, failed: false } : m));
+        }
         return [...prev, msg];
       });
     };
-
-    // Listen for decryption retries — when a previously encrypted event is finally decrypted
-    const handleEventDecrypted = (event) => {
-      if (event.getRoomId() !== matrixRoomId) return;
-      if (event.getType() !== EventType.RoomMessage) return;
-
-      setMessages(prev => prev.map(msg => {
-        if (msg.id === event.getId()) {
-          return {
-            ...msg,
-            content: event.getContent().body,
-            decryptionFailed: false,
-          };
-        }
-        return msg;
-      }));
+    const onError = (data) => {
+      if (data.code === 'forbidden' || data.code === 'internal') {
+        setMessages((prev) => prev.map((m) => (m.pending ? { ...m, failed: true } : m)));
+      }
     };
-
-    client.on(RoomEvent.Timeline, handleTimelineEvent);
-    client.on('Event.decrypted', handleEventDecrypted);
-
+    wsClient.on('message.new', onMessageNew);
+    wsClient.on('error', onError);
     return () => {
-      client.off(RoomEvent.Timeline, handleTimelineEvent);
-      client.off('Event.decrypted', handleEventDecrypted);
+      wsClient.off('message.new', onMessageNew);
+      wsClient.off('error', onError);
+      wsClient.send('unsubscribe', { channel_id: channelId });
     };
-  }, [matrixRoomId]);
-
-  // Auto-scroll to bottom when new messages arrive
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  }, [wsClient, channelId, currentUserId, onNewMessage, decryptFromUser]);
 
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const handleSend = async () => {
     const trimmed = inputText.trim();
-    if (!trimmed || isSending || !matrixRoomId) return;
+    if (!trimmed || isSending || !channelId || !wsClient) return;
+    const token = getToken?.();
+    if (!token) return;
 
-    const client = getMatrixClient();
-    const currentUserId = client.getUserId();
     const tempId = `temp-${Date.now()}`;
     const optimisticMessage = {
       id: tempId,
@@ -300,7 +287,6 @@ export default function Chat({ currentPeerId, onNewMessage }) {
       pending: true,
       failed: false,
     };
-
     setMessages((prev) => [...prev, optimisticMessage]);
     setInputText('');
     inputRef.current?.focus();
@@ -308,25 +294,31 @@ export default function Chat({ currentPeerId, onNewMessage }) {
     setIsSending(true);
 
     try {
-      const room = client.getRoom(matrixRoomId);
-      if (!room) throw new Error('Room not found in Matrix client store');
-
-      const res = await client.sendMessage(matrixRoomId, {
-        msgtype: 'm.text',
-        body: trimmed,
-      });
-
-      const eventId = res?.event_id ?? tempId;
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempId ? { ...m, id: eventId, pending: false, failed: false } : m,
-        ),
-      );
+      if (recipientUserIds.length === 0) {
+        setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
+        return;
+      }
+      if (recipientUserIds.length === 1) {
+        const ciphertext = await encryptForUser(recipientUserIds[0], new TextEncoder().encode(trimmed));
+        wsClient.send('message.send', {
+          channel_id: channelId,
+          ciphertext: uint8ArrayToBase64(ciphertext),
+        });
+      } else {
+        const ciphertextByRecipient = {};
+        for (const uid of recipientUserIds) {
+          if (uid === currentUserId) continue;
+          const ct = await encryptForUser(uid, new TextEncoder().encode(trimmed));
+          ciphertextByRecipient[uid] = uint8ArrayToBase64(ct);
+        }
+        wsClient.send('message.send', {
+          channel_id: channelId,
+          ciphertext_by_recipient: ciphertextByRecipient,
+        });
+      }
     } catch (err) {
       console.error('[chat] Send failed:', err.message);
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
-      );
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
     } finally {
       lastSentTempIdRef.current = null;
       setIsSending(false);
@@ -334,28 +326,33 @@ export default function Chat({ currentPeerId, onNewMessage }) {
   };
 
   const handleRetry = async (msg) => {
-    if (!matrixRoomId || msg.failed !== true) return;
-    const client = getMatrixClient();
+    if (!channelId || !wsClient || msg.failed !== true) return;
+    const trimmed = (msg.content || '').trim();
+    if (!trimmed) return;
     const tempId = msg.id;
-    setMessages((prev) =>
-      prev.map((m) => (m.id === tempId ? { ...m, failed: false, pending: true } : m)),
-    );
+    setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: false, pending: true } : m)));
     try {
-      const res = await client.sendMessage(matrixRoomId, {
-        msgtype: 'm.text',
-        body: msg.content,
-      });
-      const eventId = res?.event_id ?? tempId;
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempId ? { ...m, id: eventId, pending: false, failed: false } : m,
-        ),
-      );
+      if (recipientUserIds.length === 1) {
+        const ciphertext = await encryptForUser(recipientUserIds[0], new TextEncoder().encode(trimmed));
+        wsClient.send('message.send', {
+          channel_id: channelId,
+          ciphertext: uint8ArrayToBase64(ciphertext),
+        });
+      } else {
+        const ciphertextByRecipient = {};
+        for (const uid of recipientUserIds) {
+          if (uid === currentUserId) continue;
+          const ct = await encryptForUser(uid, new TextEncoder().encode(trimmed));
+          ciphertextByRecipient[uid] = uint8ArrayToBase64(ct);
+        }
+        wsClient.send('message.send', {
+          channel_id: channelId,
+          ciphertext_by_recipient: ciphertextByRecipient,
+        });
+      }
     } catch (err) {
       console.error('[chat] Retry send failed:', err.message);
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
-      );
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
     }
   };
 
@@ -367,8 +364,7 @@ export default function Chat({ currentPeerId, onNewMessage }) {
   };
 
   const formatTime = (timestamp) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString('en-US', {
+    return new Date(timestamp).toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
@@ -399,12 +395,9 @@ export default function Chat({ currentPeerId, onNewMessage }) {
             </div>
           ) : (
             messages.map((msg) => {
-              const client = getMatrixClient();
-              const currentUserId = client.getUserId();
               const isOwn = msg.sender === currentUserId;
               const isFailed = msg.failed === true;
               const isPending = msg.pending === true;
-
               return (
                 <div
                   key={msg.id}
@@ -425,7 +418,9 @@ export default function Chat({ currentPeerId, onNewMessage }) {
                       <span style={{ color: 'var(--hush-danger)', fontStyle: 'italic' }}>
                         Unable to decrypt message
                       </span>
-                    ) : msg.content}
+                    ) : (
+                      msg.content
+                    )}
                   </div>
                   {isPending && (
                     <div style={{ fontSize: '0.7rem', color: 'var(--hush-text-muted)', marginTop: '4px' }}>
@@ -459,7 +454,6 @@ export default function Chat({ currentPeerId, onNewMessage }) {
           {hasMessages && <div ref={messagesEndRef} />}
         </div>
       </div>
-
       <div style={styles.inputSection}>
         <div style={styles.inputWrapper}>
           <textarea
@@ -484,4 +478,9 @@ export default function Chat({ currentPeerId, onNewMessage }) {
       </div>
     </div>
   );
+}
+
+function truncateUserId(userId) {
+  if (!userId) return 'User';
+  return userId.slice(0, 8) + '…';
 }

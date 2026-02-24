@@ -75,6 +75,27 @@ export async function getPreKeyBundleByDevice(token, userId, deviceId) {
 }
 
 /**
+ * Fetch paginated message history for a channel. Ciphertext is base64; client decrypts locally.
+ * @param {string} token - JWT
+ * @param {string} channelId - Channel UUID
+ * @param {{ before?: string, limit?: number }} [opts] - before: RFC3339 cursor; limit: default 50, max 50
+ * @returns {Promise<Array<{ id: string, channelId: string, senderId: string, ciphertext: string, timestamp: string }>>}
+ */
+export async function getChannelMessages(token, channelId, opts = {}) {
+  const params = new URLSearchParams();
+  if (opts.before) params.set('before', opts.before);
+  if (opts.limit != null) params.set('limit', String(opts.limit));
+  const qs = params.toString();
+  const path = `/api/channels/${encodeURIComponent(channelId)}/messages${qs ? `?${qs}` : ''}`;
+  const res = await fetchWithAuth(token, path);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `get messages ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
  * Call after Go backend register/login. Ensures identity exists in IndexedDB and uploads keys.
  * When using Go auth (Phase E), call this after successful login/register with token, userId, and a stable deviceId (e.g. from localStorage).
  * @param {string} token - JWT from auth response

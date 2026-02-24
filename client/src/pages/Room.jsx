@@ -4,6 +4,8 @@ import { Track } from 'livekit-client';
 import { useAuth } from '../contexts/AuthContext';
 import { GUEST_SESSION_KEY } from '../lib/authStorage';
 import { getMatrixClient } from '../lib/matrixClient';
+import { createWsClient } from '../lib/ws';
+import * as signalStore from '../lib/signalStore';
 import { useRoom } from '../hooks/useRoom';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDevices } from '../hooks/useDevices';
@@ -284,7 +286,28 @@ export default function Room() {
   const [participantsBadge, setParticipantsBadge] = useState(false);
   const showChatPanelRef = useRef(false);
   const showQualityPanelRef = useRef(false);
+  const [wsClient, setWsClient] = useState(null);
+  const wsClientRef = useRef(null);
   const seenParticipantIdsRef = useRef(null);
+
+  // WebSocket client for Chat (Phase C). Connect when we have channel and Go JWT.
+  useEffect(() => {
+    const channelId = sessionStorage.getItem('hush_matrixRoomId');
+    const getToken = () => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null;
+    if (!channelId) return;
+    const base = typeof location !== 'undefined' ? location.origin.replace(/^http/, 'ws') : '';
+    const url = base ? `${base}/ws` : undefined;
+    if (!url) return;
+    const client = createWsClient({ url, getToken });
+    wsClientRef.current = client;
+    client.connect();
+    setWsClient(client);
+    return () => {
+      client.disconnect();
+      wsClientRef.current = null;
+      setWsClient(null);
+    };
+  }, []);
 
   const {
     isReady,
@@ -1022,7 +1045,16 @@ export default function Room() {
               <div style={styles.sidebarSection}>
                 <div style={styles.sidebarLabel}>Chat</div>
                 <Chat
-                  currentPeerId={sessionStorage.getItem('hush_peerId')}
+                  channelId={sessionStorage.getItem('hush_matrixRoomId')}
+                  currentUserId={sessionStorage.getItem('hush_userId') ?? getMatrixClient()?.getUserId()?.replace(/^@/, '').split(':')[0] ?? ''}
+                  getToken={() => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null}
+                  getStore={() => {
+                    const uid = sessionStorage.getItem('hush_userId');
+                    if (!uid) return Promise.resolve(null);
+                    return signalStore.openStore(uid, 'default');
+                  }}
+                  wsClient={wsClient}
+                  recipientUserIds={sessionStorage.getItem('hush_peerId') ? [sessionStorage.getItem('hush_peerId')] : []}
                   onNewMessage={handleNewChatMessage}
                 />
               </div>
@@ -1064,8 +1096,17 @@ export default function Room() {
                 <div style={styles.sidebarSection}>
                   <div style={styles.sidebarLabel}>Chat</div>
                   <Chat
-                    currentPeerId={sessionStorage.getItem('hush_peerId')}
-                  onNewMessage={handleNewChatMessage}
+                    channelId={sessionStorage.getItem('hush_matrixRoomId')}
+                    currentUserId={sessionStorage.getItem('hush_userId') ?? getMatrixClient()?.getUserId()?.replace(/^@/, '').split(':')[0] ?? ''}
+                    getToken={() => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null}
+                    getStore={() => {
+                      const uid = sessionStorage.getItem('hush_userId');
+                      if (!uid) return Promise.resolve(null);
+                      return signalStore.openStore(uid, 'default');
+                    }}
+                    wsClient={wsClient}
+                    recipientUserIds={sessionStorage.getItem('hush_peerId') ? [sessionStorage.getItem('hush_peerId')] : []}
+                    onNewMessage={handleNewChatMessage}
                   />
                 </div>
               </div>
