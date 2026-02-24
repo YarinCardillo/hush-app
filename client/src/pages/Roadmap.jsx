@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { milestones, releases } from '../data/changelog.js';
 
@@ -507,6 +507,9 @@ function MilestoneCard({ milestone }) {
 }
 
 function ReleaseEntry({ release, isOpen, onToggle }) {
+  const touchStartY = useRef(null);
+  const didScroll = useRef(false);
+
   const isCurrent = release.current === true;
   const releaseClass = [
     'rm-release',
@@ -514,11 +517,33 @@ function ReleaseEntry({ release, isOpen, onToggle }) {
     isCurrent ? 'current' : '',
   ].filter(Boolean).join(' ');
 
+  function handleTouchStart(e) {
+    touchStartY.current = e.touches[0].clientY;
+    didScroll.current = false;
+  }
+
+  function handleTouchEnd(e) {
+    if (touchStartY.current !== null) {
+      didScroll.current = Math.abs(e.changedTouches[0].clientY - touchStartY.current) > 8;
+      touchStartY.current = null;
+    }
+  }
+
+  function handleClick() {
+    if (didScroll.current) {
+      didScroll.current = false;
+      return;
+    }
+    onToggle(release.version);
+  }
+
   return (
     <div className={releaseClass}>
       <button
         className="rm-release-toggle"
-        onClick={() => onToggle(release.version)}
+        onClick={handleClick}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
         type="button"
       >
         <span className="rm-release-dot" />
@@ -549,6 +574,8 @@ function ReleaseEntry({ release, isOpen, onToggle }) {
 export default function Roadmap() {
   const [openReleases, setOpenReleases] = useState(new Set());
   const [whatsNextOpen, setWhatsNextOpen] = useState(false);
+  const whatsNextTouchStartY = useRef(null);
+  const whatsNextDidScroll = useRef(false);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -578,6 +605,26 @@ export default function Roadmap() {
       }
     };
   }, []);
+
+  function handleWhatsNextTouchStart(e) {
+    whatsNextTouchStartY.current = e.touches[0].clientY;
+    whatsNextDidScroll.current = false;
+  }
+
+  function handleWhatsNextTouchEnd(e) {
+    if (whatsNextTouchStartY.current !== null) {
+      whatsNextDidScroll.current = Math.abs(e.changedTouches[0].clientY - whatsNextTouchStartY.current) > 8;
+      whatsNextTouchStartY.current = null;
+    }
+  }
+
+  function handleWhatsNextClick() {
+    if (whatsNextDidScroll.current) {
+      whatsNextDidScroll.current = false;
+      return;
+    }
+    setWhatsNextOpen((v) => !v);
+  }
 
   function toggleRelease(version) {
     setOpenReleases((prev) => {
@@ -620,7 +667,9 @@ export default function Roadmap() {
           <div className={`whats-next ${whatsNextOpen ? 'open' : ''}`}>
             <button
               className="whats-next-toggle"
-              onClick={() => setWhatsNextOpen((v) => !v)}
+              onClick={handleWhatsNextClick}
+              onTouchStart={handleWhatsNextTouchStart}
+              onTouchEnd={handleWhatsNextTouchEnd}
               type="button"
             >
               <span>what&rsquo;s next</span>
@@ -674,7 +723,7 @@ export default function Roadmap() {
           <span className="rm-footer-text">hush is open source and self-hostable.</span>
           <div className="rm-footer-links">
             <a className="rm-footer-link" href="https://github.com/YarinCardillo/hush-app" target="_blank" rel="noopener noreferrer">github</a>
-            <a className="rm-footer-link" href="https://github.com/YarinCardillo/hush-app/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">raw changelog</a>
+            <a className="rm-footer-link" href="https://github.com/YarinCardillo/hush-app/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">changelog</a>
           </div>
         </footer>
 

@@ -1142,11 +1142,11 @@ export default function Home() {
               {' '}
               <span style={{ display: 'inline-block' }}>
                 <a href="https://github.com/YarinCardillo/hush-app" style={styles.footerLink}>
-                  GitHub
+                  github
                 </a>
                 {' · '}
                 <Link to="/roadmap" style={styles.footerLink}>
-                  Roadmap
+                  roadmap
                 </Link>
               </span>
             </div>
