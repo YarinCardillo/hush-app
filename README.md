@@ -53,8 +53,6 @@ Main environment variables (see [.env.example](.env.example)):
 | `LIVEKIT_API_SECRET` | LiveKit API secret (dev: `devsecret`) |
 | `LIVEKIT_URL` | LiveKit WebSocket URL (dev: `ws://localhost:7880`; prod: `wss://<project>.livekit.cloud`) |
 
-To use LiveKit Cloud instead of a self-hosted LiveKit instance, use `docker-compose.prod.yml`, which drops the `livekit` and `redis` services. Set `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and `LIVEKIT_URL` from your LiveKit Cloud dashboard. Before going live, review the [production checklist](SECURITY.md#production-checklist) in SECURITY.md.
-
 ---
 
 ## Architecture
