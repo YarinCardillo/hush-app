@@ -37,11 +37,13 @@ export async function generateIdentity() {
 }
 
 /**
+ * Generates a pre-key bundle including private keys for local storage.
+ * Only PUBLIC keys should be uploaded to the server.
  * @param {Uint8Array} identityPublic
  * @param {Uint8Array} identityPrivate
  * @param {number} registrationId
  * @param {number} numOneTime
- * @returns {Promise<object>} Bundle for upload (identityKey, signedPreKey, signedPreKeySignature, registrationId, oneTimePreKeys)
+ * @returns {Promise<object>}
  */
 export async function generatePreKeyBundle(identityPublic, identityPrivate, registrationId, numOneTime) {
   await init();
@@ -49,13 +51,44 @@ export async function generatePreKeyBundle(identityPublic, identityPrivate, regi
 }
 
 /**
+ * X3DH initiator (Alice). Returns session state + ephemeral public key for the initial message.
  * @param {string} remoteBundleJson - JSON from GET /api/keys/:userId/:deviceId
  * @param {Uint8Array} identityPrivate
- * @returns {Promise<Uint8Array>} Session state bytes for persistence
+ * @returns {Promise<{ stateBytes: Uint8Array, ephemeralPublic: Uint8Array }>}
  */
 export async function performX3DH(remoteBundleJson, identityPrivate) {
   await init();
-  return module.performX3DH(remoteBundleJson, identityPrivate);
+  const result = module.performX3DH(remoteBundleJson, identityPrivate);
+  return {
+    stateBytes: new Uint8Array(result.state_bytes),
+    ephemeralPublic: new Uint8Array(result.ephemeral_public),
+  };
+}
+
+/**
+ * X3DH responder (Bob). Takes Alice's initial message keys and Bob's private keys.
+ * @param {Uint8Array} identityPrivate - Bob's identity private key (32 bytes)
+ * @param {Uint8Array} spkPrivate - Bob's signed pre-key private (32 bytes)
+ * @param {Uint8Array} spkPublic - Bob's signed pre-key public (33 bytes)
+ * @param {Uint8Array|null} opkPrivate - Bob's one-time pre-key private (32 bytes, or null)
+ * @param {Uint8Array} aliceIdentityPublic - Alice's identity public (33 bytes)
+ * @param {Uint8Array} aliceEphemeralPublic - Alice's ephemeral public (33 bytes)
+ * @returns {Promise<Uint8Array>} Session state bytes
+ */
+export async function performX3DHResponder(
+  identityPrivate, spkPrivate, spkPublic, opkPrivate,
+  aliceIdentityPublic, aliceEphemeralPublic,
+) {
+  await init();
+  const result = module.performX3DHResponder(
+    identityPrivate,
+    spkPrivate,
+    spkPublic,
+    opkPrivate ?? new Uint8Array(0),
+    aliceIdentityPublic,
+    aliceEphemeralPublic,
+  );
+  return new Uint8Array(result.state_bytes);
 }
 
 /**

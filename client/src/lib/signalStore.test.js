@@ -9,6 +9,11 @@ import {
   setSession,
   getPreKeys,
   setPreKeys,
+  getSignedPreKey,
+  setSignedPreKey,
+  getOneTimePreKey,
+  setOneTimePreKey,
+  deleteOneTimePreKey,
 } from './signalStore';
 
 describe('signalStore', () => {
@@ -22,6 +27,11 @@ describe('signalStore', () => {
     expect(typeof setSession).toBe('function');
     expect(typeof getPreKeys).toBe('function');
     expect(typeof setPreKeys).toBe('function');
+    expect(typeof getSignedPreKey).toBe('function');
+    expect(typeof setSignedPreKey).toBe('function');
+    expect(typeof getOneTimePreKey).toBe('function');
+    expect(typeof setOneTimePreKey).toBe('function');
+    expect(typeof deleteOneTimePreKey).toBe('function');
   });
 
   it('openStore returns a promise', () => {

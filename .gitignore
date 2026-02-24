@@ -50,3 +50,6 @@ client/public/wasm/
 .aider*
 .cursorindexingignore
 .specstory/
+
+# Signal documentation
+.signal-specs/
