@@ -101,10 +101,9 @@ Full media E2EE requires Insertable Streams and the LiveKit E2EE worker. See [SE
 
 ## Documentation
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Codebase map: current state and target state.
 - **[SECURITY.md](SECURITY.md)** — E2EE implementation, trust model, limitations.
-- **[PLAN.md](PLAN.md)** — Development plan and phase breakdown.
-- **[design-system.md](design-system.md)** — UI design language.
+- **[CHANGELOG.md](CHANGELOG.md)** — Release history and notable changes.
+- **[docs/](docs/README.md)** — Full documentation index: testing, room lifecycle, Matrix reference, audit reports.
 
 ---
 
