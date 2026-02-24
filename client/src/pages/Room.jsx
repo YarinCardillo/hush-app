@@ -1045,7 +1045,7 @@ export default function Room() {
               <div style={styles.sidebarSection}>
                 <div style={styles.sidebarLabel}>Chat</div>
                 <Chat
-                  channelId={sessionStorage.getItem('hush_matrixRoomId')}
+                  channelId={sessionStorage.getItem('hush_channelId')}
                   currentUserId={sessionStorage.getItem('hush_userId') ?? getMatrixClient()?.getUserId()?.replace(/^@/, '').split(':')[0] ?? ''}
                   getToken={() => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null}
                   getStore={() => {
@@ -1096,7 +1096,7 @@ export default function Room() {
                 <div style={styles.sidebarSection}>
                   <div style={styles.sidebarLabel}>Chat</div>
                   <Chat
-                    channelId={sessionStorage.getItem('hush_matrixRoomId')}
+                    channelId={sessionStorage.getItem('hush_channelId')}
                     currentUserId={sessionStorage.getItem('hush_userId') ?? getMatrixClient()?.getUserId()?.replace(/^@/, '').split(':')[0] ?? ''}
                     getToken={() => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null}
                     getStore={() => {
