@@ -6,6 +6,14 @@ dist/
 *.log
 .DS_Store
 
+# Go compiled binaries and artifacts
+server/hush
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
 # Synapse homeserver data
 synapse/homeserver.yaml
 synapse/data/
