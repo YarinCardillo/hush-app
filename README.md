@@ -53,7 +53,7 @@ Main environment variables (see [.env.example](.env.example)):
 | `LIVEKIT_API_SECRET` | LiveKit API secret (dev: `devsecret`) |
 | `LIVEKIT_URL` | LiveKit WebSocket URL (dev: `ws://localhost:7880`; prod: `wss://<project>.livekit.cloud`) |
 
-For gethush.live (LiveKit Cloud): use `docker-compose.prod.yml` which drops `livekit` and `redis` services. Set LiveKit env vars from the cloud dashboard. Before production go-live, see the [Production checklist](SECURITY.md#production-checklist) in SECURITY.md (CORS, HSTS, SPF, secrets, COOP/COEP).
+To use LiveKit Cloud instead of a self-hosted LiveKit instance, use `docker-compose.prod.yml`, which drops the `livekit` and `redis` services. Set `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and `LIVEKIT_URL` from your LiveKit Cloud dashboard. Before going live, review the [production checklist](SECURITY.md#production-checklist) in SECURITY.md.
 
 ---
 
@@ -66,8 +66,6 @@ For gethush.live (LiveKit Cloud): use `docker-compose.prod.yml` which drops `liv
 - **Caddy:** Reverse proxy and TLS.
 - **Desktop:** Tauri (Rust shell wrapping React frontend).
 - **Mobile:** React Native with `hush-crypto` Rust crate via UniFFI.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full codebase map.
 
 ---
 
