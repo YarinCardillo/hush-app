@@ -6,7 +6,7 @@ How Hush creates Matrix/LiveKit rooms, what happens when participants leave, and
 
 ## Creation
 
-- **Matrix room:** Created by the client via Matrix Client-Server API (`createRoom`) when the user clicks "create room" on Home. Before creating, the client calls `GET /api/rooms/can-create`; if the server is at capacity (`total_rooms >= MAX_GUEST_ROOMS`), creation is blocked and the user sees "All guest rooms are full." The room alias always gets a random 8-hex suffix (e.g., `my-room-a1b2c3d4`) to prevent collisions and ensure unguessability — the link IS the invite (link-only access model). The display name stays as what the user typed. Options: name, alias, encryption, guest access, join rules (`public` for guest rooms). After creation, the client sends a state event `io.hush.room.created_at` with `{ created_at: ms }` and registers the room with `POST /api/rooms/created` for expiry tracking. Invite-only mode is deferred to persistent rooms/spaces (not guest rooms).
+- **Matrix room:** Created by the client via Matrix Client-Server API (`createRoom`) when the user clicks "create room" on Home. Before creating, the client calls `GET /api/rooms/can-create`; if the server is at capacity (`total_rooms >= MAX_GUEST_ROOMS`), creation is blocked and the user sees "All guest rooms are full." The room alias always gets a random 8-hex suffix (e.g., `my-room-a1b2c3d4`) to prevent collisions and ensure unguessability; the link IS the invite (link-only access model). The display name stays as what the user typed. Options: name, alias, encryption, guest access, join rules (`public` for guest rooms). After creation, the client sends a state event `io.hush.room.created_at` with `{ created_at: ms }` and registers the room with `POST /api/rooms/created` for expiry tracking. Invite-only mode is deferred to persistent rooms/spaces (not guest rooms).
 - **LiveKit room:** No explicit creation. The room is created implicitly when the first participant connects with a given `roomName` (used in the LiveKit token). The same name is used for both Matrix room (alias/name) and LiveKit room so that one Hush "room" is one Matrix room + one LiveKit room. The server enforces a maximum number of participants per room (`MAX_PARTICIPANTS_PER_ROOM`); when at capacity, `POST /api/livekit/token` returns 403 "This room is full."
 
 ---
@@ -32,7 +32,7 @@ Clients show a small countdown (bottom-right); when time reaches zero or the ser
 1. **LiveKit:** The client calls `disconnectRoom()`: local tracks are stopped, mic pipeline cleaned up, `room.disconnect()` is called. The participant leaves the LiveKit room.
 2. **Client cleanup:** Session storage is cleared (token, room name, matrix room id, etc.). If the user was a guest, logout is triggered. The app navigates to Home.
 
-Room deletion is handled server-side by the orphan cleanup job (see below) — the client does not attempt to delete the room on leave.
+Room deletion is handled server-side by the orphan cleanup job (see below); the client does not attempt to delete the room on leave.
 
 ---
 
@@ -71,7 +71,7 @@ registration_shared_secret: "changeme"
 
 (Use the same value as in your `.env` or set a strong secret in both.)
 
-**Step 1 — Create an admin user**
+**Step 1: Create an admin user**
 
 From the project root, with Synapse running:
 
@@ -83,9 +83,9 @@ exit
 
 Replace `admin` / `YOUR_ADMIN_PASSWORD` with your chosen username and password. The `-a` flag makes the user an admin. If you see "No 'registration_shared_secret' defined", add it to `synapse/data/homeserver.yaml` as above and run `docker-compose restart synapse`, then retry.
 
-**Step 2 — Get the access token**
+**Step 2: Get the access token**
 
-Log in as that user (from the host; use the URL where your Synapse client API is reachable — e.g. `http://localhost:80` if Caddy proxies to Synapse, or `http://localhost:8008` if you expose Synapse directly):
+Log in as that user (from the host; use the URL where your Synapse client API is reachable, e.g. `http://localhost:80` if Caddy proxies to Synapse, or `http://localhost:8008` if you expose Synapse directly):
 
 ```bash
 curl -s -X POST 'http://localhost:80/_matrix/client/v3/login' \
@@ -95,7 +95,7 @@ curl -s -X POST 'http://localhost:80/_matrix/client/v3/login' \
 
 Replace `admin` and `YOUR_ADMIN_PASSWORD`. In the JSON response, copy the value of `access_token` (long string).
 
-**Step 3 — Configure the Hush server**
+**Step 3: Configure the Hush server**
 
 1. In the project root `.env`, add or set:
    ```bash
@@ -198,10 +198,10 @@ flowchart LR
 
 | Event | Matrix | LiveKit | Server |
 |-------|--------|---------|--------|
-| Create room | Client calls `createRoom()` with 8-hex suffix alias after `GET /api/rooms/can-create` | — | can-create uses Synapse room count; creator calls `POST /api/rooms/created` |
+| Create room | Client calls `createRoom()` with 8-hex suffix alias after `GET /api/rooms/can-create` | - | can-create uses Synapse room count; creator calls `POST /api/rooms/created` |
 | Join via link | Client joins via `joinRoom(#name-suffix:server)` after `/?join=` redirect | Client gets token from `POST /api/livekit/token` | Token denied with 403 if room at `MAX_PARTICIPANTS_PER_ROOM` |
-| User leaves | — | Client calls `room.disconnect()` | — |
-| Room orphaned? | — | — | Orphan cleanup job: after 2-min grace with 0 LK participants, deletes room via Admin API |
-| Room expired? | — | Server removes all participants | Periodic job: disconnect via LiveKit, delete room via Admin API |
+| User leaves | - | Client calls `room.disconnect()` | - |
+| Room orphaned? | - | - | Orphan cleanup job: after 2-min grace with 0 LK participants, deletes room via Admin API |
+| Room expired? | - | Server removes all participants | Periodic job: disconnect via LiveKit, delete room via Admin API |
 
 Rooms are removed from Synapse when: (1) the orphan cleanup job detects the room has had no active LiveKit participants for 2 minutes (handles all leave/crash scenarios), or (2) the guest room duration has elapsed (expiry job).

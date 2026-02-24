@@ -2,26 +2,26 @@
 
 **Stream without limits. Privacy by default.**
 
-High-quality screen sharing with end-to-end encryption. Open source, self-hostable. Signal Protocol for chat, LiveKit for media — both E2EE.
+High-quality screen sharing with end-to-end encryption. Open source, self-hostable. Signal Protocol for chat, LiveKit for media, both E2EE.
 
 ---
 
 ## What is this?
 
-Hush is a privacy-first Discord alternative for screen sharing, voice, video, and text chat — all end-to-end encrypted. Create or join a server, add text and voice channels, invite friends. The server never sees your content.
+Hush is a privacy-first Discord alternative for screen sharing, voice, video, and text chat, all end-to-end encrypted. Create or join a server, add text and voice channels, invite friends. The server never sees your content.
 
 **Features:**
 - Screen sharing, webcam, and microphone
 - E2EE chat (Signal Protocol: X3DH + Double Ratchet)
 - E2EE media (LiveKit frame encryption, AES-256-GCM)
 - Servers with text and voice channels (Discord-like)
-- Guest access — no account required to try
+- Guest access (no account required to try)
 - Self-hostable: `./scripts/setup.sh` then `docker-compose up -d`
 
 **Privacy:**
 - Chat messages encrypted with Signal Protocol. The server stores only ciphertext.
 - Media frames encrypted client-side with AES-256-GCM. The SFU forwards encrypted data.
-- Frame keys distributed via Signal sessions — never sent to the server.
+- Frame keys distributed via Signal sessions, never sent to the server.
 - See [SECURITY.md](SECURITY.md) for algorithms, trust model, and browser support.
 
 ---
@@ -101,9 +101,9 @@ Full media E2EE requires Insertable Streams and the LiveKit E2EE worker. See [SE
 
 ## Documentation
 
-- **[SECURITY.md](SECURITY.md)** — E2EE implementation, trust model, limitations.
-- **[CHANGELOG.md](CHANGELOG.md)** — Release history and notable changes.
-- **[docs/](docs/README.md)** — Full documentation index: testing, room lifecycle, Matrix reference, audit reports.
+- **[SECURITY.md](SECURITY.md):** E2EE implementation, trust model, limitations.
+- **[CHANGELOG.md](CHANGELOG.md):** Release history and notable changes.
+- **[docs/](docs/README.md):** Full documentation index: testing, room lifecycle, Matrix reference, audit reports.
 
 ---
 
@@ -115,4 +115,4 @@ PRs welcome. Open an issue first for large changes.
 
 ## License
 
-AGPL-3.0 — If you modify and deploy, share your changes.
+AGPL-3.0. If you modify and deploy, share your changes.

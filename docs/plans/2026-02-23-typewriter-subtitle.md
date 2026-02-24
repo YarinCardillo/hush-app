@@ -1,4 +1,4 @@
-# Typewriter Subtitle Animation — Design
+# Typewriter Subtitle Animation: Design
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -33,7 +33,7 @@ const TYPEWRITER_WORDS = [
 ];
 ```
 
-Longest word (with period): `"guilty pleasures."` (17 chars) — used for ghost measurement.
+Longest word (with period): `"guilty pleasures."` (17 chars), used for ghost measurement.
 
 ---
 
@@ -154,7 +154,7 @@ function TypewriterSlot() {
 Add to `client/src/styles/global.css`:
 
 ```css
-/* Typewriter cursor — amber accent, natural blink */
+/* Typewriter cursor: amber accent, natural blink */
 .typewriter-cursor {
   display: inline-block;
   width: 1.5px;
@@ -200,14 +200,14 @@ const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your'];
 
 ### No Layout Shift Guarantee
 
-- The `<TypewriterSlot>` `motion.span` has `display: inline-block` — it occupies space in the line even before `slotWidth` is measured.
+- The `<TypewriterSlot>` `motion.span` has `display: inline-block`, occupying space in the line even before `slotWidth` is measured.
 - Once `slotWidth` is set (post `fonts.ready`), `minWidth` locks the container. The ghost element guarantees the width matches the longest word at the actual rendered font size.
 - `whiteSpace: nowrap` prevents wrapping of multi-word phrases.
-- The cursor is `inline-block` inside the slot, not outside — it never shifts the line.
+- The cursor is `inline-block` inside the slot, not outside, so it never shifts the line.
 
 ---
 
 ### Files Modified
 
-- `client/src/pages/Home.jsx` — constants, TypewriterSlot component, subtitle JSX
-- `client/src/styles/global.css` — `.typewriter-cursor` and `@keyframes cursor-blink`
+- `client/src/pages/Home.jsx`: constants, TypewriterSlot component, subtitle JSX
+- `client/src/styles/global.css`: `.typewriter-cursor` and `@keyframes cursor-blink`

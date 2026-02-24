@@ -16,8 +16,8 @@ cp .env.example .env
 
 Edit `.env` and set:
 
-- **LIVEKIT_API_KEY** — Required for the token service. Use a random string (e.g. 32+ chars) for local dev.
-- **LIVEKIT_API_SECRET** — Same; must match what LiveKit server expects.
+- **LIVEKIT_API_KEY:** Required for the token service. Use a random string (e.g. 32+ chars) for local dev.
+- **LIVEKIT_API_SECRET:** Same; must match what LiveKit server expects.
 
 Example for local dev only:
 
@@ -58,12 +58,12 @@ docker-compose up --build
 
 This starts:
 
-- **Postgres** — Synapse database
-- **Synapse** — Matrix homeserver (port 8008 internally)
-- **Redis** — Used by LiveKit
-- **LiveKit** — Media SFU (7880, 7881, 50000–50100/udp)
-- **Hush** — Node server (static client + `/api/livekit/token`) on port 3001
-- **Caddy** — Reverse proxy on port 80
+- **Postgres:** Synapse database
+- **Synapse:** Matrix homeserver (port 8008 internally)
+- **Redis:** Used by LiveKit
+- **LiveKit:** Media SFU (7880, 7881, 50000–50100/udp)
+- **Hush:** Node server (static client + `/api/livekit/token`) on port 3001
+- **Caddy:** Reverse proxy on port 80
 
 Leave this terminal running.
 
@@ -158,7 +158,7 @@ For a full E2EE manual checklist (crypto init, key distribution, rekeying, etc.)
 | “Encryption unavailable” / crypto error on login | Browser supports WebAssembly; try Chromium. No IndexedDB in private mode on some browsers. |
 | 401 on LiveKit token | You must be logged in (guest or registered). Token request sends Matrix Bearer token; if session didn’t rehydrate after refresh, log in again. |
 | Room doesn’t connect / “could not establish pc connection” | LiveKit container is up; Caddy routes `/livekit` to LiveKit; `.env` has correct `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` (same as in LiveKit container). |
-| Matrix errors (e.g. 403 on join) | Synapse config (e.g. `allow_guest_access`, `enable_registration`); room alias and server name match (`MATRIX_SERVER_NAME`). For "no invitation to enter" when a guest joins from another client: see PLAN.md "Guest join from another client" — rooms are created with public join so join by name works; C2.5 invite links not yet implemented. |
+| Matrix errors (e.g. 403 on join) | Synapse config (e.g. `allow_guest_access`, `enable_registration`); room alias and server name match (`MATRIX_SERVER_NAME`). For "no invitation to enter" when a guest joins from another client: see PLAN.md "Guest join from another client", rooms are created with public join so join by name works; C2.5 invite links not yet implemented. |
 | Client (Vite port) can’t reach API/Matrix/LiveKit | Caddy must be running on port 80; Vite proxy targets `http://localhost:80`. |
 
 ---

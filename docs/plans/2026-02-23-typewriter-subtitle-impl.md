@@ -1,12 +1,12 @@
-# Typewriter Subtitle Animation — Implementation Plan
+# Typewriter Subtitle Animation: Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Replace the static "privacy." word in the home page subtitle with a cycling typewriter animation inside a ghost-measured fixed-width slot, with a blinking amber cursor — zero layout shift.
+**Goal:** Replace the static "privacy." word in the home page subtitle with a cycling typewriter animation inside a ghost-measured fixed-width slot, with a blinking amber cursor, zero layout shift.
 
 **Architecture:** Two-file change. `global.css` gets the cursor keyframe. `Home.jsx` gets the word list constants, a `TypewriterSlot` component (defined at module scope, above `Home`), and the subtitle JSX update (drop `'privacy.'` from `SUBTITLE_WORDS`, append `<TypewriterSlot />`). The typing engine is pure `useEffect`/`setTimeout` (no Framer Motion for typing). Width is measured via a ghost `<span>` ref after `document.fonts.ready`.
 
-**Tech Stack:** React 18, Framer Motion (`motion/react` — entry fade-in only), inline styles, CSS custom properties, CSS keyframes.
+**Tech Stack:** React 18, Framer Motion (`motion/react` (entry fade-in only)), inline styles, CSS custom properties, CSS keyframes.
 
 ---
 
@@ -61,7 +61,7 @@ git commit -m "feat: add typewriter cursor CSS keyframe"
 **Files:**
 - Modify: `client/src/pages/Home.jsx`
 
-**Context:** `Home.jsx` is at `client/src/pages/Home.jsx`. It already imports `{ useState, useEffect, useRef, useCallback }` from React and `{ motion }` from `motion/react`. The module-level constant `SUBTITLE_WORDS` is defined near the top. `wordVariants` is also module-scope — `TypewriterSlot` can use it directly.
+**Context:** `Home.jsx` is at `client/src/pages/Home.jsx`. It already imports `{ useState, useEffect, useRef, useCallback }` from React and `{ motion }` from `motion/react`. The module-level constant `SUBTITLE_WORDS` is defined near the top. `wordVariants` is also module-scope, so `TypewriterSlot` can use it directly.
 
 **Step 1: Add word list and timing constants after SUBTITLE_WORDS**
 

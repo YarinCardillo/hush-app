@@ -1,4 +1,4 @@
-# Changelog + Roadmap Integration — Implementation Plan
+# Changelog + Roadmap Integration: Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -36,7 +36,7 @@ Create `client/src/data/changelog.js` with the complete milestone and release da
 
 ```js
 /**
- * Changelog data — single source of truth.
+ * Changelog data: single source of truth.
  *
  * Milestones: visual anchors on the timeline.
  * Releases: accordion entries, each belonging to a milestone.
@@ -216,7 +216,7 @@ export const releases = [
       {
         label: 'features',
         items: [
-          'WebRTC rooms via mediasoup SFU — up to 4 participants',
+          'WebRTC rooms via mediasoup SFU, up to 4 participants',
           'Quality presets: best (1080p) and lite (720p)',
           'Noise gate AudioWorklet for mic processing',
           'iOS Safari compatibility fixes for remote streams',
@@ -243,7 +243,7 @@ Expected: `7 milestones` and `5 releases` printed.
 
 ```bash
 git add client/src/data/changelog.js
-git commit -m "feat: add changelog data file — single source of truth for roadmap + changelog"
+git commit -m "feat: add changelog data file, single source of truth for roadmap + changelog"
 ```
 
 ---
@@ -359,7 +359,7 @@ const lines = [
 
 for (const release of releases) {
   const milestone = milestones.find((m) => m.id === release.milestone);
-  const milestoneLabel = milestone ? ` — ${milestone.title}` : '';
+  const milestoneLabel = milestone ? `: ${milestone.title}` : '';
   const currentTag = release.current ? ' (current)' : '';
 
   lines.push(`## [${release.version}] - ${release.date}${milestoneLabel}${currentTag}`);

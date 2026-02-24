@@ -1,4 +1,4 @@
-# Changelog + Roadmap Integration — Design
+# Changelog + Roadmap Integration: Design
 
 Date: 2026-02-23
 
@@ -75,7 +75,7 @@ Release tags: `release`, `fix`, `security`, `breaking`.
 
 ## Component architecture
 
-Roadmap.jsx is rewritten to consume `changelog.js`. No new component files — everything is inline (YAGNI). Structure:
+Roadmap.jsx is rewritten to consume `changelog.js`. No new component files; everything is inline (YAGNI). Structure:
 
 - Page wrapper with overflow management (same as current)
 - "What's next" accordion (planned/future milestones, collapsed by default)

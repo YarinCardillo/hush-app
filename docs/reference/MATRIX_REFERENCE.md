@@ -110,10 +110,10 @@ Authorization: Bearer <token>
 ```
 
 **Critical fields for Hush:**
-- `rooms.join.*.timeline.events` — new messages/events in joined rooms
-- `to_device.events` — E2EE key sharing, call signaling
-- `device_lists.changed` — triggers re-download of device keys
-- `device_one_time_keys_count` — maintain one-time key supply
+- `rooms.join.*.timeline.events`: new messages/events in joined rooms
+- `to_device.events`: E2EE key sharing, call signaling
+- `device_lists.changed`: triggers re-download of device keys
+- `device_one_time_keys_count`: maintain one-time key supply
 
 ### 3.2 Filtering
 
@@ -237,7 +237,7 @@ Response: { "event_id": "$eventid" }
 | `m.file` | `body`, `url`, `filename`, `info` (mimetype, size) |
 | `m.audio` | `body`, `url`, `info` (mimetype, size, duration) |
 | `m.video` | `body`, `url`, `info` (mimetype, size, w, h, duration, thumbnail_url) |
-| `m.notice` | `body` — bot/system messages, clients should not trigger notifications |
+| `m.notice` | `body`: bot/system messages, clients should not trigger notifications |
 
 ### 5.5 Redaction
 
@@ -399,11 +399,11 @@ Body: {
 ```
 
 Received via `/sync` → `to_device.events[]`. Common to-device event types:
-- `m.room_key` — Megolm session key sharing
-- `m.room_key_request` — requesting missing keys
-- `m.forwarded_room_key` — forwarding keys
-- `m.room.encrypted` — Olm-encrypted wrapper for above
-- `m.key.verification.*` — device/user verification flow
+- `m.room_key`: Megolm session key sharing
+- `m.room_key_request`: requesting missing keys
+- `m.forwarded_room_key`: forwarding keys
+- `m.room.encrypted`: Olm-encrypted wrapper for above
+- `m.key.verification.*`: device/user verification flow
 
 ---
 
@@ -413,7 +413,7 @@ Matrix handles call setup/teardown via room events. Media flows directly peer-to
 
 ### 8.1 Call Events
 
-**`m.call.invite`** — initiates a call
+**`m.call.invite`**: initiates a call
 ```json
 { "type": "m.call.invite", "content": {
     "call_id": "<unique_call_id>",
@@ -425,7 +425,7 @@ Matrix handles call setup/teardown via room events. Media flows directly peer-to
 }}
 ```
 
-**`m.call.answer`** — accepts
+**`m.call.answer`**: accepts
 ```json
 { "type": "m.call.answer", "content": {
     "call_id": "<call_id>", "party_id": "<party_id>", "version": "1",
@@ -433,7 +433,7 @@ Matrix handles call setup/teardown via room events. Media flows directly peer-to
 }}
 ```
 
-**`m.call.candidates`** — ICE candidates (batched)
+**`m.call.candidates`**: ICE candidates (batched)
 ```json
 { "type": "m.call.candidates", "content": {
     "call_id": "<call_id>", "party_id": "<party_id>", "version": "1",
@@ -441,7 +441,7 @@ Matrix handles call setup/teardown via room events. Media flows directly peer-to
 }}
 ```
 
-**`m.call.hangup`** — ends call
+**`m.call.hangup`**: ends call
 ```json
 { "type": "m.call.hangup", "content": {
     "call_id": "<call_id>", "party_id": "<party_id>", "version": "1",
@@ -502,7 +502,7 @@ Note: v1 media endpoints require auth (added in v1.11). Legacy v3 media endpoint
 
 ### 9.3 MXC URIs
 
-Format: `mxc://<server_name>/<media_id>` — globally unique content identifier. Convert to HTTP download URL using the endpoints above.
+Format: `mxc://<server_name>/<media_id>`: globally unique content identifier. Convert to HTTP download URL using the endpoints above.
 
 ---
 
@@ -530,7 +530,7 @@ Rate limiting: 429 response with `Retry-After` header.
 All PUT endpoints use `{txnId}` in path. Use UUID v4 or timestamp+counter. Scope: per device + per endpoint. Makes retries safe.
 
 ### Pagination
-Room history: `GET /rooms/{roomId}/messages?from=<token>&dir=b&limit=50` — `dir=b` for backwards, `dir=f` for forwards. Response includes `start`, `end` tokens for continued pagination.
+Room history: `GET /rooms/{roomId}/messages?from=<token>&dir=b&limit=50`; `dir=b` for backwards, `dir=f` for forwards. Response includes `start`, `end` tokens for continued pagination.
 
 ### Lazy Loading Members
 Use filter with `"lazy_load_members": true` to only receive member events for users who sent events in the timeline window. Significantly reduces sync payload.

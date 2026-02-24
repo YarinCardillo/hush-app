@@ -21,10 +21,10 @@ This document describes Hush's end-to-end encryption (E2EE) implementation, trus
 1. On registration, client generates: identity key pair, signed pre-key, batch of one-time pre-keys
 2. Keys uploaded to Go backend pre-key server (`POST /api/keys/upload`)
 3. To message a new contact: fetch their pre-key bundle (`GET /api/keys/:userId`), perform X3DH handshake
-4. Subsequent messages use Double Ratchet — each message has a unique key, compromising one does not reveal others
+4. Subsequent messages use Double Ratchet; each message has a unique key, compromising one does not reveal others
 
 **Group messaging**:
-- Small groups (< 50 members): fan-out encryption — each message individually encrypted per recipient via their Signal session
+- Small groups (< 50 members): fan-out encryption (each message individually encrypted per recipient via their Signal session)
 - Large channels: shared symmetric key rotated on membership change, distributed via pairwise Signal sessions
 
 **Forward secrecy**: The Double Ratchet provides forward secrecy at the message level. Compromising a device's current state does not reveal previously decrypted messages (assuming local storage is secure).
@@ -43,9 +43,9 @@ This document describes Hush's end-to-end encryption (E2EE) implementation, trus
 3. Participants decrypt the frame key using their Signal session and apply it to `ExternalE2EEKeyProvider`
 4. LiveKit E2EE worker encrypts/decrypts media frames using the shared key
 
-**Key rotation (rekeying)**: When a participant leaves, the leader generates a new key and distributes it to all remaining participants. This provides forward secrecy for media — a departed participant cannot decrypt future frames.
+**Key rotation (rekeying)**: When a participant leaves, the leader generates a new key and distributes it to all remaining participants. This provides forward secrecy for media; a departed participant cannot decrypt future frames.
 
-**Leader election**: Deterministic — the participant with the lowest user ID. On leader disconnect, next lowest takes over, generates a new key, and distributes.
+**Leader election**: Deterministic: the participant with the lowest user ID. On leader disconnect, next lowest takes over, generates a new key, and distributes.
 
 **No silent degradation**: If the E2EE worker fails to load or key exchange fails after 3 retry attempts (exponential backoff: 1s, 2s, 4s), the client does NOT connect to LiveKit. Media without encryption is never permitted.
 
@@ -58,7 +58,7 @@ This document describes Hush's end-to-end encryption (E2EE) implementation, trus
 
 The server never sees plaintext for chat or media:
 - **Chat**: Messages stored as ciphertext blobs in PostgreSQL. The server routes them by channel ID without decryption.
-- **Media**: LiveKit SFU forwards encrypted frames. Frame keys are never sent to the server — they travel via Signal-encrypted WebSocket messages between clients.
+- **Media**: LiveKit SFU forwards encrypted frames. Frame keys are never sent to the server; they travel via Signal-encrypted WebSocket messages between clients.
 - **LiveKit tokens**: The Go backend validates the user's JWT and issues a LiveKit access token. It does not check room-level permissions beyond membership (enforced at the application layer).
 
 ## Browser support
@@ -73,12 +73,12 @@ Full media E2EE requires Insertable Streams and the LiveKit E2EE worker. If the 
 
 ## Known limitations
 
-- **No device verification UI** — Planned for a future milestone. Users cannot verify identity keys in-app. MITM by a compromised pre-key server is theoretically possible until Safety Numbers are implemented.
-- **No key backup** — Losing browser data (clearing IndexedDB) means losing the ability to decrypt past chat history and losing Signal session state. Planned: encrypted key backup with user passphrase.
-- **No multi-device** — Signal Protocol sessions are per-device. A user logged in on two devices has two separate sets of sessions. Planned: multi-device sync via encrypted key transfer.
-- **No cross-signing** — Verification does not propagate across devices.
-- **Guest accounts** — Share the same TOFU trust model as registered accounts. Guest sessions are temporary; keys are lost when the session ends.
-- **WebCrypto nonce management** — AES-GCM frame encryption uses a counter-based nonce. Nonce reuse with the same key would break confidentiality. The implementation must ensure counters never repeat (even across page reloads within the same key lifecycle).
+- **No device verification UI:** Planned for a future milestone. Users cannot verify identity keys in-app. MITM by a compromised pre-key server is theoretically possible until Safety Numbers are implemented.
+- **No key backup:** Losing browser data (clearing IndexedDB) means losing the ability to decrypt past chat history and losing Signal session state. Planned: encrypted key backup with user passphrase.
+- **No multi-device:** Signal Protocol sessions are per-device. A user logged in on two devices has two separate sets of sessions. Planned: multi-device sync via encrypted key transfer.
+- **No cross-signing:** Verification does not propagate across devices.
+- **Guest accounts:** Share the same TOFU trust model as registered accounts. Guest sessions are temporary; keys are lost when the session ends.
+- **WebCrypto nonce management:** AES-GCM frame encryption uses a counter-based nonce. Nonce reuse with the same key would break confidentiality. The implementation must ensure counters never repeat (even across page reloads within the same key lifecycle).
 
 ## HTTP security headers
 
@@ -94,7 +94,7 @@ The app’s Caddy config sets the following headers on all site responses. This 
 | `X-Frame-Options: DENY` | Mitigate clickjacking | Caddy |
 | `Cross-Origin-Opener-Policy: same-origin` | Required for LiveKit E2EE worker (`SharedArrayBuffer`) | Caddy |
 | `Cross-Origin-Embedder-Policy: require-corp` | Required for LiveKit E2EE worker | Caddy |
-| `Strict-Transport-Security` | HSTS (HTTPS only) | Caddy **production** only — see `caddy/Caddyfile.prod` |
+| `Strict-Transport-Security` | HSTS (HTTPS only) | Caddy **production** only; see `caddy/Caddyfile.prod` |
 
 - **Local dev** (`caddy/Caddyfile`): `http://localhost` with the above headers; no HSTS (HTTP only).
 - **Production** (`caddy/Caddyfile.prod`): HTTPS site block with HSTS. Use when deploying without Cloudflare or when you want headers at origin.
@@ -109,7 +109,7 @@ If the site is **behind Cloudflare**, you can configure the same headers at the 
 | **HSTS** | **SSL/TLS** → **Edge Certificates** → **HTTP Strict Transport Security (HSTS)** → Enable, set max-age (e.g. 12 months), enable “Include subdomains” and “No-Sniff” if offered; add to preload list if desired. |
 
 - **CORS:** Cloudflare does not provide a simple UI to set a fixed `Access-Control-Allow-Origin` per path. To restrict CORS at the edge you’d use a **Worker** that checks the request `Origin` against an allowlist and sets the response header. Otherwise, keep CORS at the origin (Caddy + Express with `CORS_ORIGIN`).
-- **SPF:** If DNS is on Cloudflare, add the SPF TXT record under **DNS** → **Records** for your domain (not “in Cloudflare” as proxy — it’s DNS).
+- **SPF:** If DNS is on Cloudflare, add the SPF TXT record under **DNS** → **Records** for your domain (not “in Cloudflare” as proxy, it’s DNS).
 
 Using Cloudflare for headers: Caddy already sends X-Content-Type-Options, X-Frame-Options, COOP, and COEP at origin, so the scanner and clients always receive them. You can keep or remove the same headers from Cloudflare Transform Rules (same value in both is fine). Ensure COOP/COEP remain sent for the app’s hostname so the LiveKit E2EE worker and `SharedArrayBuffer` keep working.
 
@@ -155,8 +155,8 @@ Before going live (e.g. gethush.live), complete the following. None are in-repo;
 
 Sensitive endpoints are not rate-limited by default. Before production go-live, consider adding rate limiting (e.g. `express-rate-limit` or equivalent at the reverse proxy) for:
 
-- `POST /api/livekit/token` — limit per IP (and optionally per authenticated user) to prevent token abuse.
-- `POST /api/rooms/created` and `GET /api/rooms/can-create` — limit per IP to prevent room-creation abuse.
+- `POST /api/livekit/token`: limit per IP (and optionally per authenticated user) to prevent token abuse.
+- `POST /api/rooms/created` and `GET /api/rooms/can-create`: limit per IP to prevent room-creation abuse.
 
 Policy: e.g. a few hundred requests per minute per IP for token, and a lower cap for room creation. Document the chosen limits in this section or in deployment runbooks.
 

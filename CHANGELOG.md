@@ -4,7 +4,7 @@ All notable changes to hush are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
-## [0.6.2-alpha] - 2026-02-23 — Signal Protocol + Go Backend (current)
+## [0.6.2-alpha] - 2026-02-23: Signal Protocol + Go Backend (current)
 
 ### Features
 
@@ -26,7 +26,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - Orphan room cleanup for abandoned rooms
 - iOS Safari stale dim artifacts after sidebar close
 
-## [0.6.1-alpha] - 2026-02-19 — Signal Protocol + Go Backend
+## [0.6.1-alpha] - 2026-02-19: Signal Protocol + Go Backend
 
 ### Features
 
@@ -43,7 +43,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - Track cleanup and disconnect handling in room components
 - Roadmap page styling and interaction refinements
 
-## [0.6.0-alpha] - 2026-02-14 — End-to-End Encryption
+## [0.6.0-alpha] - 2026-02-14: End-to-End Encryption
 
 ### Features
 
@@ -58,7 +58,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - Comprehensive E2EE audit with fixes for password-derived keys and UISI handling
 - Per-account crypto store prefix to avoid IndexedDB conflicts
 
-## [0.5.1] - 2026-02-12 — Foundation
+## [0.5.1] - 2026-02-12: Foundation
 
 ### Features
 
@@ -71,11 +71,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - Persisted chat messages for room lifetime
 - Removed experimental E2EE infrastructure (unstable in mediasoup)
 
-## [0.5.0] - 2026-02-11 — Foundation
+## [0.5.0] - 2026-02-11: Foundation
 
 ### Features
 
-- WebRTC rooms via mediasoup SFU — up to 4 participants
+- WebRTC rooms via mediasoup SFU, up to 4 participants
 - Quality presets: best (1080p) and lite (720p)
 - Noise gate AudioWorklet for mic processing
 - iOS Safari compatibility fixes for remote streams
