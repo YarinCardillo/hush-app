@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import * as api from '../lib/api';
 import { useSignal } from '../hooks/useSignal';
 
@@ -155,12 +155,16 @@ export default function Chat({
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [loadMoreLoading, setLoadMoreLoading] = useState(false);
+  const [hasMoreOlder, setHasMoreOlder] = useState(true);
   const messagesEndRef = useRef(null);
+  const messagesScrollRef = useRef(null);
   const inputRef = useRef(null);
   const lastSentTempIdRef = useRef(null);
   const knownMessageIdsRef = useRef(new Set());
   const wsClientRef = useRef(wsClientProp);
   wsClientRef.current = wsClientProp;
+  const scrollRestoreRef = useRef(null);
 
   const { encryptForUser, decryptFromUser } = useSignal({
     getStore: getStore ?? (() => Promise.resolve(null)),
@@ -202,12 +206,70 @@ export default function Chat({
           knownMessageIdsRef.current.add(m.id);
         }
         setMessages(decrypted);
+        setHasMoreOlder(list.length >= 50);
       } catch (err) {
         console.error('[chat] Load history failed:', err.message);
       }
     };
     loadHistory();
   }, [channelId, getToken, currentUserId, decryptFromUser]);
+
+  const loadMore = useCallback(async () => {
+    if (!channelId || !getToken || loadMoreLoading || !hasMoreOlder || messages.length === 0) return;
+    const token = getToken();
+    if (!token) return;
+    const oldestTs = messages[0]?.timestamp;
+    if (!oldestTs) return;
+    setLoadMoreLoading(true);
+    try {
+      const before = new Date(oldestTs).toISOString();
+      const list = await api.getChannelMessages(token, channelId, { before, limit: 50 });
+      if (list.length === 0) {
+        setHasMoreOlder(false);
+        return;
+      }
+      if (list.length < 50) setHasMoreOlder(false);
+      const older = [];
+      for (let i = list.length - 1; i >= 0; i--) {
+        const m = list[i];
+        if (knownMessageIdsRef.current.has(m.id)) continue;
+        knownMessageIdsRef.current.add(m.id);
+        const ts = new Date(m.timestamp).getTime();
+        let content = null;
+        let decryptionFailed = false;
+        try {
+          const ct = base64ToUint8Array(m.ciphertext);
+          const pt = await decryptFromUser(m.senderId, DEFAULT_DEVICE_ID, ct);
+          content = new TextDecoder().decode(pt);
+        } catch (_) {
+          decryptionFailed = true;
+        }
+        older.push({
+          id: m.id,
+          sender: m.senderId,
+          displayName: m.senderId === currentUserId ? 'You' : truncateUserId(m.senderId),
+          content,
+          timestamp: ts,
+          decryptionFailed,
+        });
+      }
+      const el = messagesScrollRef.current;
+      const oldScrollHeight = el?.scrollHeight ?? 0;
+      const oldScrollTop = el?.scrollTop ?? 0;
+      scrollRestoreRef.current = { oldScrollHeight, oldScrollTop };
+      setMessages((prev) => [...older, ...prev]);
+    } catch (err) {
+      console.error('[chat] Load more failed:', err.message);
+    } finally {
+      setLoadMoreLoading(false);
+    }
+  }, [channelId, getToken, messages, loadMoreLoading, hasMoreOlder, currentUserId, decryptFromUser]);
+
+  const handleScroll = useCallback(() => {
+    const el = messagesScrollRef.current;
+    if (!el || loadMoreLoading || !hasMoreOlder) return;
+    if (el.scrollTop < 80) loadMore();
+  }, [loadMore, loadMoreLoading, hasMoreOlder]);
 
   // Subscribe to channel and listen for message.new
   useEffect(() => {
@@ -268,6 +330,17 @@ export default function Chat({
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  useEffect(() => {
+    const rest = scrollRestoreRef.current;
+    if (!rest) return;
+    scrollRestoreRef.current = null;
+    const el = messagesScrollRef.current;
+    if (el && rest.oldScrollHeight > 0) {
+      const newScrollHeight = el.scrollHeight;
+      el.scrollTop = newScrollHeight - rest.oldScrollHeight + rest.oldScrollTop;
+    }
   }, [messages]);
 
   const handleSend = async () => {
@@ -377,11 +450,18 @@ export default function Chat({
     <div style={styles.container}>
       <div style={styles.messagesSection}>
         <div
+          ref={messagesScrollRef}
+          onScroll={handleScroll}
           style={{
             ...styles.messagesScroll,
             ...(hasMessages ? styles.messagesScrollWithMessages : {}),
           }}
         >
+          {hasMoreOlder && (loadMoreLoading || messages.length > 0) && (
+            <div style={{ padding: '8px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--hush-text-muted)' }}>
+              {loadMoreLoading ? 'Loading…' : 'Scroll up for older messages'}
+            </div>
+          )}
           {!hasMessages ? (
             <div style={styles.empty}>
               <div style={styles.emptyIcon}>
