@@ -292,7 +292,7 @@ export default function Room() {
 
   // WebSocket client for Chat (Phase C). Connect when we have channel and Go JWT.
   useEffect(() => {
-    const channelId = sessionStorage.getItem('hush_matrixRoomId');
+    const channelId = sessionStorage.getItem('hush_channelId');
     const getToken = () => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null;
     if (!channelId) return;
     const base = typeof location !== 'undefined' ? location.origin.replace(/^http/, 'ws') : '';

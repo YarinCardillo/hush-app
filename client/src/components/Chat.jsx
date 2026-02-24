@@ -17,6 +17,49 @@ function uint8ArrayToBase64(u8) {
   return btoa(bin);
 }
 
+async function decryptMessageRow(m, currentUserId, decryptFromUser) {
+  const ts = new Date(m.timestamp).getTime();
+  let content = null;
+  let decryptionFailed = false;
+  try {
+    const ct = base64ToUint8Array(m.ciphertext);
+    const pt = await decryptFromUser(m.senderId, DEFAULT_DEVICE_ID, ct);
+    content = new TextDecoder().decode(pt);
+  } catch (_) {
+    decryptionFailed = true;
+  }
+  return {
+    id: m.id,
+    sender: m.senderId,
+    displayName: m.senderId === currentUserId ? 'You' : truncateUserId(m.senderId),
+    content,
+    timestamp: ts,
+    decryptionFailed,
+  };
+}
+
+async function encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, plaintext, encryptForUser) {
+  const encoded = new TextEncoder().encode(plaintext);
+  if (recipientUserIds.length === 1) {
+    const ciphertext = await encryptForUser(recipientUserIds[0], encoded);
+    wsClient.send('message.send', {
+      channel_id: channelId,
+      ciphertext: uint8ArrayToBase64(ciphertext),
+    });
+  } else {
+    const ciphertextByRecipient = {};
+    for (const uid of recipientUserIds) {
+      if (uid === currentUserId) continue;
+      const ct = await encryptForUser(uid, encoded);
+      ciphertextByRecipient[uid] = uint8ArrayToBase64(ct);
+    }
+    wsClient.send('message.send', {
+      channel_id: channelId,
+      ciphertext_by_recipient: ciphertextByRecipient,
+    });
+  }
+}
+
 const styles = {
   container: {
     display: 'flex',
@@ -185,24 +228,7 @@ export default function Chat({
         const decrypted = [];
         for (let i = list.length - 1; i >= 0; i--) {
           const m = list[i];
-          const ts = new Date(m.timestamp).getTime();
-          let content = null;
-          let decryptionFailed = false;
-          try {
-            const ct = base64ToUint8Array(m.ciphertext);
-            const pt = await decryptFromUser(m.senderId, DEFAULT_DEVICE_ID, ct);
-            content = new TextDecoder().decode(pt);
-          } catch (_) {
-            decryptionFailed = true;
-          }
-          decrypted.push({
-            id: m.id,
-            sender: m.senderId,
-            displayName: m.senderId === currentUserId ? 'You' : truncateUserId(m.senderId),
-            content,
-            timestamp: ts,
-            decryptionFailed,
-          });
+          decrypted.push(await decryptMessageRow(m, currentUserId, decryptFromUser));
           knownMessageIdsRef.current.add(m.id);
         }
         setMessages(decrypted);
@@ -234,24 +260,7 @@ export default function Chat({
         const m = list[i];
         if (knownMessageIdsRef.current.has(m.id)) continue;
         knownMessageIdsRef.current.add(m.id);
-        const ts = new Date(m.timestamp).getTime();
-        let content = null;
-        let decryptionFailed = false;
-        try {
-          const ct = base64ToUint8Array(m.ciphertext);
-          const pt = await decryptFromUser(m.senderId, DEFAULT_DEVICE_ID, ct);
-          content = new TextDecoder().decode(pt);
-        } catch (_) {
-          decryptionFailed = true;
-        }
-        older.push({
-          id: m.id,
-          sender: m.senderId,
-          displayName: m.senderId === currentUserId ? 'You' : truncateUserId(m.senderId),
-          content,
-          timestamp: ts,
-          decryptionFailed,
-        });
+        older.push(await decryptMessageRow(m, currentUserId, decryptFromUser));
       }
       const el = messagesScrollRef.current;
       const oldScrollHeight = el?.scrollHeight ?? 0;
@@ -329,18 +338,17 @@ export default function Chat({
   }, [wsClient, channelId, currentUserId, onNewMessage, decryptFromUser]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  useEffect(() => {
     const rest = scrollRestoreRef.current;
-    if (!rest) return;
-    scrollRestoreRef.current = null;
-    const el = messagesScrollRef.current;
-    if (el && rest.oldScrollHeight > 0) {
-      const newScrollHeight = el.scrollHeight;
-      el.scrollTop = newScrollHeight - rest.oldScrollHeight + rest.oldScrollTop;
+    if (rest) {
+      scrollRestoreRef.current = null;
+      const el = messagesScrollRef.current;
+      if (el && rest.oldScrollHeight > 0) {
+        const newScrollHeight = el.scrollHeight;
+        el.scrollTop = newScrollHeight - rest.oldScrollHeight + rest.oldScrollTop;
+      }
+      return;
     }
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const handleSend = async () => {
@@ -371,24 +379,7 @@ export default function Chat({
         setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
         return;
       }
-      if (recipientUserIds.length === 1) {
-        const ciphertext = await encryptForUser(recipientUserIds[0], new TextEncoder().encode(trimmed));
-        wsClient.send('message.send', {
-          channel_id: channelId,
-          ciphertext: uint8ArrayToBase64(ciphertext),
-        });
-      } else {
-        const ciphertextByRecipient = {};
-        for (const uid of recipientUserIds) {
-          if (uid === currentUserId) continue;
-          const ct = await encryptForUser(uid, new TextEncoder().encode(trimmed));
-          ciphertextByRecipient[uid] = uint8ArrayToBase64(ct);
-        }
-        wsClient.send('message.send', {
-          channel_id: channelId,
-          ciphertext_by_recipient: ciphertextByRecipient,
-        });
-      }
+      await encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, trimmed, encryptForUser);
     } catch (err) {
       console.error('[chat] Send failed:', err.message);
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
@@ -405,24 +396,7 @@ export default function Chat({
     const tempId = msg.id;
     setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: false, pending: true } : m)));
     try {
-      if (recipientUserIds.length === 1) {
-        const ciphertext = await encryptForUser(recipientUserIds[0], new TextEncoder().encode(trimmed));
-        wsClient.send('message.send', {
-          channel_id: channelId,
-          ciphertext: uint8ArrayToBase64(ciphertext),
-        });
-      } else {
-        const ciphertextByRecipient = {};
-        for (const uid of recipientUserIds) {
-          if (uid === currentUserId) continue;
-          const ct = await encryptForUser(uid, new TextEncoder().encode(trimmed));
-          ciphertextByRecipient[uid] = uint8ArrayToBase64(ct);
-        }
-        wsClient.send('message.send', {
-          channel_id: channelId,
-          ciphertext_by_recipient: ciphertextByRecipient,
-        });
-      }
+      await encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, trimmed, encryptForUser);
     } catch (err) {
       console.error('[chat] Retry send failed:', err.message);
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
