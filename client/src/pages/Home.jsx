@@ -23,7 +23,7 @@ const _TYPEWRITER_POOL = [
   'typing',        // was 'read receipts' (humor: "keep your typing.")
   'thoughts',      // was 'inner monologue'
   'flings',        // was 'situationship'
-  'villain',       // was 'villain arc'
+  'villain arc',
   'binges',        // was 'guilty pleasures'
   // 'identity',
   // 'manifesto',
@@ -33,7 +33,7 @@ const _TYPEWRITER_POOL = [
   // 'read receipts',
   // 'inner monologue',
   // 'situationship',
-  // 'villain arc',
+
   // 'guilty pleasures',
 ];
 
