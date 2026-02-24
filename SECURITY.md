@@ -15,7 +15,7 @@ This document describes Hush's end-to-end encryption (E2EE) implementation, trus
 
 ## Chat encryption
 
-**Protocol**: Signal Protocol via `libsignal-protocol-typescript` (web) and `hush-crypto` Rust crate (desktop/mobile).
+**Protocol**: Signal Protocol via `hush-crypto` Rust crate — compiled to WASM for web, direct Rust for desktop (Tauri), UniFFI for mobile. Single implementation on all platforms.
 
 **Session establishment**:
 1. On registration, client generates: identity key pair, signed pre-key, batch of one-time pre-keys

@@ -57,12 +57,12 @@ Main environment variables (see [.env.example](.env.example)):
 
 ## Architecture
 
-- **Client:** React 18, Vite. `libsignal-protocol-typescript` for E2EE chat and key distribution. `livekit-client` for voice/video/screen.
+- **Client:** React 18, Vite. `hush-crypto` (Rust compiled to WASM) for E2EE chat and key distribution. `livekit-client` for voice/video/screen.
 - **Backend (Go):** Chi router. Auth, rooms, channels, membership, WebSocket real-time, Signal Protocol pre-key server, LiveKit token endpoint.
 - **Database:** PostgreSQL. Messages stored as ciphertext.
 - **LiveKit:** SFU for WebRTC media. Frame-level E2EE via Insertable Streams.
 - **Caddy:** Reverse proxy and TLS.
-- **Desktop:** Tauri (Rust shell wrapping React frontend).
+- **Desktop:** Tauri + CEF (Rust shell + bundled Chromium, native crypto via IPC).
 - **Mobile:** React Native with `hush-crypto` Rust crate via UniFFI.
 
 ---
@@ -71,12 +71,12 @@ Main environment variables (see [.env.example](.env.example)):
 
 | Layer | Technology |
 |-|-|
-| Frontend | React 18, Vite, libsignal-protocol-typescript, livekit-client |
+| Frontend | React 18, Vite, hush-crypto (WASM), livekit-client |
 | E2EE | Signal Protocol (chat), AES-256-GCM (media frames) |
 | Backend | Go, Chi |
 | Database | PostgreSQL |
 | Media SFU | LiveKit |
-| Desktop | Tauri |
+| Desktop | Tauri + CEF |
 | Mobile | React Native |
 | Proxy | Caddy |
 | Containers | Docker, docker-compose |
