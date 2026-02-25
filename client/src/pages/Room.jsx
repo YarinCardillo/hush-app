@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Track } from 'livekit-client';
 import { useAuth } from '../contexts/AuthContext';
 import { GUEST_SESSION_KEY } from '../lib/authStorage';
-import { getMatrixClient } from '../lib/matrixClient';
 import { createWsClient } from '../lib/ws';
 import { useSignal } from '../hooks/useSignal';
 import * as signalStore from '../lib/signalStore';
@@ -263,7 +262,7 @@ export default function Room() {
   // Track whether the user ever had a valid session in this room.
   // If false when auth guard fires, the user opened a direct link → redirect to /?join=
   // If true, the user was in the room and left/lost session → redirect to /
-  const hadSessionRef = useRef(!!sessionStorage.getItem('hush_matrixRoomId'));
+  const hadSessionRef = useRef(!!sessionStorage.getItem('hush_channelId'));
   const [roomDisplayName, setRoomDisplayName] = useState(() => decodeURIComponent(roomName));
   const [quality, setQuality] = useState(DEFAULT_QUALITY);
   const [recommendedQualityKey, setRecommendedQualityKey] = useState(null);
@@ -507,50 +506,7 @@ export default function Room() {
     participants.forEach((p) => seenParticipantIdsRef.current.add(p.id));
   }, [participants, isReady]);
 
-  // Guest room countdown: read created_at from Matrix state and limits from server
-  useEffect(() => {
-    if (!connected || !isReady) return;
-    const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
-    if (!matrixRoomId) return;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const [limitsRes, client] = await Promise.all([
-          fetch('/api/rooms/limits'),
-          (async () => {
-            const { getMatrixClient } = await import('../lib/matrixClient');
-            return getMatrixClient();
-          })(),
-        ]);
-        if (cancelled) return;
-        const limits = limitsRes.ok ? await limitsRes.json() : {};
-        const durationMs = limits.guestRoomMaxDurationMs;
-        const room = client?.getRoom(matrixRoomId);
-        const state = room?.currentState;
-        const events = state?.getStateEvents?.('io.hush.room.created_at', '') ?? [];
-        const content = events[0]?.getContent?.();
-        const created_at = content?.created_at;
-        if (cancelled || typeof created_at !== 'number' || typeof durationMs !== 'number') return;
-        setRoomEndTimeMs(created_at + durationMs);
-      } catch (e) {
-        console.warn('[room] Countdown setup failed:', e);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [connected, isReady]);
-
-  // Resolve the user-friendly display name from Matrix room state
-  useEffect(() => {
-    if (!connected || !isReady) return;
-    const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
-    if (!matrixRoomId) return;
-    const client = getMatrixClient();
-    const room = client?.getRoom(matrixRoomId);
-    if (room?.name) {
-      setRoomDisplayName(room.name);
-    }
-  }, [connected, isReady]);
+  // TODO(Yarin, 2026-02-25): Guest room countdown — reimplemented in Phase E with Go backend room limits
 
   // Countdown tick: update remaining every second; redirect when expired
   useEffect(() => {
@@ -562,7 +518,7 @@ export default function Room() {
         sessionStorage.removeItem('hush_token');
         sessionStorage.removeItem('hush_peerId');
         sessionStorage.removeItem('hush_roomName');
-        sessionStorage.removeItem('hush_matrixRoomId');
+        sessionStorage.removeItem('hush_channelId');
         sessionStorage.removeItem('hush_actualRoomName');
         if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
           logout().catch(() => {});
@@ -575,8 +531,6 @@ export default function Room() {
     return () => clearInterval(id);
   }, [roomEndTimeMs, navigate, logout]);
 
-  // E2EE key distribution is handled via password-derived keys in useRoom.js
-  // No to-device key broadcast needed — all participants derive the same key from the room password
 
   const handleScreenShare = async () => {
     if (isScreenSharing) {
@@ -689,13 +643,11 @@ export default function Room() {
 
   const handleLeave = async () => {
     const LEAVE_TIMEOUT_MS = 5000;
-    const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
-
     const cleanupAndNavigate = async () => {
       sessionStorage.removeItem('hush_token');
       sessionStorage.removeItem('hush_peerId');
       sessionStorage.removeItem('hush_roomName');
-      sessionStorage.removeItem('hush_matrixRoomId');
+      sessionStorage.removeItem('hush_channelId');
       sessionStorage.removeItem('hush_actualRoomName');
       if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
         await logout().catch(() => {});
@@ -1063,7 +1015,7 @@ export default function Room() {
                 <div style={styles.sidebarLabel}>Chat</div>
                 <Chat
                   channelId={sessionStorage.getItem('hush_channelId')}
-                  currentUserId={sessionStorage.getItem('hush_userId') ?? getMatrixClient()?.getUserId()?.replace(/^@/, '').split(':')[0] ?? ''}
+                  currentUserId={user?.id ?? ''}
                   getToken={() => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null}
                   getStore={() => {
                     const uid = sessionStorage.getItem('hush_userId');
@@ -1114,7 +1066,7 @@ export default function Room() {
                   <div style={styles.sidebarLabel}>Chat</div>
                   <Chat
                     channelId={sessionStorage.getItem('hush_channelId')}
-                    currentUserId={sessionStorage.getItem('hush_userId') ?? getMatrixClient()?.getUserId()?.replace(/^@/, '').split(':')[0] ?? ''}
+                    currentUserId={user?.id ?? ''}
                     getToken={() => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null}
                     getStore={() => {
                       const uid = sessionStorage.getItem('hush_userId');

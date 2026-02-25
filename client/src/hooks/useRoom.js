@@ -127,6 +127,10 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
     async (roomName, displayName, channelId) => {
       const epoch = ++connectionEpochRef.current;
       const isStale = () => epoch !== connectionEpochRef.current;
+      if (!wsClient) {
+        setError('WebSocket not connected. Please try again.');
+        return;
+      }
       try {
         if (roomRef.current) {
           roomRef.current.disconnect();
@@ -260,6 +264,7 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
           };
           await e2eeOnParticipantConnected(
             participant,
+            room,
             wsClient,
             encryptForUser,
             currentUserId,
@@ -402,7 +407,7 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
         setError(err.message);
       }
     },
-    [scheduleRemoteTracksUpdate, scheduleScreensUpdate],
+    [scheduleRemoteTracksUpdate, scheduleScreensUpdate, wsClient, encryptForUser, decryptFromUser, currentUserId, getToken],
   );
 
   // ─── Disconnect from Room ─────────────────────────────

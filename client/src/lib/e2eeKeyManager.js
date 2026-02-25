@@ -34,7 +34,7 @@ export async function retrySend(fn, { maxAttempts = 3, baseDelayMs = 1000, onRet
 }
 
 /**
- * Returns a 256-bit placeholder key for joiners until real key arrives via to-device.
+ * Returns a 256-bit placeholder key for joiners until real key arrives via media.key.
  * @returns {Uint8Array}
  */
 export function getPlaceholderKey() {
@@ -82,14 +82,16 @@ export function setupMediaKeyListener(wsClient, decryptFromUser, refs, setE2eeKe
 
 /**
  * Sends current E2EE key to a newly connected participant via WebSocket media.key.
+ * Only the leader (lowest user ID) sends the key.
  * @param {import('livekit-client').RemoteParticipant} participant
+ * @param {import('livekit-client').Room} room
  * @param {{ send: (type: string, payload: object) => void }} wsClient
  * @param {Function} encryptForUser
  * @param {string} currentUserId
  * @param {{ channelIdRef: import('react').MutableRefObject<string|null>, e2eeKeyProviderRef: import('react').MutableRefObject<import('livekit-client').ExternalE2EEKeyProvider|null>, keyBytesRef: import('react').MutableRefObject<Uint8Array|null>, currentKeyIndexRef: import('react').MutableRefObject<number> }} refs
  * @param {(msg: string|null) => void} setKeyExchangeMessage
  */
-export async function handleParticipantConnected(participant, wsClient, encryptForUser, currentUserId, refs, setKeyExchangeMessage) {
+export async function handleParticipantConnected(participant, room, wsClient, encryptForUser, currentUserId, refs, setKeyExchangeMessage) {
   if (
     !refs.e2eeKeyProviderRef.current ||
     !refs.keyBytesRef.current ||
@@ -98,29 +100,35 @@ export async function handleParticipantConnected(participant, wsClient, encryptF
   ) {
     return;
   }
+  // Only the leader sends the key to the new joiner.
+  const allIdentities = [
+    room.localParticipant.identity,
+    ...Array.from(room.remoteParticipants.values()).map((p) => p.identity),
+  ].filter(Boolean);
+  allIdentities.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  if (currentUserId !== allIdentities[0]) return;
+
   const channelId = refs.channelIdRef.current;
   const keyBytes = refs.keyBytesRef.current;
   const keyIndex = refs.currentKeyIndexRef.current;
   const keyB64 = toBase64(keyBytes);
   try {
+    // Encrypt once — retries only re-send the same envelope.
+    const payload = { channelId, key: keyB64, keyIndex };
+    const plaintext = new TextEncoder().encode(JSON.stringify(payload));
+    const envelope = await encryptForUser(participant.identity, plaintext);
+    const envelopeB64 = toBase64(envelope);
+
     await retrySend(
       async () => {
-        const payload = {
-          channelId,
-          key: keyB64,
-          keyIndex,
-        };
-        const plaintext = new TextEncoder().encode(JSON.stringify(payload));
-        const envelope = await encryptForUser(participant.identity, plaintext);
-        const envelopeB64 = toBase64(envelope);
         wsClient.send('media.key', {
           target_user_id: participant.identity,
           payload: envelopeB64,
         });
-        console.log('[livekit] E2EE key sent to', participant.identity);
       },
       {},
     );
+    console.log('[livekit] E2EE key sent to', participant.identity);
     setKeyExchangeMessage(null);
   } catch (err) {
     console.warn('[livekit] Failed to send E2EE key to participant:', err);
@@ -129,7 +137,7 @@ export async function handleParticipantConnected(participant, wsClient, encryptF
 }
 
 /**
- * If this client is the leader (lexicographically smallest Matrix user ID among remaining),
+ * If this client is the leader (lexicographically smallest user ID among remaining),
  * generates a new key and distributes it via media.key. Otherwise no-op.
  * @param {import('livekit-client').RemoteParticipant} participant
  * @param {import('livekit-client').Room} room
@@ -167,35 +175,30 @@ export async function handleParticipantDisconnected(participant, room, wsClient,
   const channelId = refs.channelIdRef.current;
   const keyB64 = toBase64(newKey);
   const targets = remaining.slice(1);
-  let rekeyFailed = false;
-  for (const userId of targets) {
-    try {
-      await retrySend(
-        async () => {
-          const payload = {
-            channelId,
-            key: keyB64,
-            keyIndex: newKeyIndex,
-          };
-          const plaintext = new TextEncoder().encode(JSON.stringify(payload));
-          const envelope = await encryptForUser(userId, plaintext);
-          const envelopeB64 = toBase64(envelope);
-          wsClient.send('media.key', {
-            target_user_id: userId,
-            payload: envelopeB64,
-          });
-        },
-        {},
-      );
-      setKeyExchangeMessage(null);
-    } catch (err) {
-      console.warn('[livekit] Rekey: failed to send to', userId, err);
-      rekeyFailed = true;
-    }
+
+  // Encrypt once per target, then retry only the send — avoids wasting ratchet steps.
+  const sendPromises = targets.map(async (userId) => {
+    const payload = { channelId, key: keyB64, keyIndex: newKeyIndex };
+    const plaintext = new TextEncoder().encode(JSON.stringify(payload));
+    const envelope = await encryptForUser(userId, plaintext);
+    const envelopeB64 = toBase64(envelope);
+    await retrySend(
+      async () => {
+        wsClient.send('media.key', { target_user_id: userId, payload: envelopeB64 });
+      },
+      {},
+    );
+  });
+
+  const results = await Promise.allSettled(sendPromises);
+  const failures = results.filter((r) => r.status === 'rejected');
+  for (const f of failures) {
+    console.warn('[livekit] Rekey: failed to send to a participant:', f.reason);
   }
-  if (rekeyFailed) {
+  if (failures.length > 0) {
     setKeyExchangeMessage(KEY_EXCHANGE_FAIL_MESSAGE);
   } else {
+    setKeyExchangeMessage(null);
     console.log('[livekit] E2EE rekey: new key distributed by leader');
   }
 }
@@ -216,7 +219,7 @@ export async function setCreatorKey(keyProvider, refs, setE2eeKey) {
   console.log('[livekit] E2EE creator: random key set');
 }
 
-function toBase64(bytes) {
+export function toBase64(bytes) {
   let s = '';
   for (let i = 0; i < bytes.length; i++) {
     s += String.fromCharCode(bytes[i]);
@@ -224,7 +227,7 @@ function toBase64(bytes) {
   return btoa(s);
 }
 
-function fromBase64(b64) {
+export function fromBase64(b64) {
   const binary = atob(b64);
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);

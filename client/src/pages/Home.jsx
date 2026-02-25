@@ -532,6 +532,7 @@ export default function Home() {
       }
 
       sessionStorage.setItem('hush_matrixRoomId', matrixRoomId);
+      sessionStorage.setItem('hush_channelId', matrixRoomId);
       sessionStorage.setItem('hush_roomName', joinParam);
       sessionStorage.setItem('hush_displayName', displayName);
 
@@ -640,6 +641,7 @@ export default function Home() {
       }
 
       sessionStorage.setItem('hush_matrixRoomId', matrixRoomId);
+      sessionStorage.setItem('hush_channelId', matrixRoomId);
       sessionStorage.setItem('hush_roomName', actualRoomName);
       sessionStorage.setItem('hush_displayName', displayName);
 
