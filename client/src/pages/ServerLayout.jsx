@@ -39,15 +39,15 @@ function getToken() {
 export default function ServerLayout() {
   const { serverId, channelId } = useParams();
   const navigate = useNavigate();
-  const [selectedServer, setSelectedServer] = useState(null);
   const [serverData, setServerData] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const fetchServerData = useCallback(async (sid) => {
-    if (!sid || !getToken()) return;
+    const token = getToken();
+    if (!sid || !token) return;
     setLoading(true);
     try {
-      const data = await getServer(getToken(), sid);
+      const data = await getServer(token, sid);
       setServerData(data);
     } catch {
       setServerData(null);
@@ -65,7 +65,6 @@ export default function ServerLayout() {
   }, [serverId, fetchServerData]);
 
   const handleServerSelect = (server) => {
-    setSelectedServer(server);
     if (server?.id) {
       navigate(`/server/${server.id}`, { replace: true });
     }
@@ -87,7 +86,7 @@ export default function ServerLayout() {
     <div style={layoutStyles.root}>
       <ServerList
         getToken={getToken}
-        selectedServerId={serverId ?? selectedServer?.id}
+        selectedServerId={serverId}
         onServerSelect={handleServerSelect}
       />
       {serverId && (
@@ -100,6 +99,7 @@ export default function ServerLayout() {
           activeChannelId={channelId}
           onChannelSelect={handleChannelSelect}
           onChannelsUpdated={handleChannelsUpdated}
+          // TODO(Phase-E.5, 2026-02-25): Wire up real voice participant counts from LiveKit
           voiceParticipantCounts={null}
         />
       )}

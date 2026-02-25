@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { listServers, createServer, joinServer, getInviteByCode } from '../lib/api';
+import modalStyles from './modalStyles';
 
 const SERVER_ICON_SIZE = 48;
 const STRIP_WIDTH = 72;
@@ -15,6 +16,7 @@ const styles = {
     alignItems: 'center',
     padding: '12px 0',
     gap: '8px',
+    overflowY: 'auto',
   },
   serverBtn: (isActive) => ({
     width: SERVER_ICON_SIZE,
@@ -32,6 +34,7 @@ const styles = {
     fontFamily: 'var(--font-sans)',
     transition: 'all var(--duration-fast) var(--ease-out)',
     overflow: 'hidden',
+    flexShrink: 0,
   }),
   serverBtnHover: {
     background: 'var(--hush-amber)',
@@ -49,28 +52,7 @@ const styles = {
     background: 'var(--hush-elevated)',
     color: 'var(--hush-live)',
     transition: 'all var(--duration-fast) var(--ease-out)',
-  },
-  modalTitle: {
-    fontSize: '1rem',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-    marginBottom: '12px',
-  },
-  fieldLabel: {
-    display: 'block',
-    marginBottom: '4px',
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-secondary)',
-    fontWeight: 500,
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  error: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-danger)',
+    flexShrink: 0,
   },
   empty: {
     padding: '16px',
@@ -87,6 +69,37 @@ function getInitials(name) {
     return (parts[0][0] + parts[1][0]).toUpperCase().slice(0, 2);
   }
   return name.slice(0, 2).toUpperCase();
+}
+
+function ServerButton({ server, isActive, onSelect }) {
+  const [hover, setHover] = useState(false);
+
+  return (
+    <button
+      type="button"
+      style={{
+        ...styles.serverBtn(isActive),
+        ...(hover && !isActive ? styles.serverBtnHover : {}),
+      }}
+      title={server.name}
+      aria-label={server.name}
+      onClick={() => onSelect?.(server)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {server.iconUrl ? (
+        <img
+          src={server.iconUrl}
+          alt=""
+          width={SERVER_ICON_SIZE}
+          height={SERVER_ICON_SIZE}
+          style={{ objectFit: 'cover', width: '100%', height: '100%' }}
+        />
+      ) : (
+        getInitials(server.name)
+      )}
+    </button>
+  );
 }
 
 function CreateServerModal({ getToken, onClose, onCreated }) {
@@ -146,10 +159,10 @@ function CreateServerModal({ getToken, onClose, onCreated }) {
         className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={styles.modalTitle}>Create server</div>
-        <form style={styles.form} onSubmit={handleSubmit}>
+        <div style={modalStyles.title}>Create server</div>
+        <form style={modalStyles.form} onSubmit={handleSubmit}>
           <div>
-            <label style={styles.fieldLabel}>Server name</label>
+            <label style={modalStyles.fieldLabel}>Server name</label>
             <input
               className="input"
               type="text"
@@ -160,7 +173,7 @@ function CreateServerModal({ getToken, onClose, onCreated }) {
             />
           </div>
           <div>
-            <label style={styles.fieldLabel}>Icon URL (optional)</label>
+            <label style={modalStyles.fieldLabel}>Icon URL (optional)</label>
             <input
               className="input"
               type="url"
@@ -169,8 +182,8 @@ function CreateServerModal({ getToken, onClose, onCreated }) {
               onChange={(e) => setIconUrl(e.target.value)}
             />
           </div>
-          {error && <div style={styles.error}>{error}</div>}
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          {error && <div style={modalStyles.error}>{error}</div>}
+          <div style={modalStyles.actions}>
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>
@@ -243,10 +256,10 @@ function JoinServerModal({ getToken, onClose, onJoined }) {
         className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={styles.modalTitle}>Join server</div>
-        <form style={styles.form} onSubmit={handleSubmit}>
+        <div style={modalStyles.title}>Join server</div>
+        <form style={modalStyles.form} onSubmit={handleSubmit}>
           <div>
-            <label style={styles.fieldLabel}>Invite code or link</label>
+            <label style={modalStyles.fieldLabel}>Invite code or link</label>
             <input
               className="input"
               type="text"
@@ -255,8 +268,8 @@ function JoinServerModal({ getToken, onClose, onJoined }) {
               onChange={(e) => setInviteInput(e.target.value)}
             />
           </div>
-          {error && <div style={styles.error}>{error}</div>}
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          {error && <div style={modalStyles.error}>{error}</div>}
+          <div style={modalStyles.actions}>
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>
@@ -317,42 +330,14 @@ export default function ServerList({ getToken, selectedServerId, onServerSelect 
       ) : error ? (
         <div style={{ ...styles.empty, color: 'var(--hush-danger)' }}>{error}</div>
       ) : (
-        servers.map((server) => {
-          const isActive = selectedServerId === server.id;
-          return (
-            <button
-              key={server.id}
-              type="button"
-              style={styles.serverBtn(isActive)}
-              title={server.name}
-              onClick={() => onServerSelect?.(server)}
-              onMouseEnter={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.background = 'var(--hush-amber)';
-                  e.currentTarget.style.color = 'var(--hush-on-amber)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.background = 'var(--hush-elevated)';
-                  e.currentTarget.style.color = 'var(--hush-text)';
-                }
-              }}
-            >
-              {server.iconUrl ? (
-                <img
-                  src={server.iconUrl}
-                  alt=""
-                  width={SERVER_ICON_SIZE}
-                  height={SERVER_ICON_SIZE}
-                  style={{ objectFit: 'cover', width: '100%', height: '100%' }}
-                />
-              ) : (
-                getInitials(server.name)
-              )}
-            </button>
-          );
-        })
+        servers.map((server) => (
+          <ServerButton
+            key={server.id}
+            server={server}
+            isActive={selectedServerId === server.id}
+            onSelect={onServerSelect}
+          />
+        ))
       )}
       <button
         type="button"

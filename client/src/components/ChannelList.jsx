@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getServer, createChannel, deleteChannel } from '../lib/api';
+import { getServer, createChannel } from '../lib/api';
+import modalStyles from './modalStyles';
 
 const CHANNEL_TYPE_TEXT = 'text';
 const CHANNEL_TYPE_VOICE = 'voice';
@@ -85,28 +86,6 @@ const styles = {
     cursor: 'pointer',
     fontSize: '0.8rem',
     fontFamily: 'var(--font-sans)',
-  },
-  modalTitle: {
-    fontSize: '1rem',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-    marginBottom: '12px',
-  },
-  fieldLabel: {
-    display: 'block',
-    marginBottom: '4px',
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-secondary)',
-    fontWeight: 500,
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  error: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-danger)',
   },
 };
 
@@ -194,10 +173,10 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
         className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={styles.modalTitle}>Create channel</div>
-        <form style={styles.form} onSubmit={handleSubmit}>
+        <div style={modalStyles.title}>Create channel</div>
+        <form style={modalStyles.form} onSubmit={handleSubmit}>
           <div>
-            <label style={styles.fieldLabel}>Name</label>
+            <label style={modalStyles.fieldLabel}>Name</label>
             <input
               className="input"
               type="text"
@@ -208,7 +187,7 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
             />
           </div>
           <div>
-            <label style={styles.fieldLabel} htmlFor="create-channel-type">Type</label>
+            <label style={modalStyles.fieldLabel} htmlFor="create-channel-type">Type</label>
             <select
               id="create-channel-type"
               className="input"
@@ -221,7 +200,7 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
           </div>
           {type === CHANNEL_TYPE_VOICE && (
             <div>
-              <label style={styles.fieldLabel} htmlFor="create-channel-voice-mode">Voice mode</label>
+              <label style={modalStyles.fieldLabel} htmlFor="create-channel-voice-mode">Voice mode</label>
               <select
                 id="create-channel-voice-mode"
                 className="input"
@@ -233,8 +212,8 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
               </select>
             </div>
           )}
-          {error && <div style={styles.error}>{error}</div>}
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          {error && <div style={modalStyles.error}>{error}</div>}
+          <div style={modalStyles.actions}>
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>
@@ -346,26 +325,17 @@ export default function ChannelList({
   voiceParticipantCounts,
 }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
 
-  const fetchServer = useCallback(async () => {
-    if (!serverId || !getToken()) return;
-    setLoading(true);
-    setError(null);
+  const handleCreated = useCallback(async () => {
+    const token = getToken();
+    if (!serverId || !token) return;
     try {
-      const data = await getServer(getToken(), serverId);
+      const data = await getServer(token, serverId);
       onChannelsUpdated?.(data);
-    } catch (err) {
-      setError(err.message || 'Failed to load channels');
-    } finally {
-      setLoading(false);
+    } catch {
+      // Parent already holds channel state; silent refresh failure is acceptable
     }
   }, [serverId, getToken, onChannelsUpdated]);
-
-  const handleCreated = () => {
-    fetchServer();
-  };
 
   const groups = groupChannelsByParent(channels ?? []);
 
@@ -385,21 +355,15 @@ export default function ChannelList({
         )}
       </div>
       <div style={styles.list}>
-        {loading ? (
-          <div style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--hush-text-muted)' }}>…</div>
-        ) : error ? (
-          <div style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--hush-danger)' }}>{error}</div>
-        ) : (
-          groups.map((group) => (
-            <CategorySection
-              key={group.key ?? 'uncategorized'}
-              group={group}
-              activeChannelId={activeChannelId}
-              onChannelSelect={onChannelSelect}
-              voiceParticipantCounts={voiceParticipantCounts}
-            />
-          ))
-        )}
+        {groups.map((group) => (
+          <CategorySection
+            key={group.key ?? 'uncategorized'}
+            group={group}
+            activeChannelId={activeChannelId}
+            onChannelSelect={onChannelSelect}
+            voiceParticipantCounts={voiceParticipantCounts}
+          />
+        ))}
       </div>
       {showCreateModal && (
         <CreateChannelModal
