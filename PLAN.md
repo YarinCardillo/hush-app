@@ -250,7 +250,7 @@ Migrations managed with `golang-migrate`.
 - `GET /api/auth/me` — current user info
 - `POST /api/auth/guest` — temporary guest account -> JWT + user
 
-Password hashing: bcrypt. Tokens: JWT (HS256) with configurable expiry. OAuth providers (Google, Apple, GitHub) planned post-MVP — `password_hash` is nullable in the schema to accommodate this.
+Password hashing: bcrypt. Tokens: JWT (HS256) with configurable expiry. OAuth providers (Google, Apple, GitHub) planned post-MVP — `password_hash` is nullable in the schema to accommodate this. Auth is per-instance (no cross-instance federation); see E.8 for auth model rationale and future cryptographic identity portability.
 
 ### A.4 — WebSocket server
 
@@ -266,7 +266,7 @@ Chi-compatible WebSocket upgrade. Hub pattern:
 
 ### Phase A Checkpoint (COMPLETE)
 
-Go backend serves auth, WebSocket, and LiveKit tokens. PostgreSQL schema in place. 40 unit tests passing (auth, api, ws, livekit). `db.Store` interface enables DI/mocking for all handler tests. Docker Compose and Caddy configured for `hush-api` service. Frontend migration to new auth endpoints is part of Phase E.
+Go backend serves auth, WebSocket, and LiveKit tokens. PostgreSQL schema in place. 40 unit tests passing (auth, api, ws, livekit). `db.Store` interface enables DI/mocking for all handler tests. Docker Compose and Caddy configured for `hush-api` service. Frontend migration to new auth endpoints is Phase E.8.
 
 ---
 
@@ -534,9 +534,45 @@ This carries over unchanged. `performance` mode hides screen share entirely.
 
 `client/src/components/MemberList.jsx` — online/offline via WebSocket presence.
 
+### E.8 — Auth UI migration (Matrix removal)
+
+Replace the Matrix-based auth flow with Go backend auth. This is the final Matrix removal step.
+
+**Delete:**
+- `client/src/hooks/useMatrixAuth.js` — Matrix auth hook
+- `client/src/lib/matrixClient.js` — Matrix client factory
+- `LoginCallback` component in `App.jsx` — Matrix SSO callback (dead code)
+- `/login/callback` route in `App.jsx`
+- `matrix-js-sdk` dependency from `package.json`
+
+**Rewrite:**
+- `client/src/contexts/AuthContext.jsx` — replace `useMatrixAuth()` with a new `useAuth` hook that calls Go endpoints (`/api/auth/register`, `/api/auth/login`, `/api/auth/guest`, `/api/auth/logout`, `/api/auth/me`). Store JWT in `sessionStorage` (`hush_jwt`). Rehydrate session on mount via `GET /api/auth/me`.
+- `client/src/pages/Home.jsx` — remove all Matrix imports (`SSOAction`, `getMatrixClient`), Matrix room-join logic, `fetchLoginFlows`, `ssoProviders`, `startSsoLogin`. The login/register/guest forms stay — they already collect the right fields. Wire `handleLoginSubmit` → `api.login()`, `handleRegisterSubmit` → `api.register()`, guest flow → `api.guest()`. After successful auth, call `uploadKeysAfterAuth()` to initialize Signal keys, then navigate to `/server`.
+
+**New hook — `client/src/hooks/useAuth.js`:**
+```
+State: { user, token, isAuthenticated, isLoading, error }
+Actions: login(username, password), register(username, password, displayName), loginAsGuest(), logout(), clearError()
+On mount: check sessionStorage for hush_jwt → GET /api/auth/me → set user or clear token
+After login/register/guest: store JWT → uploadKeysAfterAuth() → set user
+```
+
+**Guest flow change:** Current guest flow creates a Matrix guest + joins a Matrix room. New flow: `POST /api/auth/guest` → JWT → navigate to `/server` (guest can browse, join via invite). Guest session cleanup (`GuestSessionCleanup` in App.jsx) stays.
+
+**SSO buttons:** Remove entirely for now. The SSO provider list came from Matrix homeserver. OAuth (Google, GitHub, Apple) is post-MVP (Phase A.3 note). The UI structure for SSO buttons can be re-added when OAuth endpoints exist.
+
+**Auth model — per-instance accounts:**
+Each Hush instance (gethush.live or self-hosted) has its own user database. No cross-instance identity federation. Users create separate accounts per instance. This is intentional:
+- Simplest to implement and self-host (zero external dependencies)
+- Most private (no cross-instance metadata)
+- Cleanest for E2EE (Signal identity keys scoped to one instance)
+- OAuth providers are per-instance config (admin decides what's enabled)
+
+Future: cryptographic identity portability (Model 4) can layer on top using the existing Signal identity key pairs as cross-instance identity proof. No architectural changes needed — the public key IS the portable identity. This is post-MVP.
+
 ### Phase E Checkpoint
 
-Servers, text channels, voice channels, member list, invites. User creates server -> adds channels -> invites friends -> chats (E2EE) -> joins voice (E2EE, always-on).
+Servers, text channels, voice channels, member list, invites, auth UI on Go backend. User registers (or enters as guest) -> creates server -> adds channels -> invites friends -> chats (E2EE) -> joins voice (E2EE, always-on). Zero Matrix dependencies remain.
 
 ---
 
