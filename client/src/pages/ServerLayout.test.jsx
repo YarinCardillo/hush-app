@@ -12,6 +12,36 @@ vi.mock('../lib/api', () => ({
   createChannel: vi.fn(),
 }));
 
+vi.mock('../lib/ws', () => ({
+  createWsClient: vi.fn(() => ({
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    send: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn(),
+  })),
+}));
+
+vi.mock('./TextChannel', () => ({
+  default: function MockTextChannel({ channel }) {
+    return (
+      <div data-testid="text-channel">
+        <span>#{channel?.name}</span>
+      </div>
+    );
+  },
+}));
+vi.mock('./VoiceChannel', () => ({
+  default: function MockVoiceChannel({ channel }) {
+    return (
+      <div data-testid="voice-channel">
+        <span>#{channel?.name}</span>
+        <span>Live</span>
+      </div>
+    );
+  },
+}));
+
 import { getServer } from '../lib/api';
 
 function renderWithRoute(path) {
@@ -50,7 +80,7 @@ describe('ServerLayout', () => {
     });
   });
 
-  it('shows channel name when channelId matches', async () => {
+  it('renders TextChannel when channel is text type', async () => {
     vi.mocked(getServer).mockResolvedValue({
       server: { id: 's1', name: 'Test' },
       channels: [{ id: 'ch1', serverId: 's1', name: 'general', type: 'text', position: 0, parentId: null }],
@@ -58,9 +88,33 @@ describe('ServerLayout', () => {
     });
     renderWithRoute('/server/s1/channel/ch1');
     await waitFor(() => {
-      expect(screen.getByText('#general')).toBeInTheDocument();
+      expect(screen.getByTestId('text-channel')).toBeInTheDocument();
     });
-    expect(screen.getByText('Text channel')).toBeInTheDocument();
+    expect(screen.getByText('#general')).toBeInTheDocument();
+  });
+
+  it('renders VoiceChannel when channel is voice type', async () => {
+    vi.mocked(getServer).mockResolvedValue({
+      server: { id: 's1', name: 'Test' },
+      channels: [
+        {
+          id: 'ch-voice',
+          serverId: 's1',
+          name: 'Voice Room',
+          type: 'voice',
+          voiceMode: 'quality',
+          position: 0,
+          parentId: null,
+        },
+      ],
+      myRole: 'member',
+    });
+    renderWithRoute('/server/s1/channel/ch-voice');
+    await waitFor(() => {
+      expect(screen.getByTestId('voice-channel')).toBeInTheDocument();
+    });
+    expect(screen.getByText('#Voice Room')).toBeInTheDocument();
+    expect(screen.getByText('Live')).toBeInTheDocument();
   });
 
   it('does not fetch when no token', () => {
