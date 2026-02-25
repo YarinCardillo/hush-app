@@ -116,6 +116,9 @@ export default function Controls({
   quality,
   isMobile = false,
   mediaE2EEUnavailable = false,
+  showScreenShare = true,
+  showWebcam = true,
+  showQualityPicker = true,
   onScreenShare,
   onOpenQualityOrWindow,
   onMic,
@@ -130,8 +133,8 @@ export default function Controls({
 
   return (
     <div style={styles.bar}>
-      {/* Screen Share — hidden on mobile when not supported */}
-      {(!isMobile || IS_SCREEN_SHARE_SUPPORTED) && (
+      {/* Screen Share — hidden when showScreenShare false (e.g. low-latency voice) or mobile when not supported */}
+      {showScreenShare && (!isMobile || IS_SCREEN_SHARE_SUPPORTED) && (
         <button
           style={{
             ...styles.btn(isScreenSharing),
@@ -154,8 +157,8 @@ export default function Controls({
         </button>
       )}
 
-      {/* Change quality or window (only visible when sharing) */}
-      {isScreenSharing && (
+      {/* Change quality or window (only visible when sharing and showQualityPicker) */}
+      {showQualityPicker && isScreenSharing && (
         <button
           style={{ ...styles.iconBtn(isScreenSharing), width: btnSize, height: btnSize }}
           onClick={onOpenQualityOrWindow}
@@ -251,8 +254,9 @@ export default function Controls({
         </button>
       )}
 
-      {/* Webcam + device switch (always show chevron when device switch available) */}
-      {onWebcamDeviceSwitch ? (
+      {showWebcam && <div style={styles.divider} />}
+      {/* Webcam + device switch (hidden when showWebcam false, e.g. low-latency voice) */}
+      {showWebcam && onWebcamDeviceSwitch ? (
         <div
           style={{
             ...styles.deviceGroup(isWebcamOn),
@@ -294,7 +298,7 @@ export default function Controls({
             </svg>
           </button>
         </div>
-      ) : (
+      ) : showWebcam ? (
         <button
           style={{
             ...styles.iconBtn(isWebcamOn),
@@ -318,7 +322,7 @@ export default function Controls({
             </svg>
           )}
         </button>
-      )}
+      ) : null}
 
       <div style={styles.divider} />
 
