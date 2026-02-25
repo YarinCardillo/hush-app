@@ -1,6 +1,8 @@
 /**
  * Global setup for Vitest. Mocks or stubs used across tests.
  */
+import '@testing-library/jest-dom/vitest';
+
 if (typeof globalThis.indexedDB === 'undefined') {
   globalThis.indexedDB = {
     open(name, version) {

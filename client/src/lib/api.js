@@ -96,6 +96,124 @@ export async function getChannelMessages(token, channelId, opts = {}) {
 }
 
 /**
+ * List servers the current user is a member of.
+ * @param {string} token - JWT
+ * @returns {Promise<Array<{ id: string, name: string, iconUrl?: string, ownerId: string, createdAt: string, role: string }>>}
+ */
+export async function listServers(token) {
+  const res = await fetchWithAuth(token, '/api/servers');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `list servers ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Get server details with channels and current user's role.
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @returns {Promise<{ server: object, channels: Array<object>, myRole: string }>}
+ */
+export async function getServer(token, serverId) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `get server ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Create a new server.
+ * @param {string} token - JWT
+ * @param {{ name: string, iconUrl?: string }} body
+ * @returns {Promise<object>} Created server
+ */
+export async function createServer(token, body) {
+  const res = await fetchWithAuth(token, '/api/servers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `create server ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Resolve an invite code to server info (for join flow). No auth required.
+ * @param {string} code - Invite code (from link or user input)
+ * @returns {Promise<{ serverId: string, serverName: string }>}
+ */
+export async function getInviteByCode(code) {
+  const res = await fetch(`${defaultBase}/api/invites/${encodeURIComponent(code)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `invite lookup ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Join a server with an invite code.
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @param {{ inviteCode: string }} body
+ * @returns {Promise<object>} Server
+ */
+export async function joinServer(token, serverId, body) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/join`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `join server ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Create a channel in a server.
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @param {{ name: string, type: 'text'|'voice', voiceMode?: 'performance'|'quality', parentId?: string, position?: number }} body
+ * @returns {Promise<object>} Created channel
+ */
+export async function createChannel(token, serverId, body) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/channels`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `create channel ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Delete a channel (admin only).
+ * @param {string} token - JWT
+ * @param {string} channelId - Channel UUID
+ * @returns {Promise<void>}
+ */
+export async function deleteChannel(token, channelId) {
+  const res = await fetchWithAuth(token, `/api/channels/${encodeURIComponent(channelId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `delete channel ${res.status}`);
+  }
+}
+
+/**
  * Call after Go backend register/login. Ensures identity exists in IndexedDB and uploads keys.
  * When using Go auth (Phase E), call this after successful login/register with token, userId, and a stable deviceId (e.g. from localStorage).
  * @param {string} token - JWT from auth response
