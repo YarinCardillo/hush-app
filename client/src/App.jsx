@@ -7,6 +7,7 @@ import { clearStoredCredentials, GUEST_SESSION_KEY } from './lib/authStorage';
 const Home = lazy(() => import('./pages/Home'));
 const Room = lazy(() => import('./pages/Room'));
 const Roadmap = lazy(() => import('./pages/Roadmap'));
+const ServerLayout = lazy(() => import('./pages/ServerLayout'));
 
 const fallback = (
   <div style={{
@@ -130,6 +131,9 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login/callback" element={<LoginCallback />} />
+          <Route path="/server" element={<ServerLayout />} />
+          <Route path="/server/:serverId" element={<ServerLayout />} />
+          <Route path="/server/:serverId/channel/:channelId" element={<ServerLayout />} />
           <Route path="/room/:roomName" element={<Room />} />
           <Route path="/roadmap" element={<Roadmap />} />
         </Routes>
