@@ -2,7 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ServerList from '../components/ServerList';
 import ChannelList from '../components/ChannelList';
+import TextChannel from './TextChannel';
+import VoiceChannel from './VoiceChannel';
 import { getServer } from '../lib/api';
+import { createWsClient } from '../lib/ws';
 
 const layoutStyles = {
   root: {
@@ -41,6 +44,22 @@ export default function ServerLayout() {
   const navigate = useNavigate();
   const [serverData, setServerData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [wsClient, setWsClient] = useState(null);
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    const base = typeof location !== 'undefined' ? location.origin.replace(/^http/, 'ws') : '';
+    const url = base ? `${base}/ws` : undefined;
+    if (!url) return;
+    const client = createWsClient({ url, getToken });
+    client.connect();
+    setWsClient(client);
+    return () => {
+      client.disconnect();
+      setWsClient(null);
+    };
+  }, []);
 
   const fetchServerData = useCallback(async (sid) => {
     const token = getToken();
@@ -107,20 +126,26 @@ export default function ServerLayout() {
         {loading ? (
           <div style={layoutStyles.placeholder}>Loading…</div>
         ) : channelId && currentChannel ? (
-          <div style={layoutStyles.placeholder}>
-            <div>
-              <div style={{ fontWeight: 500, color: 'var(--hush-text)', marginBottom: '8px' }}>
-                #{currentChannel.name}
-              </div>
-              <div style={{ fontSize: '0.8rem' }}>
-                {currentChannel.type === 'voice' ? 'Voice channel' : 'Text channel'}
-                {currentChannel.type === 'voice' && currentChannel.voiceMode && ` · ${currentChannel.voiceMode}`}
-              </div>
-              <div style={{ marginTop: '12px', fontSize: '0.75rem' }}>
-                Channel view (Phase E.5)
-              </div>
-            </div>
-          </div>
+          currentChannel.type === 'text' ? (
+            <TextChannel
+              key={currentChannel.id}
+              channel={currentChannel}
+              serverId={serverId}
+              getToken={getToken}
+              wsClient={wsClient}
+              recipientUserIds={serverData?.memberIds ?? []}
+            />
+          ) : currentChannel.type === 'voice' ? (
+            <VoiceChannel
+              key={currentChannel.id}
+              channel={currentChannel}
+              serverId={serverId}
+              getToken={getToken}
+              wsClient={wsClient}
+            />
+          ) : (
+            <div style={layoutStyles.placeholder}>Unknown channel type</div>
+          )
         ) : serverId ? (
           <div style={layoutStyles.placeholder}>Select a channel</div>
         ) : (
