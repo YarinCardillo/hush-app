@@ -39,34 +39,6 @@ const layoutStyles = {
     minWidth: 0,
     overflow: 'hidden',
   },
-  channelHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 16px',
-    height: '48px',
-    background: 'var(--hush-surface)',
-    borderBottom: '1px solid var(--hush-border)',
-    flexShrink: 0,
-  },
-  channelHeaderTitle: {
-    fontSize: '0.9rem',
-    fontWeight: 600,
-    color: 'var(--hush-text)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  membersToggle: {
-    padding: '4px 8px',
-    fontSize: '0.8rem',
-    fontFamily: 'var(--font-sans)',
-    background: 'none',
-    border: '1px solid var(--hush-border)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--hush-text-secondary)',
-    cursor: 'pointer',
-  },
   placeholder: {
     flex: 1,
     display: 'flex',
@@ -95,7 +67,7 @@ export default function ServerLayout() {
   const [wsClient, setWsClient] = useState(null);
   const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
   const [members, setMembers] = useState([]);
-  const [showMembers, setShowMembers] = useState(true);
+  const [showMembers, setShowMembers] = useState(() => breakpoint !== 'mobile');
 
   const currentUserId = user?.id ?? '';
   const isMobile = breakpoint === 'mobile';
@@ -121,6 +93,7 @@ export default function ServerLayout() {
     return () => wsClient.off('presence.update', handler);
   }, [wsClient]);
 
+  // TODO(Phase-F, 2026-02-26): Subscribe to membership-change WS events to refresh members in real-time.
   useEffect(() => {
     if (!serverId || !authToken) return;
     const token = getToken();
@@ -166,6 +139,7 @@ export default function ServerLayout() {
   };
 
   const currentChannel = serverData?.channels?.find((c) => c.id === channelId);
+  const memberIds = members.map((m) => m.userId);
 
   return (
     <div style={layoutStyles.root}>
@@ -192,68 +166,57 @@ export default function ServerLayout() {
         {loading ? (
           <div style={layoutStyles.placeholder}>Loading…</div>
         ) : channelId && currentChannel ? (
-          <>
-            <div style={layoutStyles.channelHeader}>
-              <span style={layoutStyles.channelHeaderTitle}>
-                {currentChannel.type === 'text' ? '#' : ''}{currentChannel.name}
-              </span>
-              <button
-                type="button"
-                style={layoutStyles.membersToggle}
-                onClick={() => setShowMembers((v) => !v)}
-                aria-pressed={showMembers}
-              >
-                Members
-              </button>
-            </div>
-            <div style={layoutStyles.contentRow}>
-              <div style={layoutStyles.channelArea}>
-                {currentChannel.type === 'text' ? (
-                  <TextChannel
-                    key={currentChannel.id}
-                    channel={currentChannel}
-                    serverId={serverId}
-                    getToken={getToken}
-                    wsClient={wsClient}
-                    recipientUserIds={serverData?.memberIds ?? []}
-                  />
-                ) : currentChannel.type === 'voice' ? (
-                  <VoiceChannel
-                    key={currentChannel.id}
-                    channel={currentChannel}
-                    serverId={serverId}
-                    getToken={getToken}
-                    wsClient={wsClient}
-                    recipientUserIds={serverData?.memberIds ?? []}
-                  />
-                ) : (
-                  <div style={layoutStyles.placeholder}>Unknown channel type</div>
-                )}
-              </div>
-              {isMobile ? (
-                <>
-                  <div
-                    className={`sidebar-overlay ${showMembers ? 'sidebar-overlay-open' : ''}`}
-                    onClick={() => setShowMembers(false)}
-                    aria-hidden={!showMembers}
-                  />
-                  <div className={`sidebar-panel-right ${showMembers ? 'sidebar-panel-open' : ''}`}>
-                    <MemberList
-                      members={members}
-                      onlineUserIds={onlineUserIds}
-                      currentUserId={currentUserId}
-                    />
-                  </div>
-                </>
-              ) : showMembers ? (
-                <MemberList
-                  members={members}
-                  onlineUserIds={onlineUserIds}
-                  currentUserId={currentUserId}
+          <div style={layoutStyles.contentRow}>
+            <div style={layoutStyles.channelArea}>
+              {currentChannel.type === 'text' ? (
+                <TextChannel
+                  key={currentChannel.id}
+                  channel={currentChannel}
+                  serverId={serverId}
+                  getToken={getToken}
+                  wsClient={wsClient}
+                  recipientUserIds={memberIds}
+                  showMembers={showMembers}
+                  onToggleMembers={() => setShowMembers((v) => !v)}
                 />
-              ) : null}
+              ) : currentChannel.type === 'voice' ? (
+                <VoiceChannel
+                  key={currentChannel.id}
+                  channel={currentChannel}
+                  serverId={serverId}
+                  getToken={getToken}
+                  wsClient={wsClient}
+                  recipientUserIds={memberIds}
+                  showMembers={showMembers}
+                  onToggleMembers={() => setShowMembers((v) => !v)}
+                />
+              ) : (
+                <div style={layoutStyles.placeholder}>Unknown channel type</div>
+              )}
             </div>
-          </>
+            {isMobile ? (
+              <>
+                <div
+                  className={`sidebar-overlay ${showMembers ? 'sidebar-overlay-open' : ''}`}
+                  onClick={() => setShowMembers(false)}
+                  aria-hidden={!showMembers}
+                />
+                <div className={`sidebar-panel-right ${showMembers ? 'sidebar-panel-open' : ''}`}>
+                  <MemberList
+                    members={members}
+                    onlineUserIds={onlineUserIds}
+                    currentUserId={currentUserId}
+                  />
+                </div>
+              </>
+            ) : showMembers ? (
+              <MemberList
+                members={members}
+                onlineUserIds={onlineUserIds}
+                currentUserId={currentUserId}
+              />
+            ) : null}
+          </div>
         ) : serverId ? (
           <div style={layoutStyles.placeholder}>Select a channel</div>
         ) : (

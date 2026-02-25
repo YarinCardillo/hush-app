@@ -13,10 +13,22 @@ const styles = {
   header: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'space-between',
     padding: '8px 16px',
     height: '48px',
     background: 'var(--hush-surface)',
     borderBottom: '1px solid var(--hush-border)',
+    flexShrink: 0,
+  },
+  membersToggle: {
+    padding: '4px 8px',
+    fontSize: '0.8rem',
+    fontFamily: 'var(--font-sans)',
+    background: 'none',
+    border: '1px solid var(--hush-border)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--hush-text-secondary)',
+    cursor: 'pointer',
     flexShrink: 0,
   },
   channelName: {
@@ -46,6 +58,8 @@ export default function TextChannel({
   getToken,
   wsClient,
   recipientUserIds = [],
+  showMembers = false,
+  onToggleMembers,
 }) {
   const { user } = useAuth();
   const currentUserId = user?.id ?? '';
@@ -58,6 +72,16 @@ export default function TextChannel({
     <div style={styles.root}>
       <header style={styles.header}>
         <span style={styles.channelName}>#{channel.name}</span>
+        {onToggleMembers && (
+          <button
+            type="button"
+            style={styles.membersToggle}
+            onClick={onToggleMembers}
+            aria-pressed={showMembers}
+          >
+            Members
+          </button>
+        )}
       </header>
       <div style={styles.main}>
         <Chat

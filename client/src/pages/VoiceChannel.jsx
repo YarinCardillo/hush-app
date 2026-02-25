@@ -151,7 +151,7 @@ function getFriendlyRoomError(errorMessage) {
  * Voice channel view: LiveKit room (server-{serverId}-channel-{channel.id}), video grid, controls, chat sidebar.
  * Used by ServerLayout when currentChannel.type === 'voice'.
  */
-export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [] }) {
+export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], showMembers = false, onToggleMembers }) {
   const navigate = useNavigate();
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile';
@@ -538,6 +538,16 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
               />
             )}
           </button>
+          {onToggleMembers && (
+            <button
+              style={styles.participantCount}
+              title="Members"
+              onClick={onToggleMembers}
+              aria-pressed={showMembers}
+            >
+              Members
+            </button>
+          )}
         </div>
       </div>
 

@@ -113,7 +113,7 @@ export async function listServers(token) {
  * Get server details with channels and current user's role.
  * @param {string} token - JWT
  * @param {string} serverId - Server UUID
- * @returns {Promise<{ server: object, channels: Array<object>, myRole: string, memberIds: string[] }>}
+ * @returns {Promise<{ server: object, channels: Array<object>, myRole: string }>}
  */
 export async function getServer(token, serverId) {
   const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`);

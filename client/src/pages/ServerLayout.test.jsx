@@ -99,7 +99,6 @@ describe('ServerLayout', () => {
       server: { id: 's1', name: 'Test' },
       channels: [{ id: 'ch1', serverId: 's1', name: 'general', type: 'text', position: 0, parentId: null }],
       myRole: 'member',
-      memberIds: ['u1'],
     });
     renderWithRoute('/server/s1/channel/ch1');
     await waitFor(() => {
