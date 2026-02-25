@@ -685,6 +685,10 @@ a[href]:active {
   pointer-events: none;
 }
 
+.member-list-row:hover {
+  background: var(--hush-hover);
+}
+
 /* ── Sidebar desktop (in-flow column, slide via width + transform) ─── */
 
 .sidebar-desktop {

@@ -12,11 +12,18 @@ vi.mock('../hooks/useAuth', () => ({
 
 vi.mock('../lib/api', () => ({
   getServer: vi.fn(),
+  getServerMembers: vi.fn().mockResolvedValue([
+    { userId: 'u1', displayName: 'User One', role: 'member', joinedAt: '2025-01-01T00:00:00Z' },
+  ]),
   listServers: vi.fn().mockResolvedValue([]),
   createServer: vi.fn(),
   joinServer: vi.fn(),
   getInviteByCode: vi.fn(),
   createChannel: vi.fn(),
+}));
+
+vi.mock('../hooks/useBreakpoint', () => ({
+  useBreakpoint: vi.fn(() => 'desktop'),
 }));
 
 vi.mock('../lib/ws', () => ({
@@ -92,12 +99,18 @@ describe('ServerLayout', () => {
       server: { id: 's1', name: 'Test' },
       channels: [{ id: 'ch1', serverId: 's1', name: 'general', type: 'text', position: 0, parentId: null }],
       myRole: 'member',
+      memberIds: ['u1'],
     });
     renderWithRoute('/server/s1/channel/ch1');
     await waitFor(() => {
       expect(screen.getByTestId('text-channel')).toBeInTheDocument();
     });
-    expect(screen.getByText('#general')).toBeInTheDocument();
+    const textChannel = screen.getByTestId('text-channel');
+    expect(textChannel).toHaveTextContent('general');
+    await waitFor(() => {
+      expect(screen.getByText('MEMBERS — 1')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/User One/)).toBeInTheDocument();
   });
 
   it('renders VoiceChannel when channel is voice type', async () => {

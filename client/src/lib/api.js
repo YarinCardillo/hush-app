@@ -113,7 +113,7 @@ export async function listServers(token) {
  * Get server details with channels and current user's role.
  * @param {string} token - JWT
  * @param {string} serverId - Server UUID
- * @returns {Promise<{ server: object, channels: Array<object>, myRole: string }>}
+ * @returns {Promise<{ server: object, channels: Array<object>, myRole: string, memberIds: string[] }>}
  */
 export async function getServer(token, serverId) {
   const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`);
@@ -122,6 +122,19 @@ export async function getServer(token, serverId) {
     throw new Error(err.error || `get server ${res.status}`);
   }
   return res.json();
+}
+
+/**
+ * Get server members (with display name and role). Caller must be a member.
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @returns {Promise<Array<{ userId: string, displayName: string, role: string, joinedAt: string }>>}
+ */
+export async function getServerMembers(token, serverId) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/members`);
+  if (!res.ok) throw new Error(`Failed to fetch members: ${res.status}`);
+  const data = await res.json();
+  return data.members;
 }
 
 /**
