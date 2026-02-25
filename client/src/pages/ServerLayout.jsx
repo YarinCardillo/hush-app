@@ -6,6 +6,8 @@ import TextChannel from './TextChannel';
 import VoiceChannel from './VoiceChannel';
 import { getServer } from '../lib/api';
 import { createWsClient } from '../lib/ws';
+import { useAuth } from '../contexts/AuthContext';
+import { JWT_KEY } from '../hooks/useAuth';
 
 const layoutStyles = {
   root: {
@@ -35,20 +37,20 @@ const layoutStyles = {
 
 function getToken() {
   return typeof window !== 'undefined'
-    ? (sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token'))
+    ? (sessionStorage.getItem(JWT_KEY) ?? sessionStorage.getItem('hush_token'))
     : null;
 }
 
 export default function ServerLayout() {
   const { serverId, channelId } = useParams();
   const navigate = useNavigate();
+  const { token: authToken } = useAuth();
   const [serverData, setServerData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [wsClient, setWsClient] = useState(null);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
+    if (!authToken) return;
     const base = typeof location !== 'undefined' ? location.origin.replace(/^http/, 'ws') : '';
     const url = base ? `${base}/ws` : undefined;
     if (!url) return;
@@ -59,7 +61,7 @@ export default function ServerLayout() {
       client.disconnect();
       setWsClient(null);
     };
-  }, []);
+  }, [authToken]);
 
   const fetchServerData = useCallback(async (sid) => {
     const token = getToken();
@@ -142,6 +144,7 @@ export default function ServerLayout() {
               serverId={serverId}
               getToken={getToken}
               wsClient={wsClient}
+              recipientUserIds={serverData?.memberIds ?? []}
             />
           ) : (
             <div style={layoutStyles.placeholder}>Unknown channel type</div>

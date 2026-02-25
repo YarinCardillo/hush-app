@@ -3,6 +3,13 @@ import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ServerLayout from './ServerLayout';
 
+vi.mock('../contexts/AuthContext', () => ({
+  useAuth: vi.fn(() => ({ token: 'test-token', user: { id: 'u1' } })),
+}));
+vi.mock('../hooks/useAuth', () => ({
+  JWT_KEY: 'hush_jwt',
+}));
+
 vi.mock('../lib/api', () => ({
   getServer: vi.fn(),
   listServers: vi.fn().mockResolvedValue([]),

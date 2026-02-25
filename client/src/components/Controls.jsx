@@ -173,7 +173,7 @@ export default function Controls({
         </button>
       )}
 
-      <div style={styles.divider} />
+      {showScreenShare && <div style={styles.divider} />}
 
       {/* Microphone + device switch (always show chevron when device switch available) */}
       {onMicDeviceSwitch ? (
