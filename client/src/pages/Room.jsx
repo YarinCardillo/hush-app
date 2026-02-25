@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { GUEST_SESSION_KEY } from '../lib/authStorage';
 import { getMatrixClient } from '../lib/matrixClient';
 import { createWsClient } from '../lib/ws';
+import { useSignal } from '../hooks/useSignal';
 import * as signalStore from '../lib/signalStore';
 import { useRoom } from '../hooks/useRoom';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -290,10 +291,14 @@ export default function Room() {
   const wsClientRef = useRef(null);
   const seenParticipantIdsRef = useRef(null);
 
+  const getToken = useCallback(
+    () => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null,
+    [],
+  );
+
   // WebSocket client for Chat (Phase C). Connect when we have channel and Go JWT.
   useEffect(() => {
     const channelId = sessionStorage.getItem('hush_channelId');
-    const getToken = () => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null;
     if (!channelId) return;
     const base = typeof location !== 'undefined' ? location.origin.replace(/^http/, 'ws') : '';
     const url = base ? `${base}/ws` : undefined;
@@ -308,6 +313,13 @@ export default function Room() {
       setWsClient(null);
     };
   }, []);
+
+  const { user } = useAuth();
+
+  const { encryptForUser, decryptFromUser } = useSignal({
+    getStore: () => signalStore.openStore(user?.id ?? '', 'default'),
+    getToken,
+  });
 
   const {
     isReady,
@@ -331,7 +343,13 @@ export default function Room() {
     unwatchScreen,
     mediaE2EEUnavailable,
     keyExchangeMessage,
-  } = useRoom();
+  } = useRoom({
+    wsClient,
+    getToken,
+    currentUserId: user?.id ?? '',
+    encryptForUser,
+    decryptFromUser,
+  });
 
   const { isAuthenticated, rehydrationAttempted, logout } = useAuth();
 
@@ -359,9 +377,9 @@ export default function Room() {
       navigate(joinRedirect, { replace: true });
       return;
     }
-    const roomId = sessionStorage.getItem('hush_matrixRoomId');
+    const channelId = sessionStorage.getItem('hush_channelId');
     const roomNameStored = sessionStorage.getItem('hush_roomName');
-    if (!roomId || !roomNameStored) {
+    if (!channelId || !roomNameStored) {
       if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
         logout().then(() => navigate(joinRedirect, { replace: true }));
       } else {
@@ -375,14 +393,13 @@ export default function Room() {
   useEffect(() => {
     if (!rehydrationAttempted || !isAuthenticated) return;
 
-    const roomId = sessionStorage.getItem('hush_matrixRoomId');
+    const channelId = sessionStorage.getItem('hush_channelId');
     const roomNameStored = sessionStorage.getItem('hush_roomName');
-    if (!roomId || !roomNameStored) return;
+    if (!channelId || !roomNameStored) return;
 
     const displayName = sessionStorage.getItem('hush_displayName') || 'Anonymous';
-    const matrixRoomId = sessionStorage.getItem('hush_matrixRoomId');
 
-    connectRoom(roomName, displayName, matrixRoomId).then(() => {
+    connectRoom(roomName, displayName, channelId).then(() => {
       setConnected(true);
       console.log('[room] Connected to LiveKit room');
     }).catch((err) => {

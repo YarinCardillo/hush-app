@@ -1,13 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Room, RoomEvent, Track, ExternalE2EEKeyProvider } from 'livekit-client';
-import { getMatrixClient } from '../lib/matrixClient';
 
 // Import E2EE worker for LiveKit encryption
 // @ts-ignore - Vite will resolve this URL correctly
 import E2EEWorker from 'livekit-client/e2ee-worker?worker';
 import {
   getPlaceholderKey,
-  setupToDeviceListener,
+  setupMediaKeyListener,
   handleParticipantConnected as e2eeOnParticipantConnected,
   handleParticipantDisconnected as e2eeOnParticipantDisconnected,
   setCreatorKey,
@@ -32,9 +31,10 @@ import { DEFAULT_QUALITY } from '../utils/constants';
  * LiveKit-based room connection hook.
  * Replaces mediasoup-based useMediasoup hook with LiveKit SFU.
  *
+ * @param {{ wsClient: { send: (type: string, payload: object) => void, on: Function, off: Function }, getToken: () => string|null, currentUserId: string, encryptForUser: Function, decryptFromUser: Function }} deps
  * @returns {Object} Room state and media controls
  */
-export function useRoom() {
+export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, decryptFromUser }) {
   // ─── Connection State ─────────────────────────────────
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState(null);
@@ -62,9 +62,9 @@ export function useRoom() {
   const keyBytesRef = useRef(null);
   const keyRotationCounterRef = useRef(0);
   const roomNameRef = useRef(null);
-  const matrixRoomIdRef = useRef(null);
+  const channelIdRef = useRef(null);
   const currentKeyIndexRef = useRef(0);
-  const toDeviceUnsubscribeRef = useRef(null);
+  const mediaKeyUnsubscribeRef = useRef(null);
   const connectionEpochRef = useRef(0);
 
   // ─── Noise Gate Refs ──────────────────────────────────
@@ -124,7 +124,7 @@ export function useRoom() {
 
   // ─── Connect to LiveKit Room ──────────────────────────
   const connectRoom = useCallback(
-    async (roomName, displayName, matrixRoomId) => {
+    async (roomName, displayName, channelId) => {
       const epoch = ++connectionEpochRef.current;
       const isStale = () => epoch !== connectionEpochRef.current;
       try {
@@ -132,9 +132,9 @@ export function useRoom() {
           roomRef.current.disconnect();
           roomRef.current = null;
         }
-        if (toDeviceUnsubscribeRef.current) {
-          toDeviceUnsubscribeRef.current();
-          toDeviceUnsubscribeRef.current = null;
+        if (mediaKeyUnsubscribeRef.current) {
+          mediaKeyUnsubscribeRef.current();
+          mediaKeyUnsubscribeRef.current = null;
         }
         localTracksRef.current.clear();
         remoteTracksRef.current.clear();
@@ -152,13 +152,12 @@ export function useRoom() {
         keyRotationCounterRef.current = 0;
         currentKeyIndexRef.current = 0;
         roomNameRef.current = roomName;
-        matrixRoomIdRef.current = matrixRoomId || null;
+        channelIdRef.current = channelId || null;
         setMediaE2EEUnavailable(false);
 
-        const matrixClient = getMatrixClient();
-        const accessToken = matrixClient?.getAccessToken?.();
-        if (!matrixClient || !accessToken) {
-          throw new Error('Matrix session required. Please sign in again.');
+        const accessToken = getToken?.();
+        if (!accessToken) {
+          throw new Error('Session required. Please sign in again.');
         }
 
         const response = await fetch('/api/livekit/token', {
@@ -195,13 +194,13 @@ export function useRoom() {
           worker = new E2EEWorker();
 
           const e2eeRefs = {
-            matrixRoomIdRef,
+            channelIdRef,
             e2eeKeyProviderRef,
             keyBytesRef,
             currentKeyIndexRef,
           };
-          setupToDeviceListener(matrixClient, e2eeRefs, setE2eeKey, (fn) => {
-            toDeviceUnsubscribeRef.current = fn;
+          setupMediaKeyListener(wsClient, decryptFromUser, e2eeRefs, setE2eeKey, (fn) => {
+            mediaKeyUnsubscribeRef.current = fn;
           });
           const placeholderKey = getPlaceholderKey();
           await keyProvider.setKey(placeholderKey, 0);
@@ -209,9 +208,9 @@ export function useRoom() {
         } catch (e2eeErr) {
           console.error('[livekit] E2EE initialization failed:', e2eeErr);
           setMediaE2EEUnavailable(true);
-          if (toDeviceUnsubscribeRef.current) {
-            toDeviceUnsubscribeRef.current();
-            toDeviceUnsubscribeRef.current = null;
+          if (mediaKeyUnsubscribeRef.current) {
+            mediaKeyUnsubscribeRef.current();
+            mediaKeyUnsubscribeRef.current = null;
           }
           keyProvider = null;
           worker = null;
@@ -254,12 +253,19 @@ export function useRoom() {
             },
           ]);
           const e2eeRefs = {
-            matrixRoomIdRef,
+            channelIdRef,
             e2eeKeyProviderRef,
             keyBytesRef,
             currentKeyIndexRef,
           };
-          await e2eeOnParticipantConnected(participant, matrixClient, e2eeRefs, setKeyExchangeMessage);
+          await e2eeOnParticipantConnected(
+            participant,
+            wsClient,
+            encryptForUser,
+            currentUserId,
+            e2eeRefs,
+            setKeyExchangeMessage,
+          );
         });
 
         // ParticipantDisconnected: update list, clean tracks/screens, rekey via e2eeKeyManager
@@ -287,12 +293,21 @@ export function useRoom() {
           const r = roomRef.current;
           if (r) {
             const e2eeRefs = {
-              matrixRoomIdRef,
+              channelIdRef,
               e2eeKeyProviderRef,
               keyBytesRef,
               currentKeyIndexRef,
             };
-            await e2eeOnParticipantDisconnected(participant, r, matrixClient, e2eeRefs, setE2eeKey, setKeyExchangeMessage);
+            await e2eeOnParticipantDisconnected(
+              participant,
+              r,
+              wsClient,
+              encryptForUser,
+              currentUserId,
+              e2eeRefs,
+              setE2eeKey,
+              setKeyExchangeMessage,
+            );
           }
         });
 
@@ -309,7 +324,7 @@ export function useRoom() {
         // Use the local `room` variable from the closure, not roomRef.current.
         room.on(RoomEvent.Connected, async () => {
           if (isStale()) return;
-          if (!keyProvider || !matrixRoomIdRef.current) return;
+          if (!keyProvider || !channelIdRef.current) return;
           if (room.remoteParticipants.size === 0) {
             await setCreatorKey(keyProvider, { keyBytesRef, currentKeyIndexRef }, setE2eeKey);
           }
@@ -395,9 +410,9 @@ export function useRoom() {
     connectionEpochRef.current++;
     setError(null);
     setKeyExchangeMessage(null);
-    if (toDeviceUnsubscribeRef.current) {
-      toDeviceUnsubscribeRef.current();
-      toDeviceUnsubscribeRef.current = null;
+    if (mediaKeyUnsubscribeRef.current) {
+      mediaKeyUnsubscribeRef.current();
+      mediaKeyUnsubscribeRef.current = null;
     }
     if (!roomRef.current) return;
 
@@ -420,7 +435,7 @@ export function useRoom() {
       keyRotationCounterRef.current = 0;
       currentKeyIndexRef.current = 0;
       roomNameRef.current = null;
-      matrixRoomIdRef.current = null;
+      channelIdRef.current = null;
 
       localTracksRef.current.clear();
       remoteTracksRef.current.clear();
@@ -591,6 +606,10 @@ export function useRoom() {
   // ─── Cleanup on Unmount ───────────────────────────────
   useEffect(() => {
     return () => {
+      if (mediaKeyUnsubscribeRef.current) {
+        mediaKeyUnsubscribeRef.current();
+        mediaKeyUnsubscribeRef.current = null;
+      }
       const room = roomRef.current;
       const localTracksMap = localTracksRef.current;
       if (room) {

@@ -1,20 +1,21 @@
 /**
  * E2EE key generation, distribution, and rotation for LiveKit media.
- * Used by useRoom; creator/leader sends key via Matrix to-device, joiners receive and setKey.
+ * Used by useRoom; creator/leader sends key via Signal-encrypted WebSocket messages,
+ * joiners receive and setKey.
  */
 
-import { ClientEvent } from 'matrix-js-sdk';
+const DEFAULT_DEVICE_ID = 'default';
 
 export const KEY_EXCHANGE_RETRY_MESSAGE = 'Could not establish secure media channel. Retrying…';
 export const KEY_EXCHANGE_FAIL_MESSAGE = 'Secure channel failed. Please rejoin.';
 
 /**
- * Runs an async to-device send with retries and exponential backoff.
+ * Runs an async send with retries and exponential backoff.
  * @param {() => Promise<void>} fn - Async function that performs the send
  * @param {{ maxAttempts?: number, baseDelayMs?: number, onRetry?: (attempt: number) => void }} options
  * @returns {Promise<void>}
  */
-export async function retryToDeviceSend(fn, { maxAttempts = 3, baseDelayMs = 1000, onRetry } = {}) {
+export async function retrySend(fn, { maxAttempts = 3, baseDelayMs = 1000, onRetry } = {}) {
   let lastErr;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -41,110 +42,109 @@ export function getPlaceholderKey() {
 }
 
 /**
- * Subscribes to Matrix to-device events for E2EE key delivery. Returns unsubscribe function.
- * @param {import('matrix-js-sdk').MatrixClient} matrixClient
- * @param {{ matrixRoomIdRef: import('react').MutableRefObject<string|null>, e2eeKeyProviderRef: import('react').MutableRefObject<import('livekit-client').ExternalE2EEKeyProvider|null>, keyBytesRef: import('react').MutableRefObject<Uint8Array|null>, currentKeyIndexRef: import('react').MutableRefObject<number> }} refs
+ * Subscribes to WebSocket media.key events for E2EE key delivery.
+ * @param {{ on: (type: string, cb: (data: any) => void) => void, off: (type: string, cb: (data: any) => void) => void }} wsClient
+ * @param {Function} decryptFromUser
+ * @param {{ channelIdRef: import('react').MutableRefObject<string|null>, e2eeKeyProviderRef: import('react').MutableRefObject<import('livekit-client').ExternalE2EEKeyProvider|null>, keyBytesRef: import('react').MutableRefObject<Uint8Array|null>, currentKeyIndexRef: import('react').MutableRefObject<number> }} refs
  * @param {(key: Uint8Array|null) => void} setE2eeKey
- * @param {(fn: () => void) => void} setToDeviceUnsubscribe
+ * @param {(fn: () => void) => void} setMediaKeyUnsubscribe
  */
-export function setupToDeviceListener(matrixClient, refs, setE2eeKey, setToDeviceUnsubscribe) {
-  const handleToDeviceE2EEKey = async (event) => {
-    if (event.getType() !== 'io.hush.e2ee_key') return;
-    const content = event.getContent();
-    const roomId = content?.roomId;
-    const keyB64 = content?.key;
-    const keyIndex = content?.keyIndex ?? 0;
-    if (!roomId || !keyB64 || refs.matrixRoomIdRef.current !== roomId || !refs.e2eeKeyProviderRef.current) return;
+export function setupMediaKeyListener(wsClient, decryptFromUser, refs, setE2eeKey, setMediaKeyUnsubscribe) {
+  const handleMediaKey = async (data) => {
+    const senderUserId = data?.sender_user_id;
+    const envelopeB64 = data?.payload;
+    if (!senderUserId || !envelopeB64 || !refs.e2eeKeyProviderRef.current || !refs.channelIdRef.current) return;
     try {
-      const binary = atob(keyB64);
-      const keyBytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) keyBytes[i] = binary.charCodeAt(i);
+      const envelopeBytes = fromBase64(envelopeB64);
+      const plaintext = await decryptFromUser(senderUserId, DEFAULT_DEVICE_ID, envelopeBytes);
+      const decoded = new TextDecoder().decode(plaintext);
+      const parsed = JSON.parse(decoded);
+      const channelId = parsed?.channelId;
+      const keyB64 = parsed?.key;
+      const keyIndex = parsed?.keyIndex ?? 0;
+      if (!channelId || channelId !== refs.channelIdRef.current || !keyB64) return;
+      const keyBytes = fromBase64(keyB64);
       await refs.e2eeKeyProviderRef.current.setKey(keyBytes, keyIndex);
       refs.currentKeyIndexRef.current = keyIndex;
       refs.keyBytesRef.current = keyBytes;
       setE2eeKey(keyBytes);
-      console.log('[livekit] E2EE key applied from to-device, keyIndex:', keyIndex);
+      console.log('[livekit] E2EE key applied from media.key, keyIndex:', keyIndex);
     } catch (e) {
-      console.error('[livekit] Failed to apply E2EE key from to-device:', e);
+      console.error('[livekit] Failed to apply E2EE key from media.key:', e);
     }
   };
 
-  matrixClient.on(ClientEvent.ToDeviceEvent, handleToDeviceE2EEKey);
-  setToDeviceUnsubscribe(() => {
-    matrixClient.off(ClientEvent.ToDeviceEvent, handleToDeviceE2EEKey);
+  wsClient.on('media.key', handleMediaKey);
+  setMediaKeyUnsubscribe?.(() => {
+    wsClient.off('media.key', handleMediaKey);
   });
 }
 
 /**
- * Sends current E2EE key to a newly connected participant via Matrix to-device.
+ * Sends current E2EE key to a newly connected participant via WebSocket media.key.
  * @param {import('livekit-client').RemoteParticipant} participant
- * @param {import('matrix-js-sdk').MatrixClient} matrixClient
- * @param {{ matrixRoomIdRef: import('react').MutableRefObject<string|null>, e2eeKeyProviderRef: import('react').MutableRefObject<import('livekit-client').ExternalE2EEKeyProvider|null>, keyBytesRef: import('react').MutableRefObject<Uint8Array|null>, currentKeyIndexRef: import('react').MutableRefObject<number> }} refs
+ * @param {{ send: (type: string, payload: object) => void }} wsClient
+ * @param {Function} encryptForUser
+ * @param {string} currentUserId
+ * @param {{ channelIdRef: import('react').MutableRefObject<string|null>, e2eeKeyProviderRef: import('react').MutableRefObject<import('livekit-client').ExternalE2EEKeyProvider|null>, keyBytesRef: import('react').MutableRefObject<Uint8Array|null>, currentKeyIndexRef: import('react').MutableRefObject<number> }} refs
  * @param {(msg: string|null) => void} setKeyExchangeMessage
  */
-export async function handleParticipantConnected(participant, matrixClient, refs, setKeyExchangeMessage) {
+export async function handleParticipantConnected(participant, wsClient, encryptForUser, currentUserId, refs, setKeyExchangeMessage) {
   if (
     !refs.e2eeKeyProviderRef.current ||
     !refs.keyBytesRef.current ||
-    !refs.matrixRoomIdRef.current ||
-    !matrixClient.getCrypto()
+    !refs.channelIdRef.current ||
+    !currentUserId
   ) {
     return;
   }
-  const roomId = refs.matrixRoomIdRef.current;
+  const channelId = refs.channelIdRef.current;
   const keyBytes = refs.keyBytesRef.current;
   const keyIndex = refs.currentKeyIndexRef.current;
-  const keyB64 = btoa(String.fromCharCode(...keyBytes));
+  const keyB64 = toBase64(keyBytes);
   try {
-    await retryToDeviceSend(
+    await retrySend(
       async () => {
-        const deviceMap = await matrixClient.getCrypto().getUserDeviceInfo([participant.identity], true);
-        const devicesForUser = deviceMap?.get(participant.identity);
-        const devices = devicesForUser
-          ? Array.from(devicesForUser.keys()).map((deviceId) => ({
-              userId: participant.identity,
-              deviceId,
-            }))
-          : [];
-        if (devices.length > 0) {
-          await matrixClient.encryptAndSendToDevice('io.hush.e2ee_key', devices, {
-            roomId,
-            key: keyB64,
-            keyIndex,
-          });
-          console.log('[livekit] E2EE key sent to', participant.identity);
-        }
+        const payload = {
+          channelId,
+          key: keyB64,
+          keyIndex,
+        };
+        const plaintext = new TextEncoder().encode(JSON.stringify(payload));
+        const envelope = await encryptForUser(participant.identity, plaintext);
+        const envelopeB64 = toBase64(envelope);
+        wsClient.send('media.key', {
+          target_user_id: participant.identity,
+          payload: envelopeB64,
+        });
+        console.log('[livekit] E2EE key sent to', participant.identity);
       },
       {},
     );
     setKeyExchangeMessage(null);
   } catch (err) {
     console.warn('[livekit] Failed to send E2EE key to participant:', err);
-    // If the Matrix token expired (401) but E2EE key was already set, the stream
-    // keeps working — the new participant will receive the key from another peer
-    // whose token is still valid.  Don't show a scary toast for this.
-    const isTokenExpired = /M_UNKNOWN_TOKEN|401|expired/i.test(err?.message || '');
-    if (!isTokenExpired) {
-      setKeyExchangeMessage(KEY_EXCHANGE_FAIL_MESSAGE);
-    }
+    setKeyExchangeMessage(KEY_EXCHANGE_FAIL_MESSAGE);
   }
 }
 
 /**
  * If this client is the leader (lexicographically smallest Matrix user ID among remaining),
- * generates a new key and distributes it via to-device. Otherwise no-op.
+ * generates a new key and distributes it via media.key. Otherwise no-op.
  * @param {import('livekit-client').RemoteParticipant} participant
  * @param {import('livekit-client').Room} room
- * @param {import('matrix-js-sdk').MatrixClient} matrixClient
- * @param {{ matrixRoomIdRef: import('react').MutableRefObject<string|null>, e2eeKeyProviderRef: import('react').MutableRefObject<import('livekit-client').ExternalE2EEKeyProvider|null>, keyBytesRef: import('react').MutableRefObject<Uint8Array|null>, currentKeyIndexRef: import('react').MutableRefObject<number> }} refs
+ * @param {{ send: (type: string, payload: object) => void }} wsClient
+ * @param {Function} encryptForUser
+ * @param {string} currentUserId
+ * @param {{ channelIdRef: import('react').MutableRefObject<string|null>, e2eeKeyProviderRef: import('react').MutableRefObject<import('livekit-client').ExternalE2EEKeyProvider|null>, keyBytesRef: import('react').MutableRefObject<Uint8Array|null>, currentKeyIndexRef: import('react').MutableRefObject<number> }} refs
  * @param {(key: Uint8Array|null) => void} setE2eeKey
  * @param {(msg: string|null) => void} setKeyExchangeMessage
  */
-export async function handleParticipantDisconnected(participant, room, matrixClient, refs, setE2eeKey, setKeyExchangeMessage) {
+export async function handleParticipantDisconnected(participant, room, wsClient, encryptForUser, currentUserId, refs, setE2eeKey, setKeyExchangeMessage) {
   if (
     !refs.e2eeKeyProviderRef.current ||
-    !refs.matrixRoomIdRef.current ||
-    !matrixClient.getCrypto()
+    !refs.channelIdRef.current ||
+    !currentUserId
   ) {
     return;
   }
@@ -154,8 +154,7 @@ export async function handleParticipantDisconnected(participant, room, matrixCli
   ].filter(Boolean);
   remaining.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const leader = remaining[0];
-  const myIdentity = matrixClient.getUserId();
-  if (myIdentity !== leader) return;
+  if (currentUserId !== leader) return;
 
   const newKey = new Uint8Array(32);
   crypto.getRandomValues(newKey);
@@ -165,36 +164,33 @@ export async function handleParticipantDisconnected(participant, room, matrixCli
   await refs.e2eeKeyProviderRef.current.setKey(newKey, newKeyIndex);
   setE2eeKey(newKey);
 
-  const roomId = refs.matrixRoomIdRef.current;
-  const keyB64 = btoa(String.fromCharCode(...newKey));
+  const channelId = refs.channelIdRef.current;
+  const keyB64 = toBase64(newKey);
   const targets = remaining.slice(1);
   let rekeyFailed = false;
   for (const userId of targets) {
     try {
-      await retryToDeviceSend(
+      await retrySend(
         async () => {
-          const deviceMap = await matrixClient.getCrypto().getUserDeviceInfo([userId], true);
-          const devicesForUser = deviceMap?.get(userId);
-          const devices = devicesForUser
-            ? Array.from(devicesForUser.keys()).map((deviceId) => ({ userId, deviceId }))
-            : [];
-          if (devices.length > 0) {
-            await matrixClient.encryptAndSendToDevice('io.hush.e2ee_key', devices, {
-              roomId,
-              key: keyB64,
-              keyIndex: newKeyIndex,
-            });
-          }
+          const payload = {
+            channelId,
+            key: keyB64,
+            keyIndex: newKeyIndex,
+          };
+          const plaintext = new TextEncoder().encode(JSON.stringify(payload));
+          const envelope = await encryptForUser(userId, plaintext);
+          const envelopeB64 = toBase64(envelope);
+          wsClient.send('media.key', {
+            target_user_id: userId,
+            payload: envelopeB64,
+          });
         },
         {},
       );
       setKeyExchangeMessage(null);
     } catch (err) {
       console.warn('[livekit] Rekey: failed to send to', userId, err);
-      const isTokenExpired = /M_UNKNOWN_TOKEN|401|expired/i.test(err?.message || '');
-      if (!isTokenExpired) {
-        rekeyFailed = true;
-      }
+      rekeyFailed = true;
     }
   }
   if (rekeyFailed) {
@@ -218,4 +214,19 @@ export async function setCreatorKey(keyProvider, refs, setE2eeKey) {
   refs.currentKeyIndexRef.current = 0;
   setE2eeKey(randomKey);
   console.log('[livekit] E2EE creator: random key set');
+}
+
+function toBase64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) {
+    s += String.fromCharCode(bytes[i]);
+  }
+  return btoa(s);
+}
+
+function fromBase64(b64) {
+  const binary = atob(b64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
 }
