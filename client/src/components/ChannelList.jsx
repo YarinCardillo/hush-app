@@ -208,7 +208,7 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
                 onChange={(e) => setVoiceMode(e.target.value)}
               >
                 <option value="quality">Quality</option>
-                <option value="performance">Performance</option>
+                <option value="low-latency">Low Latency</option>
               </select>
             </div>
           )}

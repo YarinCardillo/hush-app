@@ -181,7 +181,7 @@ export async function joinServer(token, serverId, body) {
  * Create a channel in a server.
  * @param {string} token - JWT
  * @param {string} serverId - Server UUID
- * @param {{ name: string, type: 'text'|'voice', voiceMode?: 'performance'|'quality', parentId?: string, position?: number }} body
+ * @param {{ name: string, type: 'text'|'voice', voiceMode?: 'low-latency'|'quality', parentId?: string, position?: number }} body
  * @returns {Promise<object>} Created channel
  */
 export async function createChannel(token, serverId, body) {
