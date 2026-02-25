@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { SSOAction } from 'matrix-js-sdk';
 import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
-import { getMatrixClient } from '../lib/matrixClient';
 import { GUEST_SESSION_KEY } from '../lib/authStorage';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your'];
@@ -345,15 +343,9 @@ export default function Home() {
     login,
     register,
     logout,
-    fetchLoginFlows,
-    startSsoLogin,
-    ssoProviders,
-    loginFlowsError,
     isAuthenticated,
-    isLoading: matrixLoading,
-    error: matrixError,
-    cryptoError,
-    clearCryptoError,
+    isLoading: authLoading,
+    error: authError,
   } = useAuth();
   const [searchParams] = useSearchParams();
   const joinParam = searchParams.get('join');
@@ -384,21 +376,14 @@ export default function Home() {
     () => (typeof window !== 'undefined' ? !window.matchMedia('(pointer: coarse)').matches : false)
   );
 
-  // Fetch Matrix login flows when showing Login or Register so SSO buttons can be shown
+  // Sync error/authError to toast and auto-clear after delay
   useEffect(() => {
-    if (authView === AUTH_VIEW.LOGIN || authView === AUTH_VIEW.REGISTER) {
-      fetchLoginFlows();
-    }
-  }, [authView, fetchLoginFlows]);
-
-  // Sync error/matrixError to toast and auto-clear after delay
-  useEffect(() => {
-    const msg = error || matrixError?.message || null;
+    const msg = error || authError?.message || null;
     setToastMessage(msg);
     if (!msg) return;
     const id = setTimeout(() => setToastMessage(null), 4000);
     return () => clearTimeout(id);
-  }, [error, matrixError]);
+  }, [error, authError]);
 
   useEffect(() => {
     const m = window.matchMedia('(pointer: coarse)');
@@ -474,7 +459,12 @@ export default function Home() {
     sessionStorage.removeItem(GUEST_SESSION_KEY);
     setIsGuestSession(false);
     if (!loginUsername.trim() || !loginPassword) return;
-    await login(loginUsername.trim(), loginPassword);
+    try {
+      await login(loginUsername.trim(), loginPassword);
+      navigate(joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/server', { replace: true });
+    } catch {
+      // Error shown via authError toast
+    }
   };
 
   const handleRegisterSubmit = async (e) => {
@@ -487,56 +477,24 @@ export default function Home() {
       setError('Passwords do not match');
       return;
     }
-    await register(registerUsername.trim(), registerPassword, registerDisplayName.trim());
+    try {
+      await register(registerUsername.trim(), registerPassword, registerDisplayName.trim());
+      navigate(joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/server', { replace: true });
+    } catch {
+      // Error shown via authError toast
+    }
   };
 
   const handleJoinSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-
     try {
       localStorage.setItem('hush_displayName', displayName);
-
-      // Step 1: Authenticate with Matrix as guest
       await loginAsGuest();
       sessionStorage.setItem(GUEST_SESSION_KEY, '1');
       setIsGuestSession(true);
-
-      if (matrixError) {
-        throw new Error(`Matrix authentication failed: ${matrixError}`);
-      }
-
-      // Step 2: Join the room via ?join= param
-      if (!joinParam || !/^[a-zA-Z0-9._=-]+$/.test(joinParam)) {
-        throw new Error('Invalid room link.');
-      }
-      const client = getMatrixClient();
-      const serverName = import.meta.env.VITE_MATRIX_SERVER_NAME || 'localhost';
-      const roomAlias = `#${joinParam}:${serverName}`;
-
-      const joinResponse = await client.joinRoom(roomAlias);
-      const matrixRoomId = joinResponse.roomId;
-
-      // Wait for room to appear in client's room list
-      let attempts = 0;
-      const maxAttempts = 50;
-      while (!client.getRoom(matrixRoomId) && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        attempts++;
-      }
-
-      const roomInClient = client.getRoom(matrixRoomId);
-      if (!roomInClient) {
-        throw new Error('Failed to join Matrix room: room not found after join');
-      }
-
-      sessionStorage.setItem('hush_matrixRoomId', matrixRoomId);
-      sessionStorage.setItem('hush_channelId', matrixRoomId);
-      sessionStorage.setItem('hush_roomName', joinParam);
-      sessionStorage.setItem('hush_displayName', displayName);
-
-      navigate(`/room/${encodeURIComponent(joinParam)}`);
+      navigate(joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/server', { replace: true });
     } catch (err) {
       setError(getFriendlyCreateJoinError(err));
       if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
@@ -551,104 +509,14 @@ export default function Home() {
     e.preventDefault();
     setError('');
     setLoading(true);
-
     try {
       localStorage.setItem('hush_displayName', displayName);
-
-      // Step 1: Authenticate with Matrix as guest
       await loginAsGuest();
       sessionStorage.setItem(GUEST_SESSION_KEY, '1');
       setIsGuestSession(true);
-
-      if (matrixError) {
-        throw new Error(`Matrix authentication failed: ${matrixError}`);
-      }
-
-      // Step 2: Create Matrix room with E2EE
-      const client = getMatrixClient();
-      let matrixRoomId;
-
-      const canCreateRes = await fetch('/api/rooms/can-create');
-      if (canCreateRes.status === 404) {
-        throw new Error(
-          'Room availability check is not available. Ensure the server is running and up to date.',
-        );
-      }
-      const canCreateData = await canCreateRes.json().catch(() => ({}));
-      if (!canCreateData.allowed) {
-        throw new Error(canCreateData.reason || 'All guest rooms are full.');
-      }
-
-      // Always append a random 8-hex suffix to the alias to avoid collisions
-      // and prevent leaking info about existing room names.
-      // Display name stays as what the user typed.
-      const suffix = Math.floor(Math.random() * 0x100000000).toString(16).padStart(8, '0');
-      const actualRoomName = `${roomName}-${suffix}`;
-
-      const createResponse = await client.createRoom({
-        name: roomName,
-        room_alias_name: actualRoomName,
-        visibility: 'private',
-        preset: 'trusted_private_chat',
-        initial_state: [
-          {
-            type: 'm.room.encryption',
-            state_key: '',
-            content: { algorithm: 'm.megolm.v1.aes-sha2' },
-          },
-          {
-            type: 'm.room.guest_access',
-            state_key: '',
-            content: { guest_access: 'can_join' },
-          },
-          {
-            type: 'm.room.join_rules',
-            state_key: '',
-            content: { join_rule: 'public' },
-          },
-        ],
-      });
-
-      matrixRoomId = createResponse.room_id;
-
-      // Wait for room to appear in client's room list (sync may take a moment)
-      let attempts = 0;
-      const maxAttempts = 50;
-      while (!client.getRoom(matrixRoomId) && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        attempts++;
-      }
-
-      const roomInClient = client.getRoom(matrixRoomId);
-      if (!roomInClient) {
-        console.error('[home] Created room not in client after', attempts, 'attempts');
-        throw new Error('Failed to create Matrix room: room not found after creation');
-      }
-
-      // Store actual room name used (with suffix) for join path and display
-      sessionStorage.setItem('hush_actualRoomName', actualRoomName);
-
-      const createdAt = Date.now();
-      await client.sendStateEvent(matrixRoomId, 'io.hush.room.created_at', '', { created_at: createdAt });
-      try {
-        await fetch('/api/rooms/created', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId: matrixRoomId, roomName: actualRoomName, createdAt }),
-        });
-      } catch (e) {
-        console.warn('[home] Failed to register room for expiry:', e);
-      }
-
-      sessionStorage.setItem('hush_matrixRoomId', matrixRoomId);
-      sessionStorage.setItem('hush_channelId', matrixRoomId);
-      sessionStorage.setItem('hush_roomName', actualRoomName);
-      sessionStorage.setItem('hush_displayName', displayName);
-
-      navigate(`/room/${encodeURIComponent(actualRoomName)}`);
+      navigate('/server', { replace: true });
     } catch (err) {
       setError(getFriendlyCreateJoinError(err));
-      // Auto-end guest session on create/join failure so the disposable account is transparent
       if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
         logout().catch(() => {});
       }
@@ -656,35 +524,6 @@ export default function Home() {
       setLoading(false);
     }
   };
-
-  if (cryptoError) {
-    return (
-      <div
-        style={{
-          ...styles.page,
-          flexDirection: 'column',
-          gap: '24px',
-          textAlign: 'center',
-          padding: '24px',
-        }}
-      >
-        <div style={{ color: 'var(--hush-danger)', fontSize: '1rem', maxWidth: '360px' }}>
-          {cryptoError}
-        </div>
-        <div style={{ color: 'var(--hush-text-secondary)', fontSize: '0.85rem', maxWidth: '360px' }}>
-          Your browser may not support WebAssembly. Please use a modern Chromium-based browser.
-        </div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={clearCryptoError}
-          style={{ padding: '10px 20px' }}
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div style={styles.page} onMouseMove={handleMouseMove}>
@@ -860,10 +699,10 @@ export default function Home() {
                   <button
                     className="btn btn-primary"
                     type="submit"
-                    disabled={loading || matrixLoading}
+                    disabled={loading || authLoading}
                     style={{ width: '100%', padding: '12px' }}
                   >
-                    {loading || matrixLoading ? 'connecting...' : 'join room'}
+                    {loading || authLoading ? 'connecting...' : 'join room'}
                   </button>
                 </form>
               ) : (
@@ -898,10 +737,10 @@ export default function Home() {
                   <button
                     className="btn btn-primary"
                     type="submit"
-                    disabled={loading || matrixLoading}
+                    disabled={loading || authLoading}
                     style={{ width: '100%', padding: '12px' }}
                   >
-                    {loading || matrixLoading ? 'connecting...' : 'create room'}
+                    {loading || authLoading ? 'connecting...' : 'create room'}
                   </button>
                 </form>
               )}
@@ -912,8 +751,6 @@ export default function Home() {
                 <button
                   type="button"
                   className="home-auth-choice-btn"
-                  disabled
-                  title="Sign in is not fully supported yet"
                   onClick={() => setAuthView(AUTH_VIEW.LOGIN)}
                 >
                   Sign in
@@ -964,42 +801,12 @@ export default function Home() {
                 <button
                   className="btn btn-primary"
                   type="submit"
-                  disabled={matrixLoading}
+                  disabled={authLoading}
                   style={{ width: '100%', padding: '12px' }}
                 >
-                  {matrixLoading ? 'Signing in...' : 'Sign in'}
+                  {authLoading ? 'Signing in...' : 'Sign in'}
                 </button>
               </form>
-              {ssoProviders.length > 0 && (
-                <>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-muted)', marginTop: '16px', marginBottom: '8px', textAlign: 'center' }}>or</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {ssoProviders.map((idp) => (
-                      <button
-                        key={idp.id || 'sso'}
-                        type="button"
-                        className="btn"
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          background: 'var(--hush-surface)',
-                          border: '1px solid var(--hush-border)',
-                          color: 'var(--hush-text)',
-                          cursor: 'pointer',
-                        }}
-                        onClick={() => startSsoLogin(idp.id || undefined, SSOAction.LOGIN)}
-                      >
-                        Continue with {idp.name}
-                      </button>
-                    ))}
-                  </div>
-                  {loginFlowsError && (
-                    <p style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', marginTop: '8px', textAlign: 'center' }}>
-                      Unable to load sign-in options
-                    </p>
-                  )}
-                </>
-              )}
               <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginTop: '16px', textAlign: 'center' }}>
                 Don&apos;t have an account?{' '}
                 <button
@@ -1082,42 +889,12 @@ export default function Home() {
                 <button
                   className="btn btn-primary"
                   type="submit"
-                  disabled={matrixLoading}
+                  disabled={authLoading}
                   style={{ width: '100%', padding: '12px' }}
                 >
-                  {matrixLoading ? 'Creating account...' : 'Create account'}
+                  {authLoading ? 'Creating account...' : 'Create account'}
                 </button>
               </form>
-              {ssoProviders.length > 0 && (
-                <>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-muted)', marginTop: '16px', marginBottom: '8px', textAlign: 'center' }}>or</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {ssoProviders.map((idp) => (
-                      <button
-                        key={idp.id || 'sso'}
-                        type="button"
-                        className="btn"
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          background: 'var(--hush-surface)',
-                          border: '1px solid var(--hush-border)',
-                          color: 'var(--hush-text)',
-                          cursor: 'pointer',
-                        }}
-                        onClick={() => startSsoLogin(idp.id || undefined, SSOAction.REGISTER)}
-                      >
-                        Continue with {idp.name}
-                      </button>
-                    ))}
-                  </div>
-                  {loginFlowsError && (
-                    <p style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', marginTop: '8px', textAlign: 'center' }}>
-                      Unable to load sign-in options
-                    </p>
-                  )}
-                </>
-              )}
               <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginTop: '16px', textAlign: 'center' }}>
                 Already have an account?{' '}
                 <button
@@ -1153,15 +930,7 @@ export default function Home() {
               </span>
             </div>
             <div style={styles.footerMeta}>
-              <span style={{ display: 'inline-block' }}>
-                <span>v{APP_VERSION}</span>
-                <span>{' · '}</span>
-                <span>powered by{' '}
-                <a href="https://matrix.org/" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>
-                  Matrix
-                </a>
-                </span>
-              </span>
+              <span style={{ display: 'inline-block' }}>v{APP_VERSION}</span>
             </div>
           </div>
         </motion.div>

@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
 import AppBackground from './components/AppBackground';
-import { clearStoredCredentials, GUEST_SESSION_KEY } from './lib/authStorage';
+import { GUEST_SESSION_KEY } from './lib/authStorage';
 
 const Home = lazy(() => import('./pages/Home'));
+const Invite = lazy(() => import('./pages/Invite'));
 const Room = lazy(() => import('./pages/Room'));
 const Roadmap = lazy(() => import('./pages/Roadmap'));
 const ServerLayout = lazy(() => import('./pages/ServerLayout'));
@@ -44,12 +45,12 @@ function FaviconThemeSync() {
   return null;
 }
 
-/** Clears guest session and credentials on tab close so guest is truly one-off. */
+/** Clears guest session and JWT on tab close so guest is truly one-off. */
 function GuestSessionCleanup() {
   useEffect(() => {
     const handler = () => {
       if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
-        clearStoredCredentials();
+        sessionStorage.removeItem('hush_jwt');
         sessionStorage.removeItem(GUEST_SESSION_KEY);
       }
     };
@@ -57,68 +58,6 @@ function GuestSessionCleanup() {
     return () => window.removeEventListener('pagehide', handler);
   }, []);
   return null;
-}
-
-/**
- * Handles redirect from Matrix SSO: reads loginToken from query, exchanges it for
- * session, then redirects to / (or shows error and link to /).
- */
-function LoginCallback() {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const { completeSsoLogin, error: authError } = useAuth();
-  const loginToken = searchParams.get('loginToken');
-
-  useEffect(() => {
-    if (!loginToken) {
-      navigate('/', { replace: true });
-      return;
-    }
-    let cancelled = false;
-    completeSsoLogin(loginToken).then((ok) => {
-      if (cancelled) return;
-      if (ok) navigate('/', { replace: true });
-    });
-    return () => { cancelled = true; };
-  }, [loginToken, completeSsoLogin, navigate]);
-
-  if (!loginToken) {
-    return null;
-  }
-  if (authError) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'var(--hush-black)',
-        color: 'var(--hush-text)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '16px',
-        padding: '24px',
-        fontFamily: 'var(--font-sans)',
-      }}>
-        <p style={{ color: 'var(--hush-text-secondary)' }}>
-          Sign-in failed: {authError?.message || 'Unknown error'}
-        </p>
-        <a href="/" style={{ color: 'var(--hush-amber-dim)' }}>Return to home</a>
-      </div>
-    );
-  }
-  return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'var(--hush-black)',
-      color: 'var(--hush-text-secondary)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontFamily: 'var(--font-sans)',
-    }}>
-      Signing you in…
-    </div>
-  );
 }
 
 export default function App() {
@@ -130,7 +69,7 @@ export default function App() {
       <Suspense fallback={fallback}>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/login/callback" element={<LoginCallback />} />
+          <Route path="/invite/:code" element={<Invite />} />
           <Route path="/server" element={<ServerLayout />} />
           <Route path="/server/:serverId" element={<ServerLayout />} />
           <Route path="/server/:serverId/channel/:channelId" element={<ServerLayout />} />

@@ -5,7 +5,6 @@ import ChannelList from './ChannelList';
 vi.mock('../lib/api', () => ({
   getServer: vi.fn(),
   createChannel: vi.fn(),
-  deleteChannel: vi.fn(),
 }));
 
 const getToken = () => 'test-token';

@@ -1,14 +1,14 @@
 import { createContext, useContext } from 'react';
-import { useMatrixAuth } from '../hooks/useMatrixAuth';
+import { useAuth as useAuthState } from '../hooks/useAuth';
 
 const AuthContext = createContext(null);
 
 /**
- * Provides Matrix auth state and actions to the tree.
+ * Provides Go-backed auth state and actions to the tree.
  * Mounting this provider runs rehydration from sessionStorage when needed.
  */
 export function AuthProvider({ children }) {
-  const auth = useMatrixAuth();
+  const auth = useAuthState();
   return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
 }
 
