@@ -6,7 +6,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { fetchWithAuth, uploadKeysAfterAuth } from '../lib/api';
 
-const JWT_KEY = 'hush_jwt';
+export const JWT_KEY = 'hush_jwt';
 const DEVICE_ID_KEY = 'hush_device_id';
 const defaultBase = '';
 
@@ -36,28 +36,24 @@ async function postAuth(path, body = null) {
   return data;
 }
 
-function setSession(token, user) {
-  if (token) sessionStorage.setItem(JWT_KEY, token);
-  return { token: token || null, user: user || null };
-}
-
-function clearSession() {
+export function clearSession() {
   sessionStorage.removeItem(JWT_KEY);
-  return { token: null, user: null };
 }
 
 /**
- * After successful auth response: store token, upload Signal keys, return user.
- * @param {{ token: string, user: { id: string } }} data - Auth response
- * @returns {Promise<{ user: object }>}
+ * After successful auth: upload Signal keys, then persist token.
+ * Token is written to sessionStorage ONLY after key upload succeeds,
+ * so a failed upload never leaves a stale JWT behind.
+ * @param {{ token: string, user: { id: string } }} data
+ * @returns {Promise<{ token: string, user: object }>}
  */
 async function finishAuth(data) {
   const { token, user } = data;
   if (!token || !user?.id) throw new Error('invalid auth response');
-  sessionStorage.setItem(JWT_KEY, token);
   const deviceId = getDeviceId();
   await uploadKeysAfterAuth(token, user.id, deviceId);
-  return { user };
+  sessionStorage.setItem(JWT_KEY, token);
+  return { token, user };
 }
 
 /**
@@ -78,23 +74,25 @@ async function finishAuth(data) {
 export function useAuth() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(() => sessionStorage.getItem(JWT_KEY));
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(() => Boolean(sessionStorage.getItem(JWT_KEY)));
   const [error, setError] = useState(null);
 
   const isAuthenticated = Boolean(token && user);
 
   const clearError = useCallback(() => setError(null), []);
 
-  const login = useCallback(async (username, password) => {
+  /** Shared auth flow: call endpoint, finish auth (keys + persist), update state. */
+  const performAuth = useCallback(async (path, body = null) => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await postAuth('/api/auth/login', { username, password });
-      const { user: u } = await finishAuth(data);
-      setToken(data.token);
-      setUser(u);
+      const data = await postAuth(path, body);
+      const result = await finishAuth(data);
+      setToken(result.token);
+      setUser(result.user);
     } catch (err) {
       setError(err);
+      clearSession();
       setToken(null);
       setUser(null);
       throw err;
@@ -103,45 +101,24 @@ export function useAuth() {
     }
   }, []);
 
-  const register = useCallback(async (username, password, displayName) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await postAuth('/api/auth/register', {
-        username,
-        password,
-        displayName: displayName || username,
-      });
-      const { user: u } = await finishAuth(data);
-      setToken(data.token);
-      setUser(u);
-    } catch (err) {
-      setError(err);
-      setToken(null);
-      setUser(null);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const login = useCallback(
+    (username, password) => performAuth('/api/auth/login', { username, password }),
+    [performAuth],
+  );
 
-  const loginAsGuest = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await postAuth('/api/auth/guest');
-      const { user: u } = await finishAuth(data);
-      setToken(data.token);
-      setUser(u);
-    } catch (err) {
-      setError(err);
-      setToken(null);
-      setUser(null);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const register = useCallback(
+    (username, password, displayName) => performAuth('/api/auth/register', {
+      username,
+      password,
+      displayName: displayName || username,
+    }),
+    [performAuth],
+  );
+
+  const loginAsGuest = useCallback(
+    () => performAuth('/api/auth/guest'),
+    [performAuth],
+  );
 
   const logout = useCallback(async () => {
     setIsLoading(true);
@@ -152,12 +129,12 @@ export function useAuth() {
         try {
           await fetchWithAuth(t, '/api/auth/logout', { method: 'POST' });
         } catch {
-          // Ignore logout API failure
+          // Ignore logout API failure — clear local state regardless
         }
       }
-      const cleared = clearSession();
-      setToken(cleared.token);
-      setUser(cleared.user);
+      clearSession();
+      setToken(null);
+      setUser(null);
     } catch (err) {
       setError(err);
     } finally {
@@ -169,10 +146,12 @@ export function useAuth() {
   useEffect(() => {
     const stored = sessionStorage.getItem(JWT_KEY);
     if (!stored) {
+      setIsLoading(false);
       setUser(null);
       return;
     }
 
+    setIsLoading(true);
     let cancelled = false;
 
     (async () => {
@@ -187,12 +166,14 @@ export function useAuth() {
         }
         const u = await res.json();
         if (!cancelled) setUser(u);
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           clearSession();
           setToken(null);
           setUser(null);
         }
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
     })();
 

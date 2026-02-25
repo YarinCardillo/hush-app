@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import AppBackground from './components/AppBackground';
 import { GUEST_SESSION_KEY } from './lib/authStorage';
+import { JWT_KEY } from './hooks/useAuth';
 
 const Home = lazy(() => import('./pages/Home'));
 const Invite = lazy(() => import('./pages/Invite'));
@@ -50,7 +51,7 @@ function GuestSessionCleanup() {
   useEffect(() => {
     const handler = () => {
       if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
-        sessionStorage.removeItem('hush_jwt');
+        sessionStorage.removeItem(JWT_KEY);
         sessionStorage.removeItem(GUEST_SESSION_KEY);
       }
     };

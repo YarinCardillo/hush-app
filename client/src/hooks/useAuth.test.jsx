@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act, cleanup } from '@testing-library/react';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { fetchWithAuth } from '../lib/api';
-
-const JWT_KEY = 'hush_jwt';
+import { JWT_KEY } from './useAuth';
 
 vi.mock('../lib/api', () => ({
   fetchWithAuth: vi.fn(),

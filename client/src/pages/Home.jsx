@@ -327,13 +327,14 @@ const styles = {
 
 const AUTH_VIEW = { CHOOSE: 'choose', LOGIN: 'login', REGISTER: 'register', GUEST: 'guest' };
 
-/** Maps raw create/join errors to short, user-facing messages. Avoids exposing URLs and stack traces. */
-function getFriendlyCreateJoinError(err) {
+/** Maps raw auth/join errors to short, user-facing messages. */
+function getFriendlyError(err) {
   const msg = err?.message || String(err);
-  if (/404|not found|M_NOT_FOUND/i.test(msg)) return 'Room not found. Check the name or create it first.';
-  if (/room full|403|M_FORBIDDEN|full/i.test(msg)) return 'Room is full or you don\'t have access.';
-  if (/Room availability|All guest rooms are full|can-create/i.test(msg)) return msg;
-  return 'Something went wrong. Please try again.';
+  if (/not found|404/i.test(msg)) return 'Not found. Please try again.';
+  if (/forbidden|403/i.test(msg)) return 'Access denied.';
+  if (/conflict|409|already/i.test(msg)) return 'Username already taken.';
+  if (/unauthorized|401/i.test(msg)) return 'Invalid credentials.';
+  return msg || 'Something went wrong. Please try again.';
 }
 
 export default function Home() {
@@ -352,7 +353,6 @@ export default function Home() {
   // Skip auth choice screen when joining via link — go straight to guest form
   const [authView, setAuthView] = useState(joinParam ? AUTH_VIEW.GUEST : AUTH_VIEW.CHOOSE);
   const [isGuestSession, setIsGuestSession] = useState(() => sessionStorage.getItem(GUEST_SESSION_KEY) === '1');
-  const [roomName, setRoomName] = useState('');
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('hush_displayName') || '');
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState(null);
@@ -485,7 +485,7 @@ export default function Home() {
     }
   };
 
-  const handleJoinSubmit = async (e) => {
+  const handleGuestSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
@@ -494,29 +494,10 @@ export default function Home() {
       await loginAsGuest();
       sessionStorage.setItem(GUEST_SESSION_KEY, '1');
       setIsGuestSession(true);
-      navigate(joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/server', { replace: true });
+      const target = joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/server';
+      navigate(target, { replace: true });
     } catch (err) {
-      setError(getFriendlyCreateJoinError(err));
-      if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
-        logout().catch(() => {});
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      localStorage.setItem('hush_displayName', displayName);
-      await loginAsGuest();
-      sessionStorage.setItem(GUEST_SESSION_KEY, '1');
-      setIsGuestSession(true);
-      navigate('/server', { replace: true });
-    } catch (err) {
-      setError(getFriendlyCreateJoinError(err));
+      setError(getFriendlyError(err));
       if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
         logout().catch(() => {});
       }
@@ -680,70 +661,29 @@ export default function Home() {
                 </button>
               )}
 
-              {joinParam ? (
-                /* Simplified join form when ?join= is present */
-                <form style={styles.form} onSubmit={handleJoinSubmit}>
-                  <div>
-                    <label style={styles.fieldLabel}>Your Name</label>
-                    <input
-                      className="input"
-                      type="text"
-                      placeholder="How others will see you"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      required
-                      maxLength={30}
-                    />
-                  </div>
+              <form style={styles.form} onSubmit={handleGuestSubmit}>
+                <div>
+                  <label style={styles.fieldLabel}>Your Name</label>
+                  <input
+                    className="input"
+                    type="text"
+                    placeholder="How others will see you"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    required
+                    maxLength={30}
+                  />
+                </div>
 
-                  <button
-                    className="btn btn-primary"
-                    type="submit"
-                    disabled={loading || authLoading}
-                    style={{ width: '100%', padding: '12px' }}
-                  >
-                    {loading || authLoading ? 'connecting...' : 'join room'}
-                  </button>
-                </form>
-              ) : (
-                /* Normal create room form */
-                <form style={styles.form} onSubmit={handleSubmit}>
-                  <div>
-                    <label style={styles.fieldLabel}>Your Name</label>
-                    <input
-                      className="input"
-                      type="text"
-                      placeholder="How others will see you"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      required
-                      maxLength={30}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={styles.fieldLabel}>Room Name</label>
-                    <input
-                      className="input"
-                      type="text"
-                      placeholder="Choose a room name"
-                      value={roomName}
-                      onChange={(e) => setRoomName(e.target.value)}
-                      required
-                      maxLength={50}
-                    />
-                  </div>
-
-                  <button
-                    className="btn btn-primary"
-                    type="submit"
-                    disabled={loading || authLoading}
-                    style={{ width: '100%', padding: '12px' }}
-                  >
-                    {loading || authLoading ? 'connecting...' : 'create room'}
-                  </button>
-                </form>
-              )}
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={loading || authLoading}
+                  style={{ width: '100%', padding: '12px' }}
+                >
+                  {loading || authLoading ? 'connecting...' : (joinParam ? 'join' : 'try hush')}
+                </button>
+              </form>
             </>
           ) : authView === AUTH_VIEW.CHOOSE ? (
             <>
