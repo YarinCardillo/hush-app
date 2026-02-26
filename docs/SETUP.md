@@ -106,7 +106,6 @@ Vite runs on port **5173** and proxies:
 | Path | Target | Purpose |
 |-|-|-|
 | `/api/*` | `localhost:8080` | Go API |
-| `/_matrix/*` | `localhost:8081` | Synapse via Caddy (legacy, being removed) |
 | `/livekit/*` | `localhost:8081` | LiveKit via Caddy |
 
 Open `http://localhost:5173` in a Chromium-based browser.
