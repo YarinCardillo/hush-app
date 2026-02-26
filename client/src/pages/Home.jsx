@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
-import { GUEST_SESSION_KEY } from '../lib/authStorage';
+import { GUEST_SESSION_KEY } from '../hooks/useAuth';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your'];
 

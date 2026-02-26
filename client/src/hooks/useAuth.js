@@ -7,6 +7,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { fetchWithAuth, uploadKeysAfterAuth } from '../lib/api';
 
 export const JWT_KEY = 'hush_jwt';
+export const GUEST_SESSION_KEY = 'hush_guest_session';
 const DEVICE_ID_KEY = 'hush_device_id';
 const defaultBase = '';
 

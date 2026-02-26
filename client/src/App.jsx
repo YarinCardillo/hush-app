@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import AppBackground from './components/AppBackground';
-import { GUEST_SESSION_KEY } from './lib/authStorage';
+import { GUEST_SESSION_KEY } from './hooks/useAuth';
 import { JWT_KEY } from './hooks/useAuth';
 
 const Home = lazy(() => import('./pages/Home'));

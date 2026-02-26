@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Track } from 'livekit-client';
 import { useAuth } from '../contexts/AuthContext';
-import { GUEST_SESSION_KEY } from '../lib/authStorage';
+import { GUEST_SESSION_KEY } from '../hooks/useAuth';
 import { createWsClient } from '../lib/ws';
 import { useSignal } from '../hooks/useSignal';
 import * as signalStore from '../lib/signalStore';
@@ -364,7 +364,7 @@ export default function Room() {
     requestPermission,
   } = useDevices();
 
-  // Require Matrix auth (and optional room session data)
+  // Require auth (and optional room session data)
   useEffect(() => {
     if (!rehydrationAttempted) return;
     // Only redirect to /?join= if user opened a direct link (never had a session).

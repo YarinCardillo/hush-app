@@ -32,9 +32,6 @@ export default defineConfig({
     topLevelAwait(),
     react(),
   ],
-  optimizeDeps: {
-    exclude: ['@matrix-org/matrix-sdk-crypto-wasm'],
-  },
   worker: {
     format: 'es',
     plugins: () => [wasm(), topLevelAwait()],
@@ -50,7 +47,6 @@ export default defineConfig({
     },
     proxy: {
       '/api': 'http://localhost:8080',
-      '/_matrix': 'http://localhost:8081',
       '/livekit': {
         target: 'http://localhost:8081',
         ws: true,
