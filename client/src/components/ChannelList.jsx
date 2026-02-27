@@ -435,24 +435,21 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
   const isCategory = group.key !== null;
 
   // Named categories are sortable (and implicitly droppable via useSortable).
-  // The uncategorized bucket uses a plain useDroppable since it has no sort identity.
   const {
     attributes: sortableAttributes,
     listeners: sortableListeners,
-    setNodeRef: setSortableRef,
+    setNodeRef,
     transform,
     transition,
     isDragging,
-    isOver: isSortableOver,
+    isOver,
   } = useSortable({ id: group.key ?? '__never__', disabled: !isCategory || !isAdmin });
 
-  const { setNodeRef: setDropRef, isOver: isDropOver } = useDroppable({
-    id: 'uncategorized',
-    disabled: isCategory,
-  });
-
-  const setNodeRef = isCategory ? setSortableRef : setDropRef;
-  const isOver = isCategory ? isSortableOver : isDropOver;
+  // Hook called for rules-of-hooks compliance; the null group no longer uses a
+  // container droppable — individual useSortable channel rows handle all targets.
+  // Disabling prevents the 'uncategorized' container rect from shadowing inner rows
+  // in pointerWithin, which previously caused drops to always land at the wrong position.
+  useDroppable({ id: 'uncategorized', disabled: true });
 
   const channelRows = (
     <SortableContext items={channelIds} strategy={verticalListSortingStrategy}>
@@ -486,23 +483,10 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
   };
 
   if (!isCategory) {
-    // Uncategorized bucket: no header, always rendered so the droppable is always
-    // registered. Shows a visual drop zone when hovered while empty.
-    const isEmpty = group.channels.length === 0;
-    return (
-      <div
-        ref={setNodeRef}
-        style={isOver && isEmpty ? {
-          minHeight: '36px',
-          margin: '0 8px 4px',
-          borderRadius: '4px',
-          background: 'color-mix(in srgb, var(--hush-hover) 60%, transparent)',
-          transition: 'background var(--duration-fast) var(--ease-out)',
-        } : undefined}
-      >
-        {channelRows}
-      </div>
-    );
+    // Uncategorized bucket: no header, no container droppable. Individual channel
+    // rows (useSortable) are the drop targets; UncategorizeZone provides the
+    // explicit affordance for removing a channel from a category.
+    return <div>{channelRows}</div>;
   }
 
   return (
@@ -809,13 +793,11 @@ export default function ChannelList({
       const rects = rectIntersection(args);
       return rects.length > 0 ? rects : closestCenter(args);
     }
-    // Exclude both category IDs and the uncategorized/uncategorize-bottom droppable
-    // containers so the specific channel row underneath wins. Without this,
-    // 'uncategorized' (the null-group container) would pass the categoryIdSet filter
-    // and shadow the inner channel rows, causing drops to always resolve to the
-    // container rather than the precise target position.
+    // Filter out category container IDs and the UncategorizeZone so the specific
+    // channel row underneath wins. If only container hits remain (e.g. empty category
+    // header), fall back to the full hit list so drop-into-empty-category still works.
     const channelHits = hits.filter(
-      (h) => !categoryIdSet.has(h.id) && h.id !== 'uncategorized' && h.id !== 'uncategorize-bottom',
+      (h) => !categoryIdSet.has(h.id) && h.id !== 'uncategorize-bottom',
     );
     return channelHits.length > 0 ? channelHits : hits;
   }, [categoryIdSet]);
@@ -858,7 +840,7 @@ export default function ChannelList({
     let targetParentId = null;
     let targetPosition = 0;
 
-    if (over.id === 'uncategorized' || over.id === 'uncategorize-bottom') {
+    if (over.id === 'uncategorize-bottom') {
       targetParentId = null;
       targetPosition = groups.find((g) => g.key === null)?.channels.length ?? 0;
     } else if (categoryIdSet.has(over.id)) {
