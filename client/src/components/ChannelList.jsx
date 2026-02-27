@@ -477,7 +477,8 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
     ...(isCategory ? {
       transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
       transition,
-      opacity: isDragging ? 0.5 : 1,
+      // opacity:0 hides the original; the DragOverlay provides the drag visual.
+      opacity: isDragging ? 0 : 1,
     } : undefined),
   };
 
@@ -779,11 +780,34 @@ export default function ChannelList({
       }
     }
 
-    // Optimistic update: move channel immediately
+    // Optimistic update: renumber all channels in every affected group so positions
+    // stay contiguous and collision-free (mirroring the server's shift logic).
+    const positionUpdates = new Map(); // channelId → { parentId, position }
+    const sourceGroup = groups.find((g) => g.channels.some((ch) => ch.id === active.id));
+    const sourceGroupKey = sourceGroup?.key ?? null;
+
+    if (sourceGroupKey === targetParentId) {
+      // Within-group reorder: use arrayMove to get the new ordering, then renumber.
+      const srcIdx = sourceGroup.channels.findIndex((ch) => ch.id === active.id);
+      arrayMove(sourceGroup.channels, srcIdx, targetPosition).forEach((ch, i) => {
+        positionUpdates.set(ch.id, { parentId: sourceGroupKey, position: i });
+      });
+    } else {
+      // Cross-group move: remove from source, insert at target, renumber both.
+      const newSource = (sourceGroup?.channels ?? []).filter((ch) => ch.id !== active.id);
+      newSource.forEach((ch, i) => positionUpdates.set(ch.id, { parentId: sourceGroupKey, position: i }));
+
+      const targetGroup = groups.find((g) => g.key === targetParentId);
+      const newTarget = [...(targetGroup?.channels ?? [])];
+      newTarget.splice(targetPosition, 0, channelMap.get(active.id));
+      newTarget.forEach((ch, i) => positionUpdates.set(ch.id, { parentId: targetParentId, position: i }));
+    }
+
     const snapshot = localChannels;
-    setLocalChannels((prev) => prev.map((ch) =>
-      ch.id === active.id ? { ...ch, parentId: targetParentId, position: targetPosition } : ch,
-    ));
+    setLocalChannels((prev) => prev.map((ch) => {
+      const upd = positionUpdates.get(ch.id);
+      return upd ? { ...ch, ...upd } : ch;
+    }));
 
     try {
       await moveChannel(token, active.id, { parentId: targetParentId, position: targetPosition });
@@ -795,6 +819,9 @@ export default function ChannelList({
   }, [getToken, serverId, groups, localChannels, categoryIdSet, onChannelsUpdated]);
 
   const draggedChannel = activeId && !categoryIdSet.has(activeId) ? channelMap.get(activeId) : null;
+  const draggedCategoryGroup = activeId && categoryIdSet.has(activeId)
+    ? groups.find((g) => g.key === activeId)
+    : null;
 
   return (
     <div style={styles.panel}>
@@ -871,6 +898,17 @@ export default function ChannelList({
                   : null
               }
             />
+          ) : draggedCategoryGroup ? (
+            <div style={{
+              ...styles.categoryHeader,
+              background: 'var(--hush-elevated)',
+              borderRadius: '4px',
+              color: 'var(--hush-text)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+              cursor: 'grabbing',
+            }}>
+              {draggedCategoryGroup.label}
+            </div>
           ) : null}
         </DragOverlay>
       </DndContext>
