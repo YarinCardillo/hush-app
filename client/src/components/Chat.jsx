@@ -39,17 +39,25 @@ async function decryptMessageRow(m, currentUserId, decryptFromUser) {
 }
 
 async function encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, plaintext, encryptForUser) {
+  const others = recipientUserIds.filter((uid) => uid !== currentUserId);
   const encoded = new TextEncoder().encode(plaintext);
-  if (recipientUserIds.length === 1) {
-    const ciphertext = await encryptForUser(recipientUserIds[0], encoded);
+
+  if (others.length === 0) {
+    // Solo: encrypt for self so message persists on server.
+    const ciphertext = await encryptForUser(currentUserId, encoded);
+    wsClient.send('message.send', {
+      channel_id: channelId,
+      ciphertext: uint8ArrayToBase64(ciphertext),
+    });
+  } else if (others.length === 1) {
+    const ciphertext = await encryptForUser(others[0], encoded);
     wsClient.send('message.send', {
       channel_id: channelId,
       ciphertext: uint8ArrayToBase64(ciphertext),
     });
   } else {
     const ciphertextByRecipient = {};
-    for (const uid of recipientUserIds) {
-      if (uid === currentUserId) continue;
+    for (const uid of others) {
       const ct = await encryptForUser(uid, encoded);
       ciphertextByRecipient[uid] = uint8ArrayToBase64(ct);
     }
@@ -214,6 +222,11 @@ export default function Chat({
     getToken: getToken ?? (() => null),
   });
 
+  const decryptFromUserRef = useRef(decryptFromUser);
+  decryptFromUserRef.current = decryptFromUser;
+  const encryptForUserRef = useRef(encryptForUser);
+  encryptForUserRef.current = encryptForUser;
+
   const wsClient = wsClientProp;
 
   // Load history and subscribe to channel
@@ -228,7 +241,7 @@ export default function Chat({
         const decrypted = [];
         for (let i = list.length - 1; i >= 0; i--) {
           const m = list[i];
-          decrypted.push(await decryptMessageRow(m, currentUserId, decryptFromUser));
+          decrypted.push(await decryptMessageRow(m, currentUserId, decryptFromUserRef.current));
           knownMessageIdsRef.current.add(m.id);
         }
         setMessages(decrypted);
@@ -238,7 +251,7 @@ export default function Chat({
       }
     };
     loadHistory();
-  }, [channelId, getToken, currentUserId, decryptFromUser]);
+  }, [channelId, getToken, currentUserId]);
 
   const loadMore = useCallback(async () => {
     if (!channelId || !getToken || loadMoreLoading || !hasMoreOlder || messages.length === 0) return;
@@ -260,7 +273,7 @@ export default function Chat({
         const m = list[i];
         if (knownMessageIdsRef.current.has(m.id)) continue;
         knownMessageIdsRef.current.add(m.id);
-        older.push(await decryptMessageRow(m, currentUserId, decryptFromUser));
+        older.push(await decryptMessageRow(m, currentUserId, decryptFromUserRef.current));
       }
       const el = messagesScrollRef.current;
       const oldScrollHeight = el?.scrollHeight ?? 0;
@@ -272,7 +285,7 @@ export default function Chat({
     } finally {
       setLoadMoreLoading(false);
     }
-  }, [channelId, getToken, messages, loadMoreLoading, hasMoreOlder, currentUserId, decryptFromUser]);
+  }, [channelId, getToken, messages, loadMoreLoading, hasMoreOlder, currentUserId]);
 
   const handleScroll = useCallback(() => {
     const el = messagesScrollRef.current;
@@ -291,6 +304,21 @@ export default function Chat({
       knownMessageIdsRef.current.add(id);
       const senderId = data.sender_id;
       const ts = data.timestamp ? new Date(data.timestamp).getTime() : Date.now();
+
+      // Self-echo: server confirmed our message was persisted.
+      // The ciphertext was encrypted for the recipient, so we can't decrypt it.
+      // Match the oldest pending optimistic message and confirm it.
+      if (senderId === currentUserId) {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.pending && m.sender === currentUserId);
+          if (idx >= 0) {
+            return prev.map((m, i) => (i === idx ? { ...m, id, pending: false, failed: false, timestamp: ts } : m));
+          }
+          return prev;
+        });
+        return;
+      }
+
       let content = null;
       let decryptionFailed = false;
       let ciphertext = data.ciphertext;
@@ -300,7 +328,7 @@ export default function Chat({
       if (ciphertext) {
         try {
           const ct = base64ToUint8Array(ciphertext);
-          const pt = await decryptFromUser(senderId, DEFAULT_DEVICE_ID, ct);
+          const pt = await decryptFromUserRef.current(senderId, DEFAULT_DEVICE_ID, ct);
           content = new TextDecoder().decode(pt);
         } catch (_) {
           decryptionFailed = true;
@@ -309,19 +337,13 @@ export default function Chat({
       const msg = {
         id,
         sender: senderId,
-        displayName: senderId === currentUserId ? 'You' : truncateUserId(senderId),
+        displayName: truncateUserId(senderId),
         content,
         timestamp: ts,
         decryptionFailed,
       };
-      if (senderId !== currentUserId) onNewMessage?.();
-      setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.pending && m.sender === currentUserId && m.content === content);
-        if (idx >= 0) {
-          return prev.map((m, i) => (i === idx ? { ...msg, id: m.id, pending: false, failed: false } : m));
-        }
-        return [...prev, msg];
-      });
+      onNewMessage?.();
+      setMessages((prev) => [...prev, msg]);
     };
     const onError = (data) => {
       if (data.code === 'forbidden' || data.code === 'internal') {
@@ -335,7 +357,7 @@ export default function Chat({
       wsClient.off('error', onError);
       wsClient.send('unsubscribe', { channel_id: channelId });
     };
-  }, [wsClient, channelId, currentUserId, onNewMessage, decryptFromUser]);
+  }, [wsClient, channelId, currentUserId, onNewMessage]);
 
   useEffect(() => {
     const rest = scrollRestoreRef.current;
@@ -375,13 +397,9 @@ export default function Chat({
     setIsSending(true);
 
     try {
-      if (recipientUserIds.length === 0) {
-        setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
-        return;
-      }
-      await encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, trimmed, encryptForUser);
+      await encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, trimmed, encryptForUserRef.current);
     } catch (err) {
-      console.error('[chat] Send failed:', err.message);
+      console.error('[chat] Send failed:', err?.message ?? err);
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
     } finally {
       lastSentTempIdRef.current = null;
@@ -396,7 +414,7 @@ export default function Chat({
     const tempId = msg.id;
     setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: false, pending: true } : m)));
     try {
-      await encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, trimmed, encryptForUser);
+      await encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, trimmed, encryptForUserRef.current);
     } catch (err) {
       console.error('[chat] Retry send failed:', err.message);
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
@@ -511,6 +529,8 @@ export default function Chat({
       <div style={styles.inputSection}>
         <div style={styles.inputWrapper}>
           <textarea
+            id="chat-message"
+            name="message"
             ref={inputRef}
             style={styles.input}
             value={inputText}
@@ -520,6 +540,7 @@ export default function Chat({
             rows={1}
             maxLength={2000}
             disabled={isSending}
+            autoComplete="off"
           />
           <button
             style={styles.sendButton(!inputText.trim() || isSending)}

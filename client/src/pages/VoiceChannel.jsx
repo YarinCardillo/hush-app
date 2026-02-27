@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { getDeviceId } from '../hooks/useAuth';
 import { useSignal } from '../hooks/useSignal';
 import * as signalStore from '../lib/signalStore';
 import { useRoom } from '../hooks/useRoom';
@@ -184,7 +185,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   const isLowLatency = channel.voiceMode === 'low-latency';
 
   const getStore = useCallback(
-    () => signalStore.openStore(user?.id ?? '', 'default'),
+    () => signalStore.openStore(user?.id ?? '', getDeviceId()),
     [user?.id],
   );
   const { encryptForUser, decryptFromUser } = useSignal({

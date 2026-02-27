@@ -176,14 +176,17 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
         <div style={modalStyles.title}>Create channel</div>
         <form style={modalStyles.form} onSubmit={handleSubmit}>
           <div>
-            <label style={modalStyles.fieldLabel}>Name</label>
+            <label htmlFor="channel-name" style={modalStyles.fieldLabel}>Name</label>
             <input
+              id="channel-name"
+              name="channel-name"
               className="input"
               type="text"
               placeholder="general"
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={100}
+              autoComplete="off"
             />
           </div>
           <div>

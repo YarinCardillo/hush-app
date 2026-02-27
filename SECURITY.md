@@ -115,21 +115,21 @@ Using Cloudflare for headers: Caddy already sends X-Content-Type-Options, X-Fram
 
 ## Input validation
 
-API request body fields are validated server-side. Rules are implemented in `server/src/validation.js` and enforced in `server/src/index.js`.
+API request body fields are validated server-side in the Go backend (`server/internal/api/`).
 
 | Field | Endpoint | Rule |
 |-|-|-|
-| `roomName` | `POST /api/livekit/token`, `POST /api/rooms/created` | Non-empty string, pattern `[a-zA-Z0-9._=-]+`, max 256 chars. Matches client room/join alias local part. |
-| `participantName` | `POST /api/livekit/token` | Optional; trimmed; max 128 chars; no control characters. Default `Participant` if empty. |
-| `roomId` | `POST /api/rooms/created` | Matrix room ID format `!opaque:server`, max 255 chars. |
-| `createdAt` | `POST /api/rooms/created` | Number (ms); must be within the last 24 hours and not in the future. |
+| `username` | `POST /api/auth/register`, `POST /api/auth/login` | Non-empty string, max 64 chars |
+| `password` | `POST /api/auth/register`, `POST /api/auth/login` | Non-empty string, min 6 chars |
+| `roomName` | `POST /api/livekit/token` | Non-empty string, pattern `[a-zA-Z0-9._=-]+`, max 256 chars |
+| `participantName` | `POST /api/livekit/token` | Optional; trimmed; max 128 chars; no control characters |
 
-Chat message content is handled by the client (trimmed) and by Matrix/Synapse; the future Go backend will define message length and sanitization policy (no HTML/script injection).
+Chat messages are stored as ciphertext blobs; the server never processes plaintext content.
 
 ## CORS
 
-- **Development:** Default `CORS_ORIGIN` is `*` (or `http://localhost:5173` for the Node server) so the Matrix client and API can be used from any origin.
-- **Production:** Set `CORS_ORIGIN` to the exact frontend origin (e.g. `https://gethush.live`) in your environment. Both the Hush server and Caddy (for `/_matrix/*`) use this value. See `.env.example` and `docker-compose.prod.yml`.
+- **Development:** Default `CORS_ORIGIN` is `*` so the API can be used from any origin.
+- **Production:** Set `CORS_ORIGIN` to the exact frontend origin (e.g. `https://gethush.live`) in your environment. Both the Go backend and Caddy use this value. See `.env.example` and `docker-compose.prod.yml`.
 
 ## Production checklist
 
@@ -141,15 +141,15 @@ Before going live (e.g. gethush.live), complete the following. None are in-repo;
 | **HSTS** | Either use `caddy/Caddyfile.prod` so Caddy sends `Strict-Transport-Security`, or enable HSTS in **Cloudflare** → SSL/TLS → Edge Certificates → HSTS. |
 | **Security headers** | Either set at origin (Caddy; see [HTTP security headers](#http-security-headers)) or at edge: **Cloudflare** → Rules → Transform Rules → Modify response header (X-Content-Type-Options, X-Frame-Options, COOP, COEP). |
 | **SPF (DNS)** | Add a TXT SPF record for the domain you send email from. If DNS is on Cloudflare: **DNS** → Records → add TXT (e.g. `v=spf1 include:_spf.example.com -all`). |
-| **Secrets** | Do not use default or example secrets. Set strong `LIVEKIT_API_SECRET`, `SYNAPSE_ADMIN_TOKEN`, and (when applicable) `JWT_SECRET` from the hosting platform. |
+| **Secrets** | Do not use default or example secrets. Set strong `LIVEKIT_API_SECRET`, `JWT_SECRET`, and `POSTGRES_PASSWORD` from the hosting platform. |
 | **COOP/COEP** | Required for LiveKit E2EE worker (`SharedArrayBuffer`). Either in Caddy (Caddyfile.prod) or in Cloudflare Transform Rules. Ensure they are sent for your app hostname. |
-| **Dependencies** | Run `npm audit` in root, `client/`, and `server/` before production. Address high/critical; document or fix moderate/low. See [Dependencies](#dependencies). |
+| **Dependencies** | Run `npm audit` in `client/` and `cargo audit` in `hush-crypto/` before production. Address high/critical; document or fix moderate/low. See [Dependencies](#dependencies). |
 
 ## Dependencies
 
-- **npm:** Run `npm audit` (and optionally `npm audit fix`) in the repo root, `client/`, and `server/`. Before production, resolve or document high/critical vulnerabilities; moderate/low should be fixed when a non-breaking fix is available. Dev-only tools (e.g. Vite dev server) may have advisories that do not affect production builds; document exceptions.
+- **npm:** Run `npm audit` in `client/`. Before production, resolve or document high/critical vulnerabilities; moderate/low should be fixed when a non-breaking fix is available. Dev-only tools (e.g. Vite dev server) may have advisories that do not affect production builds; document exceptions.
 - **Rust (if present):** If the repo includes Rust crates (e.g. `hush-crypto`), run `cargo audit` and apply the same policy (high/critical before production).
-- **Secrets:** Do not use `.env.example` or default values (e.g. `devsecret`, `changeme`, `synapse_password`) in production. Set all secrets from the hosting platform or a secure secret store. See [Production checklist](#production-checklist).
+- **Secrets:** Do not use `.env.example` or default values (e.g. `devsecret`, `changeme`) in production. Set all secrets from the hosting platform or a secure secret store. See [Production checklist](#production-checklist).
 
 ## Rate limiting (recommended before production)
 

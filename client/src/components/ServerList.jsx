@@ -162,24 +162,30 @@ function CreateServerModal({ getToken, onClose, onCreated }) {
         <div style={modalStyles.title}>Create server</div>
         <form style={modalStyles.form} onSubmit={handleSubmit}>
           <div>
-            <label style={modalStyles.fieldLabel}>Server name</label>
+            <label htmlFor="server-name" style={modalStyles.fieldLabel}>Server name</label>
             <input
+              id="server-name"
+              name="server-name"
               className="input"
               type="text"
               placeholder="My server"
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={100}
+              autoComplete="off"
             />
           </div>
           <div>
-            <label style={modalStyles.fieldLabel}>Icon URL (optional)</label>
+            <label htmlFor="server-icon-url" style={modalStyles.fieldLabel}>Icon URL (optional)</label>
             <input
+              id="server-icon-url"
+              name="server-icon-url"
               className="input"
               type="url"
               placeholder="https://..."
               value={iconUrl}
               onChange={(e) => setIconUrl(e.target.value)}
+              autoComplete="off"
             />
           </div>
           {error && <div style={modalStyles.error}>{error}</div>}
@@ -259,13 +265,16 @@ function JoinServerModal({ getToken, onClose, onJoined }) {
         <div style={modalStyles.title}>Join server</div>
         <form style={modalStyles.form} onSubmit={handleSubmit}>
           <div>
-            <label style={modalStyles.fieldLabel}>Invite code or link</label>
+            <label htmlFor="invite-code" style={modalStyles.fieldLabel}>Invite code or link</label>
             <input
+              id="invite-code"
+              name="invite-code"
               className="input"
               type="text"
               placeholder="Paste invite code or invite link"
               value={inviteInput}
               onChange={(e) => setInviteInput(e.target.value)}
+              autoComplete="off"
             />
           </div>
           {error && <div style={modalStyles.error}>{error}</div>}

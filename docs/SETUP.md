@@ -153,14 +153,12 @@ cd hush-app
 docker-compose up -d
 ```
 
-This starts 7 services:
+This starts 5 services:
 
 | Service | Port | Purpose |
 |-|-|-|
-| `postgres` | 5432 (internal) | Database (Synapse + Hush) |
-| `synapse` | 8008 (internal) | Matrix homeserver (legacy) |
+| `postgres` | 5432 (internal) | Database |
 | `hush-api` | 8080 (internal) | Go backend |
-| `hush` | 3001 (internal) | Node.js frontend server |
 | `livekit` | 7880, 7881, 50020-50100/udp | WebRTC SFU |
 | `redis` | 6379 (internal) | Cache (LiveKit dependency) |
 | `caddy` | **8081** (dev) / **80+443** (prod) | Reverse proxy |
@@ -182,7 +180,6 @@ Production differences:
 
 ```bash
 curl http://localhost:8080/api/health     # Go API
-curl http://localhost:8081/_matrix/client/versions  # Synapse (via Caddy)
 docker-compose logs -f hush-api           # Watch Go API logs
 ```
 
@@ -203,26 +200,14 @@ docker-compose logs -f hush-api           # Watch Go API logs
 | `LIVEKIT_API_SECRET` | For voice | -- | `devsecret` | From LiveKit Cloud dashboard | LiveKit API secret |
 | `LIVEKIT_URL` | For voice | -- | `ws://localhost:7880` | `wss://<project>.livekit.cloud` | LiveKit server URL |
 
-### Vite Client (`client/.env`)
-
-| Variable | Required | Default | Dev Value | Production Value | Description |
-|-|-|-|-|-|-|
-| `VITE_MATRIX_HOMESERVER_URL` | No | `window.location.origin + /_matrix` | `http://localhost/_matrix` | Not needed (auto-detected) | Matrix homeserver URL (legacy) |
-
 ### Docker Compose (root `.env`)
 
 | Variable | Required | Default | Dev Value | Production Value | Description |
 |-|-|-|-|-|-|
-| `POSTGRES_USER` | No | `synapse` | `synapse` | `synapse` | Postgres user |
-| `POSTGRES_PASSWORD` | **Yes** | `synapse_password` | `synapse_password` | `openssl rand -hex 16` | Postgres password |
-| `POSTGRES_DB` | No | `synapse` | `synapse` | `synapse` | Postgres database name |
-| `MATRIX_SERVER_NAME` | No | `localhost` | `localhost` | `your-domain.com` | Matrix server name |
-| `SYNAPSE_REGISTRATION_SHARED_SECRET` | No | `changeme` | `changeme` | `openssl rand -hex 32` | Synapse registration secret |
-| `SYNAPSE_MACAROON_SECRET_KEY` | No | `changeme` | `changeme` | `openssl rand -hex 32` | Synapse macaroon key |
-| `SYNAPSE_ADMIN_TOKEN` | No | -- | -- | Admin user access token | For room cleanup |
+| `POSTGRES_USER` | No | `hush` | `hush` | `hush` | Postgres user |
+| `POSTGRES_PASSWORD` | **Yes** | `hush` | `hush` | `openssl rand -hex 16` | Postgres password |
+| `POSTGRES_DB` | No | `hush` | `hush` | `hush` | Postgres database name |
 | `CORS_ORIGIN` | No | `*` | `*` | `https://your-domain.com` | Shared by Caddy + Go API |
-| `MAX_GUEST_ROOMS` | No | `30` | `30` | `30` | Max concurrent guest rooms |
-| `MAX_PARTICIPANTS_PER_ROOM` | No | `10` | `10` | `10` | Max users per room |
 
 ### Generating production secrets
 
@@ -232,10 +217,6 @@ openssl rand -hex 32
 
 # Postgres password
 openssl rand -hex 16
-
-# Synapse secrets
-openssl rand -hex 32   # SYNAPSE_REGISTRATION_SHARED_SECRET
-openssl rand -hex 32   # SYNAPSE_MACAROON_SECRET_KEY
 
 # LiveKit (self-hosted only; for LiveKit Cloud, get from dashboard)
 openssl rand -hex 16   # LIVEKIT_API_KEY
@@ -470,7 +451,6 @@ graph TB
 
     subgraph "Application Layer"
       API["hush-api:8080<br/>(Go)"]
-      Hush["hush:3001<br/>(Node.js)"]
     end
 
     subgraph "Media Layer"
@@ -485,11 +465,7 @@ graph TB
   Internet["Internet / Browser"] -->|":8081"| Caddy
   Internet -->|":7880-7881, 50020-50100/udp"| LK
   Caddy -->|"/api/*, /ws"| API
-  Caddy -->|"/*"| Hush
-  Caddy -->|"/_matrix/*"| Synapse["synapse:8008"]
   API --> PG
-  Hush --> Synapse
-  Synapse --> PG
 ```
 
 ---
@@ -561,7 +537,7 @@ LiveKit has `auto_create: true` in `livekit.yaml`. If you get room errors, check
 
 E2EE requires `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. These are set by:
 - **Vite dev server** (in `vite.config.js` server headers)
-- **Caddy** (in Caddyfile for `/*` and `/_matrix/*` routes)
+- **Caddy** (in Caddyfile for `/api/*` and `/ws` routes)
 
 If loading third-party resources fails, they need `crossorigin` attributes or CORS headers.
 
@@ -580,7 +556,6 @@ The Go binary must be restarted. Unlike Vite, Go does not hot-reload. Kill the p
 | DATABASE_URL | `hush:hush@localhost` | Strong password, `sslmode=require` |
 | LiveKit | Self-hosted with `devkey/devsecret` | LiveKit Cloud or self-hosted with random keys |
 | TLS | None (HTTP) | Caddy auto-TLS or your own cert |
-| Postgres password | `hush` or `synapse_password` | `openssl rand -hex 16` |
-| Synapse secrets | `changeme` | `openssl rand -hex 32` |
+| Postgres password | `hush` | `openssl rand -hex 16` |
 | COOP/COEP headers | Vite dev server | Caddy (Caddyfile.prod) |
 | Ports exposed | 5173 (Vite), 8080 (Go) | 80, 443 (Caddy only) |

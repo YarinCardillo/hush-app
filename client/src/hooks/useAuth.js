@@ -11,7 +11,7 @@ export const GUEST_SESSION_KEY = 'hush_guest_session';
 const DEVICE_ID_KEY = 'hush_device_id';
 const defaultBase = '';
 
-function getDeviceId() {
+export function getDeviceId() {
   let id = localStorage.getItem(DEVICE_ID_KEY);
   if (!id) {
     id = crypto.randomUUID?.() ?? `dev_${Date.now()}_${Math.random().toString(36).slice(2)}`;

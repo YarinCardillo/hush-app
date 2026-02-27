@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Track } from 'livekit-client';
 import { useAuth } from '../contexts/AuthContext';
-import { GUEST_SESSION_KEY } from '../hooks/useAuth';
+import { GUEST_SESSION_KEY, getDeviceId } from '../hooks/useAuth';
 import { createWsClient } from '../lib/ws';
 import { useSignal } from '../hooks/useSignal';
 import * as signalStore from '../lib/signalStore';
@@ -316,7 +316,7 @@ export default function Room() {
   const { user } = useAuth();
 
   const { encryptForUser, decryptFromUser } = useSignal({
-    getStore: () => signalStore.openStore(user?.id ?? '', 'default'),
+    getStore: () => signalStore.openStore(user?.id ?? '', getDeviceId()),
     getToken,
   });
 
@@ -1020,7 +1020,7 @@ export default function Room() {
                   getStore={() => {
                     const uid = sessionStorage.getItem('hush_userId');
                     if (!uid) return Promise.resolve(null);
-                    return signalStore.openStore(uid, 'default');
+                    return signalStore.openStore(uid, getDeviceId());
                   }}
                   wsClient={wsClient}
                   recipientUserIds={sessionStorage.getItem('hush_peerId') ? [sessionStorage.getItem('hush_peerId')] : []}
@@ -1071,7 +1071,7 @@ export default function Room() {
                     getStore={() => {
                       const uid = sessionStorage.getItem('hush_userId');
                       if (!uid) return Promise.resolve(null);
-                      return signalStore.openStore(uid, 'default');
+                      return signalStore.openStore(uid, getDeviceId());
                     }}
                     wsClient={wsClient}
                     recipientUserIds={sessionStorage.getItem('hush_peerId') ? [sessionStorage.getItem('hush_peerId')] : []}

@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { getDeviceId } from '../hooks/useAuth';
 import * as signalStore from '../lib/signalStore';
 import Chat from '../components/Chat';
 
@@ -65,7 +66,7 @@ export default function TextChannel({
   const currentUserId = user?.id ?? '';
 
   const getStore = useCallback(() => {
-    return signalStore.openStore(user?.id ?? '', 'default');
+    return signalStore.openStore(user?.id ?? '', getDeviceId());
   }, [user?.id]);
 
   return (

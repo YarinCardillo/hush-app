@@ -157,6 +157,26 @@ export async function createServer(token, body) {
 }
 
 /**
+ * Create an invite code for a server.
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @param {{ maxUses?: number, expiresIn?: number }} [options]
+ * @returns {Promise<{ code: string, serverId: string, createdBy: string, maxUses: number, expiresAt: string }>}
+ */
+export async function createInvite(token, serverId, options = {}) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/invites`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `create invite ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
  * Resolve an invite code to server info (for join flow). No auth required.
  * @param {string} code - Invite code (from link or user input)
  * @returns {Promise<{ serverId: string, serverName: string }>}
