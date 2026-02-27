@@ -89,6 +89,36 @@ describe('ChannelList', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 
+  it('category header shows drag handle for admin', () => {
+    render(
+      <ChannelList
+        getToken={getToken}
+        serverId="s1"
+        serverName="My Server"
+        channels={[categoryChannel]}
+        myRole="admin"
+        activeChannelId={null}
+        onChannelSelect={() => {}}
+      />
+    );
+    expect(screen.getByTitle('Drag to reorder')).toBeInTheDocument();
+  });
+
+  it('category header does not show drag handle for non-admin', () => {
+    render(
+      <ChannelList
+        getToken={getToken}
+        serverId="s1"
+        serverName="My Server"
+        channels={[categoryChannel]}
+        myRole="member"
+        activeChannelId={null}
+        onChannelSelect={() => {}}
+      />
+    );
+    expect(screen.queryByTitle('Drag to reorder')).not.toBeInTheDocument();
+  });
+
   it('admin sees delete button on category header and can delete it', async () => {
     const { deleteChannel, getServer } = await import('../lib/api');
     deleteChannel.mockResolvedValueOnce({});

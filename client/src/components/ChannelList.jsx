@@ -426,9 +426,27 @@ function InviteModal({ getToken, serverId, onClose }) {
 function CategorySection({ group, activeChannelId, onChannelSelect, voiceParticipantCounts, isAdmin, onDeleteCategory }) {
   const [collapsed, setCollapsed] = useState(false);
   const channelIds = useMemo(() => group.channels.map((ch) => ch.id), [group.channels]);
-  const droppableId = group.key ?? 'uncategorized';
-  const { setNodeRef, isOver } = useDroppable({ id: droppableId });
   const isCategory = group.key !== null;
+
+  // Named categories are sortable (and implicitly droppable via useSortable).
+  // The uncategorized bucket uses a plain useDroppable since it has no sort identity.
+  const {
+    attributes: sortableAttributes,
+    listeners: sortableListeners,
+    setNodeRef: setSortableRef,
+    transform,
+    transition,
+    isDragging,
+    isOver: isSortableOver,
+  } = useSortable({ id: group.key ?? '__never__', disabled: !isCategory || !isAdmin });
+
+  const { setNodeRef: setDropRef, isOver: isDropOver } = useDroppable({
+    id: 'uncategorized',
+    disabled: isCategory,
+  });
+
+  const setNodeRef = isCategory ? setSortableRef : setDropRef;
+  const isOver = isCategory ? isSortableOver : isDropOver;
 
   const channelRows = (
     <SortableContext items={channelIds} strategy={verticalListSortingStrategy}>
@@ -450,17 +468,43 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
     </SortableContext>
   );
 
+  const sectionStyle = {
+    ...(isOver ? { background: 'var(--hush-elevated)' } : undefined),
+    ...(isCategory ? {
+      transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+      transition,
+      opacity: isDragging ? 0.5 : 1,
+    } : undefined),
+  };
+
   if (!isCategory) {
     return (
-      <div ref={setNodeRef} style={isOver ? { background: 'var(--hush-elevated)' } : undefined}>
+      <div ref={setNodeRef} style={sectionStyle}>
         {channelRows}
       </div>
     );
   }
 
   return (
-    <div ref={setNodeRef} style={isOver ? { background: 'var(--hush-elevated)' } : undefined}>
+    <div ref={setNodeRef} style={sectionStyle}>
       <div style={{ ...styles.categoryHeader, justifyContent: 'space-between' }}>
+        {isAdmin && (
+          <span
+            {...sortableAttributes}
+            {...sortableListeners}
+            title="Drag to reorder"
+            style={{ cursor: 'grab', display: 'flex', alignItems: 'center', padding: '0 4px 0 0', color: 'var(--hush-text-muted)', opacity: 0 }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
+            aria-hidden
+          >
+            <svg width="10" height="10" viewBox="0 0 10 14" fill="currentColor">
+              <circle cx="2" cy="2" r="1.5" /><circle cx="8" cy="2" r="1.5" />
+              <circle cx="2" cy="7" r="1.5" /><circle cx="8" cy="7" r="1.5" />
+              <circle cx="2" cy="12" r="1.5" /><circle cx="8" cy="12" r="1.5" />
+            </svg>
+          </span>
+        )}
         <button
           type="button"
           style={{ ...styles.categoryHeader, padding: 0, flex: 1 }}
@@ -483,7 +527,6 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
           <button
             type="button"
             title="Delete category"
-            className="category-delete-btn"
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', color: 'var(--hush-text-muted)', display: 'flex', alignItems: 'center', opacity: 0 }}
             onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
             onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
@@ -652,6 +695,11 @@ export default function ChannelList({
     return s;
   }, [channels]);
 
+  const sortedCategoryIds = useMemo(
+    () => groups.filter((g) => g.key !== null).map((g) => g.key),
+    [groups],
+  );
+
   const handleDragEnd = useCallback(async (event) => {
     setActiveId(null);
     const { active, over } = event;
@@ -660,19 +708,34 @@ export default function ChannelList({
     const token = getToken();
     if (!token) return;
 
+    // Category reordering: both active and over are categories
+    if (categoryIdSet.has(active.id) && categoryIdSet.has(over.id)) {
+      const sortedCategories = (channels ?? [])
+        .filter((ch) => ch.type === CHANNEL_TYPE_CATEGORY)
+        .sort((a, b) => a.position - b.position || (a.name ?? '').localeCompare(b.name ?? ''));
+      const targetIdx = sortedCategories.findIndex((c) => c.id === over.id);
+      if (targetIdx === -1) return;
+      try {
+        await moveChannel(token, active.id, { parentId: null, position: targetIdx });
+        const data = await getServer(token, serverId);
+        onChannelsUpdated?.(data);
+      } catch {
+        // Move failed — server state unchanged
+      }
+      return;
+    }
+
+    // Channel reordering / re-categorizing
     let targetParentId = null;
     let targetPosition = 0;
 
     if (over.id === 'uncategorized') {
-      // Dropped on the uncategorized section header
       targetParentId = null;
       targetPosition = groups.find((g) => g.key === null)?.channels.length ?? 0;
     } else if (categoryIdSet.has(over.id)) {
-      // Dropped on a category section header — append to end of that category
       targetParentId = over.id;
       targetPosition = groups.find((g) => g.key === over.id)?.channels.length ?? 0;
     } else {
-      // Dropped on a channel — place it at that channel's position within its group
       for (const group of groups) {
         const idx = group.channels.findIndex((ch) => ch.id === over.id);
         if (idx !== -1) {
@@ -684,16 +747,13 @@ export default function ChannelList({
     }
 
     try {
-      await moveChannel(token, active.id, {
-        parentId: targetParentId,
-        position: targetPosition,
-      });
+      await moveChannel(token, active.id, { parentId: targetParentId, position: targetPosition });
       const data = await getServer(token, serverId);
       onChannelsUpdated?.(data);
     } catch {
       // Move failed — server state unchanged, no UI update needed
     }
-  }, [getToken, serverId, groups, categoryIdSet, onChannelsUpdated]);
+  }, [getToken, serverId, groups, channels, categoryIdSet, onChannelsUpdated]);
 
   const draggedChannel = activeId ? channelMap.get(activeId) : null;
 
@@ -746,17 +806,19 @@ export default function ChannelList({
         onDragEnd={handleDragEnd}
       >
         <div style={styles.list}>
-          {groups.map((group) => (
-            <CategorySection
-              key={group.key ?? 'uncategorized'}
-              group={group}
-              activeChannelId={activeChannelId}
-              onChannelSelect={onChannelSelect}
-              voiceParticipantCounts={voiceParticipantCounts}
-              isAdmin={isAdmin}
-              onDeleteCategory={handleDeleteCategory}
-            />
-          ))}
+          <SortableContext items={sortedCategoryIds} strategy={verticalListSortingStrategy}>
+            {groups.map((group) => (
+              <CategorySection
+                key={group.key ?? 'uncategorized'}
+                group={group}
+                activeChannelId={activeChannelId}
+                onChannelSelect={onChannelSelect}
+                voiceParticipantCounts={voiceParticipantCounts}
+                isAdmin={isAdmin}
+                onDeleteCategory={handleDeleteCategory}
+              />
+            ))}
+          </SortableContext>
         </div>
         <DragOverlay>
           {draggedChannel ? (
