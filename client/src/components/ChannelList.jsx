@@ -133,8 +133,9 @@ function groupChannelsByParent(channels) {
   const uncategorized = (byParent.get(null) || []).sort(sortFn);
   byParent.forEach((list, key) => { if (key !== null) list.sort(sortFn); });
 
-  const ordered = [];
-  if (uncategorized.length > 0) ordered.push({ key: null, label: 'Uncategorized', channels: uncategorized });
+  // Always include the uncategorized bucket even when empty — it must be rendered as a
+  // persistent useDroppable target so channels can be dragged out of categories.
+  const ordered = [{ key: null, label: null, channels: uncategorized }];
 
   // Sort categories by position, then add their children
   const categories = channels.filter((ch) => ch.type === CHANNEL_TYPE_CATEGORY).sort(sortFn);
@@ -483,8 +484,20 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
   };
 
   if (!isCategory) {
+    // Uncategorized bucket: no header, always rendered so the droppable is always
+    // registered. Shows a visual drop zone when hovered while empty.
+    const isEmpty = group.channels.length === 0;
     return (
-      <div ref={setNodeRef} style={sectionStyle}>
+      <div
+        ref={setNodeRef}
+        style={isOver && isEmpty ? {
+          minHeight: '36px',
+          margin: '0 8px 4px',
+          borderRadius: '4px',
+          background: 'color-mix(in srgb, var(--hush-hover) 60%, transparent)',
+          transition: 'background var(--duration-fast) var(--ease-out)',
+        } : undefined}
+      >
         {channelRows}
       </div>
     );
@@ -783,8 +796,9 @@ export default function ChannelList({
       targetParentId = null;
       targetPosition = groups.find((g) => g.key === null)?.channels.length ?? 0;
     } else if (categoryIdSet.has(over.id)) {
+      // Dropped directly on a category header → insert at the beginning of that category.
       targetParentId = over.id;
-      targetPosition = groups.find((g) => g.key === over.id)?.channels.length ?? 0;
+      targetPosition = 0;
     } else {
       for (const group of groups) {
         const idx = group.channels.findIndex((ch) => ch.id === over.id);
