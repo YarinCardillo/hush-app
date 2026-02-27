@@ -1,9 +1,25 @@
-import { useState, useEffect, useCallback } from 'react';
-import { getServer, createChannel } from '../lib/api';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  useDroppable,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { getServer, createChannel, createInvite, moveChannel } from '../lib/api';
 import modalStyles from './modalStyles';
 
 const CHANNEL_TYPE_TEXT = 'text';
 const CHANNEL_TYPE_VOICE = 'voice';
+const CHANNEL_TYPE_CATEGORY = 'category';
 
 const styles = {
   panel: {
@@ -65,6 +81,10 @@ const styles = {
     color: 'var(--hush-text)',
   },
   channelIcon: {
+    width: 20,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
     color: 'inherit',
   },
@@ -93,26 +113,33 @@ function groupChannelsByParent(channels) {
   const byParent = new Map();
   byParent.set(null, []);
   const channelById = new Map();
-  const parentIds = new Set(channels.map((ch) => ch.parentId).filter(Boolean));
+  const sortFn = (a, b) => a.position - b.position || (a.name || '').localeCompare(b.name || '');
+
   channels.forEach((ch) => {
     channelById.set(ch.id, ch);
+    if (ch.type === CHANNEL_TYPE_CATEGORY) return; // categories are headers, not rows
     const key = ch.parentId ?? null;
     if (!byParent.has(key)) byParent.set(key, []);
     byParent.get(key).push(ch);
   });
-  const uncategorized = (byParent.get(null) || []).filter((ch) => !parentIds.has(ch.id));
-  uncategorized.sort((a, b) => a.position - b.position || (a.name || '').localeCompare(b.name || ''));
-  byParent.forEach((list, key) => {
-    if (key !== null) list.sort((a, b) => a.position - b.position || (a.name || '').localeCompare(b.name || ''));
+
+  // Ensure every category-type channel has a group entry (even if empty)
+  channels.filter((ch) => ch.type === CHANNEL_TYPE_CATEGORY).forEach((ch) => {
+    if (!byParent.has(ch.id)) byParent.set(ch.id, []);
   });
+
+  const uncategorized = (byParent.get(null) || []).sort(sortFn);
+  byParent.forEach((list, key) => { if (key !== null) list.sort(sortFn); });
+
   const ordered = [];
   if (uncategorized.length > 0) ordered.push({ key: null, label: 'Uncategorized', channels: uncategorized });
-  byParent.forEach((list, key) => {
-    if (key !== null) {
-      const parent = channelById.get(key);
-      ordered.push({ key, label: parent?.name ?? 'Category', channels: list });
-    }
+
+  // Sort categories by position, then add their children
+  const categories = channels.filter((ch) => ch.type === CHANNEL_TYPE_CATEGORY).sort(sortFn);
+  categories.forEach((cat) => {
+    ordered.push({ key: cat.id, label: cat.name ?? 'Category', channels: byParent.get(cat.id) || [] });
   });
+
   return ordered;
 }
 
@@ -230,11 +257,180 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
   );
 }
 
-function CategorySection({ group, activeChannelId, onChannelSelect, voiceParticipantCounts }) {
-  const [collapsed, setCollapsed] = useState(false);
+function CreateCategoryModal({ getToken, serverId, onClose, onCreated }) {
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    const t = requestAnimationFrame(() => setIsOpen(true));
+    return () => cancelAnimationFrame(t);
+  }, []);
+
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError('Name is required');
+      return;
+    }
+    const token = getToken();
+    if (!token) {
+      setError('Not authenticated');
+      return;
+    }
+    setLoading(true);
+    try {
+      const category = await createChannel(token, serverId, { name: trimmed, type: CHANNEL_TYPE_CATEGORY });
+      onCreated(category);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Failed to create category');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div>
+    <div
+      className={`modal-backdrop ${isOpen ? 'modal-backdrop-open' : ''}`}
+      onClick={onClose}
+    >
+      <div
+        className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={modalStyles.title}>Create category</div>
+        <form style={modalStyles.form} onSubmit={handleSubmit}>
+          <div>
+            <label htmlFor="category-name" style={modalStyles.fieldLabel}>Name</label>
+            <input
+              id="category-name"
+              name="category-name"
+              className="input"
+              type="text"
+              placeholder="Gaming"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={100}
+              autoComplete="off"
+            />
+          </div>
+          {error && <div style={modalStyles.error}>{error}</div>}
+          <div style={modalStyles.actions}>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? 'Creating…' : 'Create'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function InviteModal({ getToken, serverId, onClose }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const t = requestAnimationFrame(() => setIsOpen(true));
+    return () => cancelAnimationFrame(t);
+  }, []);
+
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const token = getToken();
+      if (!token) { setError('Not authenticated'); setLoading(false); return; }
+      try {
+        const inv = await createInvite(token, serverId);
+        if (!cancelled) { setInviteCode(inv.code); setLoading(false); }
+      } catch (err) {
+        if (!cancelled) { setError(err.message || 'Failed to create invite'); setLoading(false); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [getToken, serverId]);
+
+  const inviteLink = inviteCode ? `${window.location.origin}/invite/${inviteCode}` : '';
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard may not be available */ }
+  };
+
+  return (
+    <div className={`modal-backdrop ${isOpen ? 'modal-backdrop-open' : ''}`} onClick={onClose}>
+      <div className={`modal-content ${isOpen ? 'modal-content-open' : ''}`} onClick={(e) => e.stopPropagation()}>
+        <div style={modalStyles.title}>Invite people</div>
+        {loading ? (
+          <div style={{ color: 'var(--hush-text-secondary)', fontSize: '0.85rem', padding: '16px 0' }}>
+            Generating invite link...
+          </div>
+        ) : error ? (
+          <div style={modalStyles.error}>{error}</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                className="input"
+                readOnly
+                value={inviteLink}
+                style={{ flex: 1, fontSize: '0.85rem' }}
+                onClick={(e) => e.target.select()}
+              />
+              <button className="btn btn-primary" onClick={handleCopy} style={{ whiteSpace: 'nowrap' }}>
+                {copied ? 'Copied!' : 'Copy link'}
+              </button>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--hush-text-muted)' }}>
+              This invite expires in 7 days and can be used 50 times.
+            </div>
+          </div>
+        )}
+        <div style={{ ...modalStyles.actions, marginTop: '16px' }}>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CategorySection({ group, activeChannelId, onChannelSelect, voiceParticipantCounts, isAdmin }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const channelIds = useMemo(() => group.channels.map((ch) => ch.id), [group.channels]);
+  const droppableId = group.key ?? 'uncategorized';
+  const { setNodeRef, isOver } = useDroppable({ id: droppableId });
+
+  return (
+    <div ref={setNodeRef} style={isOver ? { background: 'var(--hush-elevated)' } : undefined}>
       <button
         type="button"
         style={styles.categoryHeader}
@@ -253,36 +449,43 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
         </svg>
         {group.label}
       </button>
-      {!collapsed &&
-        group.channels.map((ch) => {
-          const isActive = activeChannelId === ch.id;
-          const isVoice = ch.type === CHANNEL_TYPE_VOICE;
-          const count = voiceParticipantCounts?.get(ch.id) ?? 0;
-          return (
-            <ChannelRow
-              key={ch.id}
-              channel={ch}
-              isActive={isActive}
-              onSelect={() => onChannelSelect(ch)}
-              participantCount={isVoice ? count : null}
-            />
-          );
-        })}
+      {!collapsed && (
+        <SortableContext items={channelIds} strategy={verticalListSortingStrategy}>
+          {group.channels.map((ch) => {
+            const isActive = activeChannelId === ch.id;
+            const isVoice = ch.type === CHANNEL_TYPE_VOICE;
+            const count = voiceParticipantCounts?.get(ch.id) ?? 0;
+            return (
+              <SortableChannelRow
+                key={ch.id}
+                channel={ch}
+                isActive={isActive}
+                onSelect={() => onChannelSelect(ch)}
+                participantCount={isVoice ? count : null}
+                isAdmin={isAdmin}
+              />
+            );
+          })}
+        </SortableContext>
+      )}
     </div>
   );
 }
 
-function ChannelRow({ channel, isActive, onSelect, participantCount }) {
+function ChannelRowContent({ channel, isActive, onSelect, participantCount, dragStyle, dragRef, dragListeners, isDragging }) {
   const [hover, setHover] = useState(false);
   const isVoice = channel.type === CHANNEL_TYPE_VOICE;
 
   return (
     <div
+      ref={dragRef}
       role="button"
       tabIndex={0}
       style={{
         ...styles.channelRow(isActive),
         ...(hover && !isActive ? styles.channelRowHover : {}),
+        ...dragStyle,
+        opacity: isDragging ? 0.4 : 1,
       }}
       onClick={onSelect}
       onKeyDown={(e) => {
@@ -293,6 +496,7 @@ function ChannelRow({ channel, isActive, onSelect, participantCount }) {
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      {...dragListeners}
     >
       <span style={styles.channelIcon} aria-hidden>
         {isVoice ? (
@@ -316,6 +520,48 @@ function ChannelRow({ channel, isActive, onSelect, participantCount }) {
   );
 }
 
+function SortableChannelRow({ channel, isActive, onSelect, participantCount, isAdmin }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: channel.id, disabled: !isAdmin });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <ChannelRowContent
+      channel={channel}
+      isActive={isActive}
+      onSelect={onSelect}
+      participantCount={participantCount}
+      dragStyle={style}
+      dragRef={setNodeRef}
+      dragListeners={isAdmin ? { ...attributes, ...listeners } : {}}
+      isDragging={isDragging}
+    />
+  );
+}
+
+function ChannelRow({ channel, isActive, onSelect, participantCount }) {
+  return (
+    <ChannelRowContent
+      channel={channel}
+      isActive={isActive}
+      onSelect={onSelect}
+      participantCount={participantCount}
+      dragStyle={{}}
+      isDragging={false}
+    />
+  );
+}
+
 export default function ChannelList({
   getToken,
   serverId,
@@ -328,6 +574,14 @@ export default function ChannelList({
   voiceParticipantCounts,
 }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [activeId, setActiveId] = useState(null);
+  const isAdmin = myRole === 'admin';
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
 
   const handleCreated = useCallback(async () => {
     const token = getToken();
@@ -341,39 +595,163 @@ export default function ChannelList({
   }, [serverId, getToken, onChannelsUpdated]);
 
   const groups = groupChannelsByParent(channels ?? []);
+  const channelMap = useMemo(() => {
+    const m = new Map();
+    (channels ?? []).forEach((ch) => m.set(ch.id, ch));
+    return m;
+  }, [channels]);
+
+  const handleDragStart = useCallback((event) => {
+    setActiveId(event.active.id);
+  }, []);
+
+  const categoryIdSet = useMemo(() => {
+    const s = new Set();
+    (channels ?? []).forEach((ch) => { if (ch.type === CHANNEL_TYPE_CATEGORY) s.add(ch.id); });
+    return s;
+  }, [channels]);
+
+  const handleDragEnd = useCallback(async (event) => {
+    setActiveId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const token = getToken();
+    if (!token) return;
+
+    let targetParentId = null;
+    let targetPosition = 0;
+
+    if (over.id === 'uncategorized') {
+      // Dropped on the uncategorized section header
+      targetParentId = null;
+      targetPosition = groups.find((g) => g.key === null)?.channels.length ?? 0;
+    } else if (categoryIdSet.has(over.id)) {
+      // Dropped on a category section header — append to end of that category
+      targetParentId = over.id;
+      targetPosition = groups.find((g) => g.key === over.id)?.channels.length ?? 0;
+    } else {
+      // Dropped on a channel — place it at that channel's position within its group
+      for (const group of groups) {
+        const idx = group.channels.findIndex((ch) => ch.id === over.id);
+        if (idx !== -1) {
+          targetParentId = group.key;
+          targetPosition = idx;
+          break;
+        }
+      }
+    }
+
+    try {
+      await moveChannel(token, active.id, {
+        parentId: targetParentId,
+        position: targetPosition,
+      });
+      const data = await getServer(token, serverId);
+      onChannelsUpdated?.(data);
+    } catch {
+      // Move failed — server state unchanged, no UI update needed
+    }
+  }, [getToken, serverId, groups, categoryIdSet, onChannelsUpdated]);
+
+  const draggedChannel = activeId ? channelMap.get(activeId) : null;
 
   return (
     <div style={styles.panel}>
       <div style={styles.header}>
         <span style={styles.serverName}>{serverName ?? 'Server'}</span>
-        {myRole === 'admin' && (
+        <div style={{ display: 'flex', gap: '4px' }}>
           <button
             type="button"
             style={styles.addBtn}
-            title="Create channel"
-            onClick={() => setShowCreateModal(true)}
+            title="Invite people"
+            onClick={() => setShowInviteModal(true)}
           >
-            +
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <line x1="19" y1="8" x2="19" y2="14" />
+              <line x1="22" y1="11" x2="16" y2="11" />
+            </svg>
           </button>
-        )}
+          {isAdmin && (
+            <>
+              <button
+                type="button"
+                style={styles.addBtn}
+                title="Create category"
+                onClick={() => setShowCreateCategoryModal(true)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                style={styles.addBtn}
+                title="Create channel"
+                onClick={() => setShowCreateModal(true)}
+              >
+                +
+              </button>
+            </>
+          )}
+        </div>
       </div>
-      <div style={styles.list}>
-        {groups.map((group) => (
-          <CategorySection
-            key={group.key ?? 'uncategorized'}
-            group={group}
-            activeChannelId={activeChannelId}
-            onChannelSelect={onChannelSelect}
-            voiceParticipantCounts={voiceParticipantCounts}
-          />
-        ))}
-      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div style={styles.list}>
+          {groups.map((group) => (
+            <CategorySection
+              key={group.key ?? 'uncategorized'}
+              group={group}
+              activeChannelId={activeChannelId}
+              onChannelSelect={onChannelSelect}
+              voiceParticipantCounts={voiceParticipantCounts}
+              isAdmin={isAdmin}
+            />
+          ))}
+        </div>
+        <DragOverlay>
+          {draggedChannel ? (
+            <ChannelRow
+              channel={draggedChannel}
+              isActive={false}
+              onSelect={() => {}}
+              participantCount={
+                draggedChannel.type === CHANNEL_TYPE_VOICE
+                  ? (voiceParticipantCounts?.get(draggedChannel.id) ?? 0)
+                  : null
+              }
+            />
+          ) : null}
+        </DragOverlay>
+      </DndContext>
       {showCreateModal && (
         <CreateChannelModal
           getToken={getToken}
           serverId={serverId}
           onClose={() => setShowCreateModal(false)}
           onCreated={handleCreated}
+        />
+      )}
+      {showCreateCategoryModal && (
+        <CreateCategoryModal
+          getToken={getToken}
+          serverId={serverId}
+          onClose={() => setShowCreateCategoryModal(false)}
+          onCreated={handleCreated}
+        />
+      )}
+      {showInviteModal && (
+        <InviteModal
+          getToken={getToken}
+          serverId={serverId}
+          onClose={() => setShowInviteModal(false)}
         />
       )}
     </div>
