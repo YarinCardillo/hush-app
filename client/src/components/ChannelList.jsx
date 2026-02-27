@@ -61,12 +61,10 @@ const styles = {
     padding: '14px 16px 8px',
     fontSize: '0.72rem',
     fontWeight: 700,
-    color: 'var(--hush-text-secondary)',
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
     cursor: 'pointer',
     userSelect: 'none',
-    background: 'var(--hush-elevated)',
   },
   channelRow: (isActive) => ({
     display: 'flex',
@@ -81,7 +79,7 @@ const styles = {
     transition: 'all var(--duration-fast) var(--ease-out)',
   }),
   channelRowHover: {
-    background: 'var(--hush-elevated)',
+    background: 'color-mix(in srgb, var(--hush-elevated) 55%, transparent)',
     color: 'var(--hush-text)',
   },
   channelIcon: {
@@ -429,6 +427,7 @@ function InviteModal({ getToken, serverId, onClose }) {
 
 function CategorySection({ group, activeChannelId, onChannelSelect, voiceParticipantCounts, isAdmin, onDeleteCategory }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const channelIds = useMemo(() => group.channels.map((ch) => ch.id), [group.channels]);
   const isCategory = group.key !== null;
 
@@ -492,13 +491,22 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
 
   return (
     <div ref={setNodeRef} style={sectionStyle}>
-      <div style={{ ...styles.categoryHeader, justifyContent: 'space-between' }}>
+      <div
+        style={{
+          ...styles.categoryHeader,
+          justifyContent: 'space-between',
+          color: hovered ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
+          transition: 'color var(--duration-fast) var(--ease-out)',
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
         {isAdmin && (
           <span
             {...sortableAttributes}
             {...sortableListeners}
             title="Drag to reorder"
-            style={{ cursor: 'grab', width: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--hush-text-muted)', opacity: 0.4, transition: 'opacity var(--duration-fast) var(--ease-out)' }}
+            style={{ cursor: 'grab', width: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'inherit', opacity: 0.4, transition: 'opacity var(--duration-fast) var(--ease-out)' }}
             onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
             onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.4'; }}
             aria-hidden
@@ -512,7 +520,7 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
         )}
         <button
           type="button"
-          style={{ ...styles.categoryHeader, padding: 0, flex: 1, background: 'none', border: 'none', fontFamily: 'var(--font-sans)' }}
+          style={{ ...styles.categoryHeader, padding: 0, flex: 1, background: 'none', border: 'none', fontFamily: 'var(--font-sans)', color: 'inherit' }}
           onClick={() => setCollapsed((c) => !c)}
         >
           <svg
@@ -532,7 +540,7 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
           <button
             type="button"
             title="Delete category"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', color: 'var(--hush-text-muted)', display: 'flex', alignItems: 'center', opacity: 0 }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', color: 'inherit', display: 'flex', alignItems: 'center', opacity: 0 }}
             onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
             onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
             onClick={() => onDeleteCategory?.(group.key)}
