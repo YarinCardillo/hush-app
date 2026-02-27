@@ -56,14 +56,15 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '4px',
-    padding: '12px 16px 6px',
+    padding: '14px 16px 8px',
     fontSize: '0.72rem',
     fontWeight: 700,
-    color: 'var(--hush-text-muted)',
+    color: 'var(--hush-text-secondary)',
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
     cursor: 'pointer',
     userSelect: 'none',
+    background: 'var(--hush-elevated)',
   },
   channelRow: (isActive) => ({
     display: 'flex',
@@ -469,7 +470,7 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
   );
 
   const sectionStyle = {
-    ...(isOver ? { background: 'var(--hush-elevated)' } : undefined),
+    ...(isOver ? { background: 'var(--hush-hover)' } : undefined),
     ...(isCategory ? {
       transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
       transition,
@@ -493,9 +494,9 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
             {...sortableAttributes}
             {...sortableListeners}
             title="Drag to reorder"
-            style={{ cursor: 'grab', display: 'flex', alignItems: 'center', padding: '0 4px 0 0', color: 'var(--hush-text-muted)', opacity: 0.25, transition: 'opacity var(--duration-fast) var(--ease-out)' }}
+            style={{ cursor: 'grab', width: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--hush-text-muted)', opacity: 0.4, transition: 'opacity var(--duration-fast) var(--ease-out)' }}
             onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.25'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.4'; }}
             aria-hidden
           >
             <svg width="10" height="10" viewBox="0 0 10 14" fill="currentColor">
@@ -507,7 +508,7 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
         )}
         <button
           type="button"
-          style={{ ...styles.categoryHeader, padding: 0, flex: 1 }}
+          style={{ ...styles.categoryHeader, padding: 0, flex: 1, background: 'none', border: 'none', fontFamily: 'var(--font-sans)' }}
           onClick={() => setCollapsed((c) => !c)}
         >
           <svg
