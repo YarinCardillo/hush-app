@@ -231,6 +231,25 @@ export async function createChannel(token, serverId, body) {
 }
 
 /**
+ * Move a channel to a new parent and/or position (admin only).
+ * @param {string} token - JWT
+ * @param {string} channelId - Channel UUID
+ * @param {{ parentId?: string|null, position: number }} body
+ * @returns {Promise<void>}
+ */
+export async function moveChannel(token, channelId, body) {
+  const res = await fetchWithAuth(token, `/api/channels/${encodeURIComponent(channelId)}/move`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `move channel ${res.status}`);
+  }
+}
+
+/**
  * Delete a channel (admin only).
  * @param {string} token - JWT
  * @param {string} channelId - Channel UUID

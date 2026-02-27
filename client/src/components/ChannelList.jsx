@@ -662,6 +662,53 @@ function ChannelRow({ channel, isActive, onSelect, participantCount }) {
   );
 }
 
+// Drop zone for removing a channel from all categories (parentId → null).
+// Always rendered with a fixed height so the layout is stable before and after
+// a channel drag starts — conditional rendering would cause layout shift, which
+// offsets the DragOverlay from the pointer. Toggle visibility via CSS only.
+function UncategorizeZone({ position, visible }) {
+  const id = position === 'top' ? 'uncategorize-top' : 'uncategorize-bottom';
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: !visible });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        // Fixed height/margin so the layout never shifts when visible toggles
+        height: '30px',
+        margin: '2px 8px',
+        boxSizing: 'border-box',
+        borderRadius: '4px',
+        padding: '0 12px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        fontSize: '0.72rem',
+        userSelect: 'none',
+        cursor: 'default',
+        overflow: 'hidden',
+        // Visual state controlled via CSS, not conditional rendering
+        opacity: visible ? (isOver ? 1 : 0.35) : 0,
+        pointerEvents: visible ? 'auto' : 'none',
+        color: visible && isOver ? 'var(--hush-amber)' : 'var(--hush-text-muted)',
+        background: visible && isOver ? 'color-mix(in srgb, var(--hush-amber) 15%, transparent)' : 'transparent',
+        border: `1px ${visible ? 'dashed' : 'solid'} ${
+          visible && isOver ? 'var(--hush-amber)' :
+          visible ? 'color-mix(in srgb, var(--hush-text-muted) 50%, transparent)' :
+          'transparent'
+        }`,
+        transition: 'opacity var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out)',
+      }}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        <line x1="9" y1="12" x2="15" y2="12" />
+      </svg>
+      No category
+    </div>
+  );
+}
+
 export default function ChannelList({
   getToken,
   serverId,
@@ -732,34 +779,38 @@ export default function ChannelList({
     [groups],
   );
 
-  // Custom collision detection: pointerWithin first, with a channel-priority override.
+  // Split category-drag from channel-drag paths so each only considers its own
+  // valid target types.
   //
-  // Problem: CategorySection registers its droppable rect BEFORE the channel rows
-  // inside it, so pointerWithin returns [categoryId, channelId, ...] — the category
-  // container always wins. When dragging a channel, this causes over.id to be the
-  // category rather than the specific target channel row, so the channel is always
-  // appended to the end instead of inserted at the correct position.
-  //
-  // Fix: when dragging a non-category item, filter out category IDs from the hits
-  // so the innermost (channel) hit wins. If only category hits exist (pointer is over
-  // an empty category or its header), we keep them so drop-into-category still works.
+  // IMPORTANT: uses args.active.id (dnd-kit's synchronous active ID) rather than
+  // the activeId React state. onDragStart calls setActiveId which is asynchronous —
+  // the state update may not be reflected in the first few collision-detection calls,
+  // leaving activeId=null and causing the category path to be skipped entirely,
+  // which makes category reordering unpredictable.
   const collisionDetection = useCallback((args) => {
+    const isDraggingCategory = categoryIdSet.has(args.active.id);
+
+    if (isDraggingCategory) {
+      // Only other category IDs are valid targets.
+      // closestCenter covers the "pointer below last category rect" case where
+      // pointerWithin returns nothing.
+      const catHits = pointerWithin(args).filter((h) => categoryIdSet.has(h.id));
+      if (catHits.length > 0) return catHits;
+      return closestCenter(args).filter((h) => categoryIdSet.has(h.id));
+    }
+
+    // Channel drag: prefer the innermost channel row over its category container.
+    // CategorySection registers its droppable before inner channel rows, so
+    // pointerWithin returns [categoryId, ...] first — filter it out so the specific
+    // channel row wins. Keep category hits as fallback for empty-category drops.
     const hits = pointerWithin(args);
     if (hits.length === 0) {
-      // Pointer is outside all droppable rects (e.g. below the last category).
-      // rectIntersection needs overlap area > 0, so it also returns empty here.
-      // Fall through to closestCenter so the nearest droppable still wins.
       const rects = rectIntersection(args);
       return rects.length > 0 ? rects : closestCenter(args);
     }
-
-    if (activeId && !categoryIdSet.has(activeId)) {
-      const channelHits = hits.filter((h) => !categoryIdSet.has(h.id));
-      if (channelHits.length > 0) return channelHits;
-    }
-
-    return hits;
-  }, [activeId, categoryIdSet]);
+    const channelHits = hits.filter((h) => !categoryIdSet.has(h.id));
+    return channelHits.length > 0 ? channelHits : hits;
+  }, [categoryIdSet]);
 
   const handleDragEnd = useCallback(async (event) => {
     setActiveId(null);
@@ -799,9 +850,10 @@ export default function ChannelList({
     let targetParentId = null;
     let targetPosition = 0;
 
-    if (over.id === 'uncategorized') {
+    if (over.id === 'uncategorized' || over.id === 'uncategorize-top' || over.id === 'uncategorize-bottom') {
       targetParentId = null;
-      targetPosition = groups.find((g) => g.key === null)?.channels.length ?? 0;
+      const uncatLen = groups.find((g) => g.key === null)?.channels.length ?? 0;
+      targetPosition = over.id === 'uncategorize-top' ? 0 : uncatLen;
     } else if (categoryIdSet.has(over.id)) {
       // Dropped directly on a category header → insert at the beginning of that category.
       targetParentId = over.id;
@@ -909,6 +961,7 @@ export default function ChannelList({
         onDragEnd={handleDragEnd}
       >
         <div style={styles.list}>
+          <UncategorizeZone position="top" visible={activeId !== null && !categoryIdSet.has(activeId)} />
           <SortableContext items={sortedCategoryIds} strategy={verticalListSortingStrategy}>
             {groups.map((group) => (
               <CategorySection
@@ -922,6 +975,7 @@ export default function ChannelList({
               />
             ))}
           </SortableContext>
+          <UncategorizeZone position="bottom" visible={activeId !== null && !categoryIdSet.has(activeId)} />
         </div>
         <DragOverlay>
           {draggedChannel ? (
