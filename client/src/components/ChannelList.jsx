@@ -718,12 +718,28 @@ export default function ChannelList({
     [groups],
   );
 
-  // Custom collision detection: pointerWithin first (best for nested containers),
-  // fallback to rectIntersection when pointer is between items.
+  // Custom collision detection: pointerWithin first, with a channel-priority override.
+  //
+  // Problem: CategorySection registers its droppable rect BEFORE the channel rows
+  // inside it, so pointerWithin returns [categoryId, channelId, ...] — the category
+  // container always wins. When dragging a channel, this causes over.id to be the
+  // category rather than the specific target channel row, so the channel is always
+  // appended to the end instead of inserted at the correct position.
+  //
+  // Fix: when dragging a non-category item, filter out category IDs from the hits
+  // so the innermost (channel) hit wins. If only category hits exist (pointer is over
+  // an empty category or its header), we keep them so drop-into-category still works.
   const collisionDetection = useCallback((args) => {
     const hits = pointerWithin(args);
-    return hits.length > 0 ? hits : rectIntersection(args);
-  }, []);
+    if (hits.length === 0) return rectIntersection(args);
+
+    if (activeId && !categoryIdSet.has(activeId)) {
+      const channelHits = hits.filter((h) => !categoryIdSet.has(h.id));
+      if (channelHits.length > 0) return channelHits;
+    }
+
+    return hits;
+  }, [activeId, categoryIdSet]);
 
   const handleDragEnd = useCallback(async (event) => {
     setActiveId(null);
@@ -824,7 +840,7 @@ export default function ChannelList({
     : null;
 
   return (
-    <div style={styles.panel}>
+    <div style={{ ...styles.panel, ...(activeId ? { userSelect: 'none' } : undefined) }}>
       <div style={styles.header}>
         <span style={styles.serverName}>{serverName ?? 'Server'}</span>
         <div style={{ display: 'flex', gap: '4px' }}>
