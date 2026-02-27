@@ -56,9 +56,9 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '4px',
-    padding: '8px 16px 4px',
-    fontSize: '0.7rem',
-    fontWeight: 600,
+    padding: '12px 16px 6px',
+    fontSize: '0.72rem',
+    fontWeight: 700,
     color: 'var(--hush-text-muted)',
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
@@ -493,9 +493,9 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
             {...sortableAttributes}
             {...sortableListeners}
             title="Drag to reorder"
-            style={{ cursor: 'grab', display: 'flex', alignItems: 'center', padding: '0 4px 0 0', color: 'var(--hush-text-muted)', opacity: 0 }}
+            style={{ cursor: 'grab', display: 'flex', alignItems: 'center', padding: '0 4px 0 0', color: 'var(--hush-text-muted)', opacity: 0.25, transition: 'opacity var(--duration-fast) var(--ease-out)' }}
             onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.25'; }}
             aria-hidden
           >
             <svg width="10" height="10" viewBox="0 0 10 14" fill="currentColor">
