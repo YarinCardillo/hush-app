@@ -134,15 +134,16 @@ function groupChannelsByParent(channels) {
   const uncategorized = (byParent.get(null) || []).sort(sortFn);
   byParent.forEach((list, key) => { if (key !== null) list.sort(sortFn); });
 
-  // Always include the uncategorized bucket even when empty — it must be rendered as a
-  // persistent useDroppable target so channels can be dragged out of categories.
-  const ordered = [{ key: null, label: null, channels: uncategorized }];
-
   // Sort categories by position, then add their children
   const categories = channels.filter((ch) => ch.type === CHANNEL_TYPE_CATEGORY).sort(sortFn);
+  const ordered = [];
   categories.forEach((cat) => {
     ordered.push({ key: cat.id, label: cat.name ?? 'Category', channels: byParent.get(cat.id) || [] });
   });
+
+  // Uncategorized bucket always at the bottom — persistent droppable target so
+  // channels can be dragged out of categories.
+  ordered.push({ key: null, label: null, channels: uncategorized });
 
   return ordered;
 }
@@ -850,10 +851,9 @@ export default function ChannelList({
     let targetParentId = null;
     let targetPosition = 0;
 
-    if (over.id === 'uncategorized' || over.id === 'uncategorize-top' || over.id === 'uncategorize-bottom') {
+    if (over.id === 'uncategorized' || over.id === 'uncategorize-bottom') {
       targetParentId = null;
-      const uncatLen = groups.find((g) => g.key === null)?.channels.length ?? 0;
-      targetPosition = over.id === 'uncategorize-top' ? 0 : uncatLen;
+      targetPosition = groups.find((g) => g.key === null)?.channels.length ?? 0;
     } else if (categoryIdSet.has(over.id)) {
       // Dropped directly on a category header → insert at the beginning of that category.
       targetParentId = over.id;
@@ -961,7 +961,6 @@ export default function ChannelList({
         onDragEnd={handleDragEnd}
       >
         <div style={styles.list}>
-          <UncategorizeZone position="top" visible={activeId !== null && !categoryIdSet.has(activeId)} />
           <SortableContext items={sortedCategoryIds} strategy={verticalListSortingStrategy}>
             {groups.map((group) => (
               <CategorySection
@@ -975,7 +974,10 @@ export default function ChannelList({
               />
             ))}
           </SortableContext>
-          <UncategorizeZone position="bottom" visible={activeId !== null && !categoryIdSet.has(activeId)} />
+          <UncategorizeZone
+            position="bottom"
+            visible={activeId !== null && !categoryIdSet.has(activeId) && channelMap.get(activeId)?.parentId != null}
+          />
         </div>
         <DragOverlay>
           {draggedChannel ? (
