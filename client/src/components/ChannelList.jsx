@@ -24,6 +24,13 @@ const CHANNEL_TYPE_TEXT = 'text';
 const CHANNEL_TYPE_VOICE = 'voice';
 const CHANNEL_TYPE_CATEGORY = 'category';
 
+// Sentinel droppable ID for the uncategorized bucket. Using useSortable with this
+// ID (disabled, so non-draggable) lets the null group participate in pointerWithin
+// detection identically to named categories — its container rect gets registered,
+// the channel drag filter strips it (it's in categoryIdSet), and the inner channel
+// rows win, enabling correct SortableContext animation for uncategorized channels.
+const UNCATEGORIZED_SENTINEL = '__uncategorized__';
+
 const styles = {
   panel: {
     width: '260px',
@@ -434,7 +441,9 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
   const channelIds = useMemo(() => group.channels.map((ch) => ch.id), [group.channels]);
   const isCategory = group.key !== null;
 
-  // Named categories are sortable (and implicitly droppable via useSortable).
+  // Named categories are sortable; the null group uses the sentinel ID with
+  // disabled=true so it's never draggable but its container rect is registered as
+  // a droppable — matching the named-category pattern exactly.
   const {
     attributes: sortableAttributes,
     listeners: sortableListeners,
@@ -443,13 +452,7 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
     transition,
     isDragging,
     isOver,
-  } = useSortable({ id: group.key ?? '__never__', disabled: !isCategory || !isAdmin });
-
-  // Hook called for rules-of-hooks compliance; the null group no longer uses a
-  // container droppable — individual useSortable channel rows handle all targets.
-  // Disabling prevents the 'uncategorized' container rect from shadowing inner rows
-  // in pointerWithin, which previously caused drops to always land at the wrong position.
-  useDroppable({ id: 'uncategorized', disabled: true });
+  } = useSortable({ id: group.key ?? UNCATEGORIZED_SENTINEL, disabled: !isCategory || !isAdmin });
 
   const channelRows = (
     <SortableContext items={channelIds} strategy={verticalListSortingStrategy}>
@@ -483,10 +486,11 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
   };
 
   if (!isCategory) {
-    // Uncategorized bucket: no header, no container droppable. Individual channel
-    // rows (useSortable) are the drop targets; UncategorizeZone provides the
-    // explicit affordance for removing a channel from a category.
-    return <div>{channelRows}</div>;
+    // Uncategorized bucket: no visible header, renders exactly like a named category
+    // section internally. The ref registers the sentinel droppable rect so
+    // pointerWithin returns [UNCATEGORIZED_SENTINEL, channelId] — the filter in
+    // collisionDetection strips the sentinel, leaving the specific channel row.
+    return <div ref={setNodeRef}>{channelRows}</div>;
   }
 
   return (
@@ -756,6 +760,9 @@ export default function ChannelList({
   const categoryIdSet = useMemo(() => {
     const s = new Set();
     localChannels.forEach((ch) => { if (ch.type === CHANNEL_TYPE_CATEGORY) s.add(ch.id); });
+    // Include sentinel so the null group's container rect is filtered out during
+    // channel drag (same mechanism as named category containers).
+    s.add(UNCATEGORIZED_SENTINEL);
     return s;
   }, [localChannels]);
 
@@ -776,12 +783,13 @@ export default function ChannelList({
     const isDraggingCategory = categoryIdSet.has(args.active.id);
 
     if (isDraggingCategory) {
-      // Only other category IDs are valid targets.
-      // closestCenter covers the "pointer below last category rect" case where
-      // pointerWithin returns nothing.
-      const catHits = pointerWithin(args).filter((h) => categoryIdSet.has(h.id));
+      // Only real category IDs are valid targets — exclude the sentinel so dragging
+      // a category over the uncategorized section falls back to the nearest real
+      // category via closestCenter rather than snapping to the sentinel.
+      const isRealCat = (h) => categoryIdSet.has(h.id) && h.id !== UNCATEGORIZED_SENTINEL;
+      const catHits = pointerWithin(args).filter(isRealCat);
       if (catHits.length > 0) return catHits;
-      return closestCenter(args).filter((h) => categoryIdSet.has(h.id));
+      return closestCenter(args).filter(isRealCat);
     }
 
     // Channel drag: prefer the innermost channel row over its category container.
