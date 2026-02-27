@@ -809,7 +809,14 @@ export default function ChannelList({
       const rects = rectIntersection(args);
       return rects.length > 0 ? rects : closestCenter(args);
     }
-    const channelHits = hits.filter((h) => !categoryIdSet.has(h.id));
+    // Exclude both category IDs and the uncategorized/uncategorize-bottom droppable
+    // containers so the specific channel row underneath wins. Without this,
+    // 'uncategorized' (the null-group container) would pass the categoryIdSet filter
+    // and shadow the inner channel rows, causing drops to always resolve to the
+    // container rather than the precise target position.
+    const channelHits = hits.filter(
+      (h) => !categoryIdSet.has(h.id) && h.id !== 'uncategorized' && h.id !== 'uncategorize-bottom',
+    );
     return channelHits.length > 0 ? channelHits : hits;
   }, [categoryIdSet]);
 
