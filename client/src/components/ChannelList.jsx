@@ -1,17 +1,19 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   DndContext,
-  closestCenter,
   PointerSensor,
   useSensor,
   useSensors,
   DragOverlay,
   useDroppable,
+  pointerWithin,
+  rectIntersection,
 } from '@dnd-kit/core';
 import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
+  arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { getServer, createChannel, createInvite, moveChannel, deleteChannel } from '../lib/api';
@@ -73,6 +75,7 @@ const styles = {
     padding: '6px 16px',
     cursor: 'pointer',
     background: isActive ? 'var(--hush-elevated)' : 'transparent',
+    boxShadow: isActive ? 'inset 2px 0 0 var(--hush-amber)' : 'none',
     color: isActive ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
     fontSize: '0.85rem',
     transition: 'all var(--duration-fast) var(--ease-out)',
@@ -470,6 +473,7 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
   );
 
   const sectionStyle = {
+    willChange: 'transform', // pre-promote GPU layer — prevents font antialiasing shift on drag start
     ...(isOver ? { background: 'var(--hush-hover)' } : undefined),
     ...(isCategory ? {
       transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
@@ -650,7 +654,11 @@ export default function ChannelList({
   const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [activeId, setActiveId] = useState(null);
+  const [localChannels, setLocalChannels] = useState(channels ?? []);
   const isAdmin = myRole === 'admin';
+
+  // Keep local list in sync with server-sourced prop (after API refresh or initial load)
+  useEffect(() => { setLocalChannels(channels ?? []); }, [channels]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -679,12 +687,12 @@ export default function ChannelList({
     }
   }, [serverId, getToken, onChannelsUpdated]);
 
-  const groups = groupChannelsByParent(channels ?? []);
+  const groups = groupChannelsByParent(localChannels);
   const channelMap = useMemo(() => {
     const m = new Map();
-    (channels ?? []).forEach((ch) => m.set(ch.id, ch));
+    localChannels.forEach((ch) => m.set(ch.id, ch));
     return m;
-  }, [channels]);
+  }, [localChannels]);
 
   const handleDragStart = useCallback((event) => {
     setActiveId(event.active.id);
@@ -692,14 +700,21 @@ export default function ChannelList({
 
   const categoryIdSet = useMemo(() => {
     const s = new Set();
-    (channels ?? []).forEach((ch) => { if (ch.type === CHANNEL_TYPE_CATEGORY) s.add(ch.id); });
+    localChannels.forEach((ch) => { if (ch.type === CHANNEL_TYPE_CATEGORY) s.add(ch.id); });
     return s;
-  }, [channels]);
+  }, [localChannels]);
 
   const sortedCategoryIds = useMemo(
     () => groups.filter((g) => g.key !== null).map((g) => g.key),
     [groups],
   );
+
+  // Custom collision detection: pointerWithin first (best for nested containers),
+  // fallback to rectIntersection when pointer is between items.
+  const collisionDetection = useCallback((args) => {
+    const hits = pointerWithin(args);
+    return hits.length > 0 ? hits : rectIntersection(args);
+  }, []);
 
   const handleDragEnd = useCallback(async (event) => {
     setActiveId(null);
@@ -711,17 +726,26 @@ export default function ChannelList({
 
     // Category reordering: both active and over are categories
     if (categoryIdSet.has(active.id) && categoryIdSet.has(over.id)) {
-      const sortedCategories = (channels ?? [])
+      const sortFn = (a, b) => a.position - b.position || (a.name ?? '').localeCompare(b.name ?? '');
+      const sortedCategories = localChannels
         .filter((ch) => ch.type === CHANNEL_TYPE_CATEGORY)
-        .sort((a, b) => a.position - b.position || (a.name ?? '').localeCompare(b.name ?? ''));
-      const targetIdx = sortedCategories.findIndex((c) => c.id === over.id);
-      if (targetIdx === -1) return;
+        .sort(sortFn);
+      const activeIdx = sortedCategories.findIndex((c) => c.id === active.id);
+      const overIdx = sortedCategories.findIndex((c) => c.id === over.id);
+      if (activeIdx === -1 || overIdx === -1) return;
+
+      // Optimistic update: reorder categories immediately
+      const reordered = arrayMove(sortedCategories, activeIdx, overIdx);
+      const posMap = new Map(reordered.map((c, i) => [c.id, i]));
+      const snapshot = localChannels;
+      setLocalChannels((prev) => prev.map((ch) => posMap.has(ch.id) ? { ...ch, position: posMap.get(ch.id) } : ch));
+
       try {
-        await moveChannel(token, active.id, { parentId: null, position: targetIdx });
+        await moveChannel(token, active.id, { parentId: null, position: overIdx });
         const data = await getServer(token, serverId);
         onChannelsUpdated?.(data);
       } catch {
-        // Move failed — server state unchanged
+        setLocalChannels(snapshot); // revert on error
       }
       return;
     }
@@ -747,16 +771,22 @@ export default function ChannelList({
       }
     }
 
+    // Optimistic update: move channel immediately
+    const snapshot = localChannels;
+    setLocalChannels((prev) => prev.map((ch) =>
+      ch.id === active.id ? { ...ch, parentId: targetParentId, position: targetPosition } : ch,
+    ));
+
     try {
       await moveChannel(token, active.id, { parentId: targetParentId, position: targetPosition });
       const data = await getServer(token, serverId);
       onChannelsUpdated?.(data);
     } catch {
-      // Move failed — server state unchanged, no UI update needed
+      setLocalChannels(snapshot); // revert on error
     }
-  }, [getToken, serverId, groups, channels, categoryIdSet, onChannelsUpdated]);
+  }, [getToken, serverId, groups, localChannels, categoryIdSet, onChannelsUpdated]);
 
-  const draggedChannel = activeId ? channelMap.get(activeId) : null;
+  const draggedChannel = activeId && !categoryIdSet.has(activeId) ? channelMap.get(activeId) : null;
 
   return (
     <div style={styles.panel}>
@@ -802,7 +832,7 @@ export default function ChannelList({
       </div>
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={collisionDetection}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
