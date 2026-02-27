@@ -7,6 +7,7 @@ vi.mock('../lib/api', () => ({
   createChannel: vi.fn(),
   createInvite: vi.fn(),
   moveChannel: vi.fn(),
+  deleteChannel: vi.fn(),
 }));
 
 const getToken = () => 'test-token';
@@ -37,7 +38,7 @@ describe('ChannelList', () => {
     expect(screen.getByText('voice-1')).toBeInTheDocument();
   });
 
-  it('groups channels by parentId', async () => {
+  it('groups channels by parentId without Uncategorized header', async () => {
     render(
       <ChannelList
         getToken={getToken}
@@ -49,10 +50,67 @@ describe('ChannelList', () => {
         onChannelSelect={() => {}}
       />
     );
-    expect(screen.getByText('Uncategorized')).toBeInTheDocument();
+    expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument();
     expect(screen.getByText('Gaming')).toBeInTheDocument();
     expect(screen.getByText('general')).toBeInTheDocument();
     expect(screen.getByText('chat')).toBeInTheDocument();
+  });
+
+  it('does not show voice participant count when zero', () => {
+    render(
+      <ChannelList
+        getToken={getToken}
+        serverId="s1"
+        serverName="My Server"
+        channels={[voiceChannel]}
+        myRole="member"
+        activeChannelId={null}
+        onChannelSelect={() => {}}
+        voiceParticipantCounts={new Map([[voiceChannel.id, 0]])}
+      />
+    );
+    expect(screen.queryByText('0')).not.toBeInTheDocument();
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
+  });
+
+  it('shows voice participant count when greater than zero', () => {
+    render(
+      <ChannelList
+        getToken={getToken}
+        serverId="s1"
+        serverName="My Server"
+        channels={[voiceChannel]}
+        myRole="member"
+        activeChannelId={null}
+        onChannelSelect={() => {}}
+        voiceParticipantCounts={new Map([[voiceChannel.id, 3]])}
+      />
+    );
+    expect(screen.getByText('3')).toBeInTheDocument();
+  });
+
+  it('admin sees delete button on category header and can delete it', async () => {
+    const { deleteChannel, getServer } = await import('../lib/api');
+    deleteChannel.mockResolvedValueOnce({});
+    getServer.mockResolvedValueOnce({ channels: [] });
+
+    render(
+      <ChannelList
+        getToken={getToken}
+        serverId="s1"
+        serverName="My Server"
+        channels={[categoryChannel]}
+        myRole="admin"
+        activeChannelId={null}
+        onChannelSelect={() => {}}
+        onChannelsUpdated={() => {}}
+      />
+    );
+    const deleteBtn = screen.getByTitle('Delete category');
+    deleteBtn.click();
+    await waitFor(() => {
+      expect(deleteChannel).toHaveBeenCalledWith('test-token', categoryChannel.id);
+    });
   });
 
   it('admin sees a separate Create category button', () => {

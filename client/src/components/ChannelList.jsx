@@ -14,7 +14,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { getServer, createChannel, createInvite, moveChannel } from '../lib/api';
+import { getServer, createChannel, createInvite, moveChannel, deleteChannel } from '../lib/api';
 import modalStyles from './modalStyles';
 
 const CHANNEL_TYPE_TEXT = 'text';
@@ -423,51 +423,82 @@ function InviteModal({ getToken, serverId, onClose }) {
   );
 }
 
-function CategorySection({ group, activeChannelId, onChannelSelect, voiceParticipantCounts, isAdmin }) {
+function CategorySection({ group, activeChannelId, onChannelSelect, voiceParticipantCounts, isAdmin, onDeleteCategory }) {
   const [collapsed, setCollapsed] = useState(false);
   const channelIds = useMemo(() => group.channels.map((ch) => ch.id), [group.channels]);
   const droppableId = group.key ?? 'uncategorized';
   const { setNodeRef, isOver } = useDroppable({ id: droppableId });
+  const isCategory = group.key !== null;
+
+  const channelRows = (
+    <SortableContext items={channelIds} strategy={verticalListSortingStrategy}>
+      {group.channels.map((ch) => {
+        const isActive = activeChannelId === ch.id;
+        const isVoice = ch.type === CHANNEL_TYPE_VOICE;
+        const rawCount = voiceParticipantCounts?.get(ch.id) ?? 0;
+        return (
+          <SortableChannelRow
+            key={ch.id}
+            channel={ch}
+            isActive={isActive}
+            onSelect={() => onChannelSelect(ch)}
+            participantCount={isVoice && rawCount > 0 ? rawCount : null}
+            isAdmin={isAdmin}
+          />
+        );
+      })}
+    </SortableContext>
+  );
+
+  if (!isCategory) {
+    return (
+      <div ref={setNodeRef} style={isOver ? { background: 'var(--hush-elevated)' } : undefined}>
+        {channelRows}
+      </div>
+    );
+  }
 
   return (
     <div ref={setNodeRef} style={isOver ? { background: 'var(--hush-elevated)' } : undefined}>
-      <button
-        type="button"
-        style={styles.categoryHeader}
-        onClick={() => setCollapsed((c) => !c)}
-      >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform var(--duration-fast) var(--ease-out)' }}
+      <div style={{ ...styles.categoryHeader, justifyContent: 'space-between' }}>
+        <button
+          type="button"
+          style={{ ...styles.categoryHeader, padding: 0, flex: 1 }}
+          onClick={() => setCollapsed((c) => !c)}
         >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-        {group.label}
-      </button>
-      {!collapsed && (
-        <SortableContext items={channelIds} strategy={verticalListSortingStrategy}>
-          {group.channels.map((ch) => {
-            const isActive = activeChannelId === ch.id;
-            const isVoice = ch.type === CHANNEL_TYPE_VOICE;
-            const count = voiceParticipantCounts?.get(ch.id) ?? 0;
-            return (
-              <SortableChannelRow
-                key={ch.id}
-                channel={ch}
-                isActive={isActive}
-                onSelect={() => onChannelSelect(ch)}
-                participantCount={isVoice ? count : null}
-                isAdmin={isAdmin}
-              />
-            );
-          })}
-        </SortableContext>
-      )}
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform var(--duration-fast) var(--ease-out)' }}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+          {group.label}
+        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            title="Delete category"
+            className="category-delete-btn"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', color: 'var(--hush-text-muted)', display: 'flex', alignItems: 'center', opacity: 0 }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
+            onClick={() => onDeleteCategory?.(group.key)}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14H6L5 6" />
+              <path d="M10 11v6M14 11v6" />
+              <path d="M9 6V4h6v2" />
+            </svg>
+          </button>
+        )}
+      </div>
+      {!collapsed && channelRows}
     </div>
   );
 }
@@ -511,10 +542,8 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, drag
         )}
       </span>
       <span style={styles.channelName}>{channel.name}</span>
-      {isVoice && (
-        <span style={styles.voiceCount}>
-          {participantCount != null ? participantCount : '—'}
-        </span>
+      {isVoice && participantCount != null && (
+        <span style={styles.voiceCount}>{participantCount}</span>
       )}
     </div>
   );
@@ -582,6 +611,18 @@ export default function ChannelList({
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
+
+  const handleDeleteCategory = useCallback(async (categoryId) => {
+    const token = getToken();
+    if (!token) return;
+    try {
+      await deleteChannel(token, categoryId);
+      const data = await getServer(token, serverId);
+      onChannelsUpdated?.(data);
+    } catch {
+      // Delete failed — server state unchanged
+    }
+  }, [getToken, serverId, onChannelsUpdated]);
 
   const handleCreated = useCallback(async () => {
     const token = getToken();
@@ -713,6 +754,7 @@ export default function ChannelList({
               onChannelSelect={onChannelSelect}
               voiceParticipantCounts={voiceParticipantCounts}
               isAdmin={isAdmin}
+              onDeleteCategory={handleDeleteCategory}
             />
           ))}
         </div>
