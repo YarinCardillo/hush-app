@@ -8,6 +8,7 @@ import {
   useDroppable,
   pointerWithin,
   rectIntersection,
+  closestCenter,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -744,7 +745,13 @@ export default function ChannelList({
   // an empty category or its header), we keep them so drop-into-category still works.
   const collisionDetection = useCallback((args) => {
     const hits = pointerWithin(args);
-    if (hits.length === 0) return rectIntersection(args);
+    if (hits.length === 0) {
+      // Pointer is outside all droppable rects (e.g. below the last category).
+      // rectIntersection needs overlap area > 0, so it also returns empty here.
+      // Fall through to closestCenter so the nearest droppable still wins.
+      const rects = rectIntersection(args);
+      return rects.length > 0 ? rects : closestCenter(args);
+    }
 
     if (activeId && !categoryIdSet.has(activeId)) {
       const channelHits = hits.filter((h) => !categoryIdSet.has(h.id));
