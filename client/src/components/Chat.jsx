@@ -133,6 +133,7 @@ const styles = {
     gap: '8px',
     borderTop: '1px solid var(--hush-border)',
     paddingTop: '12px',
+    paddingBottom: '12px',
   },
   inputWrapper: {
     display: 'flex',
@@ -150,6 +151,7 @@ const styles = {
     outline: 'none',
     transition: 'box-shadow var(--duration-normal) var(--ease-out)',
     resize: 'none',
+    lineHeight: '24px',
     maxHeight: '120px',
   },
   sendButton: (disabled) => ({
@@ -208,6 +210,7 @@ export default function Chat({
   const [isSending, setIsSending] = useState(false);
   const [loadMoreLoading, setLoadMoreLoading] = useState(false);
   const [hasMoreOlder, setHasMoreOlder] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const messagesEndRef = useRef(null);
   const messagesScrollRef = useRef(null);
   const inputRef = useRef(null);
@@ -235,6 +238,9 @@ export default function Chat({
     const token = getToken();
     if (!token) return;
 
+    setIsInitialLoading(true);
+    setMessages([]);
+
     const loadHistory = async () => {
       try {
         const list = await api.getChannelMessages(token, channelId, { limit: 50 });
@@ -248,6 +254,8 @@ export default function Chat({
         setHasMoreOlder(list.length >= 50);
       } catch (err) {
         console.error('[chat] Load history failed:', err.message);
+      } finally {
+        setIsInitialLoading(false);
       }
     };
     loadHistory();
@@ -454,7 +462,7 @@ export default function Chat({
               {loadMoreLoading ? 'Loading…' : 'Scroll up for older messages'}
             </div>
           )}
-          {!hasMessages ? (
+          {!isInitialLoading && !hasMessages ? (
             <div style={styles.empty}>
               <div style={styles.emptyIcon}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
