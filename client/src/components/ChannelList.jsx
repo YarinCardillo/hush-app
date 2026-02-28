@@ -26,6 +26,23 @@ const CHANNEL_TYPE_TEXT = 'text';
 const CHANNEL_TYPE_VOICE = 'voice';
 const CHANNEL_TYPE_CATEGORY = 'category';
 
+function loadCollapsedMap(serverId) {
+  try {
+    const raw = localStorage.getItem(`hush:categories-collapsed:${serverId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCollapsedMap(serverId, map) {
+  try {
+    localStorage.setItem(`hush:categories-collapsed:${serverId}`, JSON.stringify(map));
+  } catch {
+    // localStorage not available — silently ignore
+  }
+}
+
 // Sentinel droppable ID for the uncategorized bucket. Using useSortable with this
 // ID (disabled, so non-draggable) lets the null group participate in pointerWithin
 // detection identically to named categories — its container rect gets registered,
@@ -482,8 +499,7 @@ function InviteModal({ getToken, serverId, onClose }) {
   );
 }
 
-function CategorySection({ group, activeChannelId, onChannelSelect, voiceParticipantCounts, isAdmin, onDeleteCategory, onDeleteChannel }) {
-  const [collapsed, setCollapsed] = useState(false);
+function CategorySection({ group, collapsed = false, onToggleCollapsed, activeChannelId, onChannelSelect, voiceParticipantCounts, isAdmin, onDeleteCategory, onDeleteChannel }) {
   const [hovered, setHovered] = useState(false);
   const channelIds = useMemo(() => group.channels.map((ch) => ch.id), [group.channels]);
   const isCategory = group.key !== null;
@@ -573,7 +589,7 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
         <button
           type="button"
           style={{ ...styles.categoryHeader, padding: 0, flex: 1, background: 'none', border: 'none', fontFamily: 'var(--font-sans)', color: 'inherit' }}
-          onClick={() => setCollapsed((c) => !c)}
+          onClick={() => onToggleCollapsed?.()}
         >
           <svg
             width="12"
@@ -795,6 +811,20 @@ export default function ChannelList({
   const [localChannels, setLocalChannels] = useState(channels ?? []);
   const isAdmin = myRole === 'admin';
   const serverMenuRef = useRef(null);
+
+  const [collapsedMap, setCollapsedMap] = useState(() => loadCollapsedMap(serverId));
+
+  useEffect(() => {
+    setCollapsedMap(loadCollapsedMap(serverId));
+  }, [serverId]);
+
+  const handleToggleCollapsed = useCallback((categoryKey) => {
+    setCollapsedMap((prev) => {
+      const next = { ...prev, [categoryKey]: !prev[categoryKey] };
+      saveCollapsedMap(serverId, next);
+      return next;
+    });
+  }, [serverId]);
 
   // Keep local list in sync with server-sourced prop (after API refresh or initial load)
   useEffect(() => { setLocalChannels(channels ?? []); }, [channels]);
@@ -1133,6 +1163,8 @@ export default function ChannelList({
               <CategorySection
                 key={group.key ?? 'uncategorized'}
                 group={group}
+                collapsed={group.key !== null ? (collapsedMap[group.key] ?? false) : undefined}
+                onToggleCollapsed={group.key !== null ? () => handleToggleCollapsed(group.key) : undefined}
                 activeChannelId={activeChannelId}
                 onChannelSelect={onChannelSelect}
                 voiceParticipantCounts={voiceParticipantCounts}
