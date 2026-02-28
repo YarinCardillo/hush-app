@@ -84,7 +84,7 @@ export default function TextChannel({
           </button>
         )}
       </header>
-      <div style={styles.main}>
+      <div style={{ ...styles.main, paddingRight: showMembers ? 240 : 0 }}>
         <Chat
           channelId={channel.id}
           currentUserId={currentUserId}

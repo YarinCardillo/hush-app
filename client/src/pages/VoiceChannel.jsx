@@ -43,14 +43,12 @@ const styles = {
     minWidth: 0,
   },
   roomTitle: {
-    fontSize: '0.8rem',
+    fontSize: '0.9rem',
     fontWeight: 500,
-    color: 'var(--hush-text-secondary)',
-    padding: '4px 8px',
+    color: 'var(--hush-text)',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
-    maxWidth: '200px',
   },
   headerBadge: {
     display: 'inline-flex',
@@ -83,6 +81,17 @@ const styles = {
     fontFamily: 'var(--font-sans)',
     padding: '4px 8px',
     borderRadius: 'var(--radius-sm)',
+  },
+  membersToggle: {
+    padding: '4px 8px',
+    fontSize: '0.8rem',
+    fontFamily: 'var(--font-sans)',
+    background: 'none',
+    border: '1px solid var(--hush-border)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--hush-text-secondary)',
+    cursor: 'pointer',
+    flexShrink: 0,
   },
   main: {
     flex: 1,
@@ -152,7 +161,7 @@ function getFriendlyRoomError(errorMessage) {
  * Voice channel view: LiveKit room (server-{serverId}-channel-{channel.id}), video grid, controls, chat sidebar.
  * Used by ServerLayout when currentChannel.type === 'voice'.
  */
-export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], showMembers = false, onToggleMembers }) {
+export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], showMembers = false, onToggleMembers, onLeave }) {
   const navigate = useNavigate();
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile';
@@ -425,7 +434,11 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     } catch (err) {
       console.error('[VoiceChannel] Leave error:', err);
     }
-    navigate(`/server/${serverId}`);
+    if (onLeave) {
+      onLeave();
+    } else {
+      navigate(`/server/${serverId}`);
+    }
   };
 
   if (error) {
@@ -541,7 +554,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
           </button>
           {onToggleMembers && (
             <button
-              style={styles.participantCount}
+              style={styles.membersToggle}
               title="Members"
               onClick={onToggleMembers}
               aria-pressed={showMembers}
@@ -552,7 +565,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
         </div>
       </div>
 
-      <div style={styles.main}>
+      <div style={{ ...styles.main, paddingRight: showMembers ? 240 : 0 }}>
         <VideoGrid
           localTracks={localTracks}
           remoteTracks={remoteTracks}

@@ -19,6 +19,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { getServer, createChannel, createInvite, moveChannel, deleteChannel } from '../lib/api';
 import modalStyles from './modalStyles';
+import ConfirmModal from './ConfirmModal';
 
 const CHANNEL_TYPE_TEXT = 'text';
 const CHANNEL_TYPE_VOICE = 'voice';
@@ -435,7 +436,7 @@ function InviteModal({ getToken, serverId, onClose }) {
   );
 }
 
-function CategorySection({ group, activeChannelId, onChannelSelect, voiceParticipantCounts, isAdmin, onDeleteCategory }) {
+function CategorySection({ group, activeChannelId, onChannelSelect, voiceParticipantCounts, isAdmin, onDeleteCategory, onDeleteChannel }) {
   const [collapsed, setCollapsed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const channelIds = useMemo(() => group.channels.map((ch) => ch.id), [group.channels]);
@@ -468,6 +469,7 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
             onSelect={() => onChannelSelect(ch)}
             participantCount={isVoice && rawCount > 0 ? rawCount : null}
             isAdmin={isAdmin}
+            onDelete={() => onDeleteChannel?.(ch)}
           />
         );
       })}
@@ -547,7 +549,7 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', color: 'inherit', display: 'flex', alignItems: 'center', opacity: 0 }}
             onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
             onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
-            onClick={() => onDeleteCategory?.(group.key)}
+            onClick={() => onDeleteCategory?.(group.key, group.label)}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="3 6 5 6 21 6" />
@@ -563,7 +565,7 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
   );
 }
 
-function ChannelRowContent({ channel, isActive, onSelect, participantCount, dragStyle, dragRef, dragListeners, isDragging }) {
+function ChannelRowContent({ channel, isActive, onSelect, participantCount, dragStyle, dragRef, dragListeners, isDragging, isAdmin, onDelete }) {
   const [hover, setHover] = useState(false);
   const isVoice = channel.type === CHANNEL_TYPE_VOICE;
 
@@ -605,11 +607,28 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, drag
       {isVoice && participantCount != null && (
         <span style={styles.voiceCount}>{participantCount}</span>
       )}
+      {isAdmin && hover && (
+        <button
+          type="button"
+          title="Delete channel"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'var(--hush-danger)', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0.7 }}
+          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.7'; }}
+          onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v6M14 11v6" />
+            <path d="M9 6V4h6v2" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
 
-function SortableChannelRow({ channel, isActive, onSelect, participantCount, isAdmin }) {
+function SortableChannelRow({ channel, isActive, onSelect, participantCount, isAdmin, onDelete }) {
   const {
     attributes,
     listeners,
@@ -634,6 +653,8 @@ function SortableChannelRow({ channel, isActive, onSelect, participantCount, isA
       dragRef={setNodeRef}
       dragListeners={isAdmin ? { ...attributes, ...listeners } : {}}
       isDragging={isDragging}
+      isAdmin={isAdmin}
+      onDelete={onDelete}
     />
   );
 }
@@ -712,6 +733,7 @@ export default function ChannelList({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null); // { id, name, isCategory }
   const [activeId, setActiveId] = useState(null);
   const [localChannels, setLocalChannels] = useState(channels ?? []);
   const isAdmin = myRole === 'admin';
@@ -723,17 +745,20 @@ export default function ChannelList({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
-  const handleDeleteCategory = useCallback(async (categoryId) => {
+  const handleDeleteConfirmed = useCallback(async () => {
+    if (!confirmDelete) return;
     const token = getToken();
-    if (!token) return;
-    try {
-      await deleteChannel(token, categoryId);
-      const data = await getServer(token, serverId);
-      onChannelsUpdated?.(data);
-    } catch {
-      // Delete failed — server state unchanged
+    if (token) {
+      try {
+        await deleteChannel(token, confirmDelete.id);
+        const data = await getServer(token, serverId);
+        onChannelsUpdated?.(data);
+      } catch {
+        // Delete failed — server state unchanged
+      }
     }
-  }, [getToken, serverId, onChannelsUpdated]);
+    setConfirmDelete(null);
+  }, [confirmDelete, getToken, serverId, onChannelsUpdated]);
 
   const handleCreated = useCallback(async () => {
     const token = getToken();
@@ -967,7 +992,8 @@ export default function ChannelList({
                 onChannelSelect={onChannelSelect}
                 voiceParticipantCounts={voiceParticipantCounts}
                 isAdmin={isAdmin}
-                onDeleteCategory={handleDeleteCategory}
+                onDeleteCategory={(id, name) => setConfirmDelete({ id, name, isCategory: true })}
+                onDeleteChannel={(ch) => setConfirmDelete({ id: ch.id, name: ch.name, isCategory: false })}
               />
             ))}
           </SortableContext>
@@ -1023,6 +1049,15 @@ export default function ChannelList({
           getToken={getToken}
           serverId={serverId}
           onClose={() => setShowInviteModal(false)}
+        />
+      )}
+      {confirmDelete && (
+        <ConfirmModal
+          title={confirmDelete.isCategory ? 'Delete category' : 'Delete channel'}
+          message={`Are you sure you want to delete "${confirmDelete.name}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirmed}
+          onCancel={() => setConfirmDelete(null)}
         />
       )}
     </div>

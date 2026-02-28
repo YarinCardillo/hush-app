@@ -46,14 +46,12 @@ const styles = {
     minWidth: 0,
   },
   roomTitle: {
-    fontSize: '0.8rem',
+    fontSize: '0.9rem',
     fontWeight: 500,
-    color: 'var(--hush-text-secondary)',
-    padding: '4px 8px',
+    color: 'var(--hush-text)',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
-    maxWidth: '200px',
   },
   headerBadge: {
     display: 'inline-flex',
