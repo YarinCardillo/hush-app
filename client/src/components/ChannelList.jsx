@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -17,9 +17,10 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { getServer, createChannel, createInvite, moveChannel, deleteChannel } from '../lib/api';
+import { getServer, createChannel, createInvite, moveChannel, deleteChannel, leaveServer } from '../lib/api';
 import modalStyles from './modalStyles';
 import ConfirmModal from './ConfirmModal';
+import ServerSettingsModal from './ServerSettingsModal';
 
 const CHANNEL_TYPE_TEXT = 'text';
 const CHANNEL_TYPE_VOICE = 'voice';
@@ -34,8 +35,8 @@ const UNCATEGORIZED_SENTINEL = '__uncategorized__';
 
 const styles = {
   panel: {
-    width: '260px',
-    minWidth: '260px',
+    width: '100%',
+    minWidth: 0,
     background: 'var(--hush-surface)',
     borderRight: '1px solid transparent',
     display: 'flex',
@@ -110,14 +111,59 @@ const styles = {
     color: 'var(--hush-text-muted)',
   },
   addBtn: {
-    padding: '4px 8px',
+    padding: '4px',
+    width: '24px',
+    height: '24px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     background: 'none',
     border: 'none',
     color: 'var(--hush-text-muted)',
     cursor: 'pointer',
-    fontSize: '0.8rem',
+    flexShrink: 0,
+  },
+  serverNameBtn: {
+    background: 'none',
+    border: 'none',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    cursor: 'pointer',
+    padding: '0',
+    minWidth: 0,
+    flex: 1,
     fontFamily: 'var(--font-sans)',
   },
+  serverMenu: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    background: 'var(--hush-elevated)',
+    border: '1px solid var(--hush-border)',
+    borderRadius: 'var(--radius-md)',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+    zIndex: 100,
+    padding: '4px',
+    marginTop: '4px',
+  },
+  serverMenuItem: (danger) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    width: '100%',
+    padding: '8px 10px',
+    background: 'none',
+    border: 'none',
+    borderRadius: 'var(--radius-sm)',
+    color: danger ? 'var(--hush-danger)' : 'var(--hush-text-secondary)',
+    fontSize: '0.85rem',
+    fontFamily: 'var(--font-sans)',
+    cursor: 'pointer',
+    textAlign: 'left',
+    transition: 'background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out)',
+  }),
 };
 
 function groupChannelsByParent(channels) {
@@ -546,7 +592,10 @@ function CategorySection({ group, activeChannelId, onChannelSelect, voicePartici
           <button
             type="button"
             title="Delete category"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', color: 'inherit', display: 'flex', alignItems: 'center', opacity: 0 }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px',
+              color: 'inherit', display: 'flex', alignItems: 'center', opacity: 0,
+            }}
             onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
             onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
             onClick={() => onDeleteCategory?.(group.key, group.label)}
@@ -607,13 +656,16 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, drag
       {isVoice && participantCount != null && (
         <span style={styles.voiceCount}>{participantCount}</span>
       )}
-      {isAdmin && hover && (
+      {isAdmin && (
         <button
           type="button"
           title="Delete channel"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'var(--hush-danger)', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0.7 }}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px',
+            color: 'var(--hush-danger)', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0,
+          }}
           onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.7'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
           onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -729,21 +781,52 @@ export default function ChannelList({
   onChannelSelect,
   onChannelsUpdated,
   voiceParticipantCounts,
+  onLeaveServer,
+  onDeleteServer,
 }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showServerMenu, setShowServerMenu] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null); // { id, name, isCategory }
   const [activeId, setActiveId] = useState(null);
   const [localChannels, setLocalChannels] = useState(channels ?? []);
   const isAdmin = myRole === 'admin';
+  const serverMenuRef = useRef(null);
 
   // Keep local list in sync with server-sourced prop (after API refresh or initial load)
   useEffect(() => { setLocalChannels(channels ?? []); }, [channels]);
 
+  // Close server dropdown on outside click
+  useEffect(() => {
+    if (!showServerMenu) return;
+    const handleClick = (e) => {
+      if (serverMenuRef.current && !serverMenuRef.current.contains(e.target)) {
+        setShowServerMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showServerMenu]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
+
+  const handleLeaveConfirmed = useCallback(async () => {
+    setConfirmLeave(false);
+    const token = getToken();
+    if (token) {
+      try {
+        await leaveServer(token, serverId);
+        onLeaveServer?.();
+      } catch {
+        // Leave failed — stay on server
+      }
+    }
+  }, [getToken, serverId, onLeaveServer]);
 
   const handleDeleteConfirmed = useCallback(async () => {
     if (!confirmDelete) return;
@@ -936,22 +1019,33 @@ export default function ChannelList({
 
   return (
     <div style={{ ...styles.panel, ...(activeId ? { userSelect: 'none' } : undefined) }}>
-      <div style={styles.header}>
-        <span style={styles.serverName}>{serverName ?? 'Server'}</span>
-        <div style={{ display: 'flex', gap: '4px' }}>
-          <button
-            type="button"
-            style={styles.addBtn}
-            title="Invite people"
-            onClick={() => setShowInviteModal(true)}
+      <div style={{ ...styles.header, position: 'relative' }} ref={serverMenuRef}>
+        <button
+          type="button"
+          style={styles.serverNameBtn}
+          onClick={() => setShowServerMenu((v) => !v)}
+          title="Server menu"
+        >
+          <span style={styles.serverName}>{serverName ?? 'Server'}</span>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            style={{
+              flexShrink: 0,
+              color: 'var(--hush-text-muted)',
+              transform: showServerMenu ? 'rotate(180deg)' : 'none',
+              transition: 'transform var(--duration-fast) var(--ease-out)',
+            }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <line x1="19" y1="8" x2="19" y2="14" />
-              <line x1="22" y1="11" x2="16" y2="11" />
-            </svg>
-          </button>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
           {isAdmin && (
             <>
               <button
@@ -970,11 +1064,62 @@ export default function ChannelList({
                 title="Create channel"
                 onClick={() => setShowCreateModal(true)}
               >
-                +
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
               </button>
             </>
           )}
         </div>
+
+        {showServerMenu && (
+          <div style={styles.serverMenu}>
+            <button
+              type="button"
+              style={styles.serverMenuItem(false)}
+              onClick={() => { setShowServerMenu(false); setShowInviteModal(true); }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-hover)'; e.currentTarget.style.color = 'var(--hush-text)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--hush-text-secondary)'; }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <line x1="19" y1="8" x2="19" y2="14" />
+                <line x1="22" y1="11" x2="16" y2="11" />
+              </svg>
+              Invite People
+            </button>
+            <button
+              type="button"
+              style={styles.serverMenuItem(false)}
+              onClick={() => { setShowServerMenu(false); setShowSettings(true); }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-hover)'; e.currentTarget.style.color = 'var(--hush-text)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--hush-text-secondary)'; }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              Server Settings
+            </button>
+            <div style={{ height: '1px', background: 'var(--hush-border)', margin: '4px 0' }} />
+            <button
+              type="button"
+              style={styles.serverMenuItem(true)}
+              onClick={() => { setShowServerMenu(false); setConfirmLeave(true); }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--hush-danger) 12%, transparent)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              Leave Server
+            </button>
+          </div>
+        )}
       </div>
       <DndContext
         sensors={sensors}
@@ -1058,6 +1203,26 @@ export default function ChannelList({
           confirmLabel="Delete"
           onConfirm={handleDeleteConfirmed}
           onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+      {confirmLeave && (
+        <ConfirmModal
+          title="Leave server"
+          message={`Leave "${serverName}"? You'll need an invite to rejoin.`}
+          confirmLabel="Leave"
+          onConfirm={handleLeaveConfirmed}
+          onCancel={() => setConfirmLeave(false)}
+        />
+      )}
+      {showSettings && (
+        <ServerSettingsModal
+          getToken={getToken}
+          serverId={serverId}
+          serverName={serverName}
+          isAdmin={isAdmin}
+          onClose={() => setShowSettings(false)}
+          onLeaveServer={onLeaveServer}
+          onDeleteServer={onDeleteServer}
         />
       )}
     </div>

@@ -10,6 +10,7 @@ import { createWsClient } from '../lib/ws';
 import { useAuth } from '../contexts/AuthContext';
 import { JWT_KEY } from '../hooks/useAuth';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { useSidebarResize } from '../hooks/useSidebarResize';
 import ConfirmModal from '../components/ConfirmModal';
 
 const layoutStyles = {
@@ -66,6 +67,35 @@ const layoutStyles = {
     fontSize: '0.9rem',
     textAlign: 'center',
   },
+  resizeHandle: {
+    width: '4px',
+    flexShrink: 0,
+    cursor: 'col-resize',
+    background: 'transparent',
+    transition: 'background var(--duration-fast) var(--ease-out)',
+    zIndex: 10,
+  },
+  channelAreaHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 16px',
+    height: '48px',
+    background: 'var(--hush-surface)',
+    borderBottom: '1px solid var(--hush-border)',
+    flexShrink: 0,
+  },
+  membersToggle: {
+    padding: '4px 8px',
+    fontSize: '0.8rem',
+    fontFamily: 'var(--font-sans)',
+    background: 'none',
+    border: '1px solid var(--hush-border)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--hush-text-secondary)',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
 };
 
 function getToken() {
@@ -93,6 +123,8 @@ export default function ServerLayout() {
   // Member IDs captured at join time for the voice channel's server.
   // When on a different server we can't derive them from current `members`.
   const activeVoiceMemberIdsRef = useRef([]);
+
+  const { width: sidebarWidth, handleMouseDown: handleSidebarResize } = useSidebarResize();
 
   const currentUserId = user?.id ?? '';
   const isMobile = breakpoint === 'mobile';
@@ -209,6 +241,14 @@ export default function ServerLayout() {
     navigate(`/server/${serverId}`);
   }, [navigate, serverId]);
 
+  // Called after the user successfully leaves or deletes the server.
+  const handleServerLeft = useCallback(() => {
+    setActiveVoiceChannel(null);
+    setActiveVoiceServerId(null);
+    activeVoiceMemberIdsRef.current = [];
+    navigate('/');
+  }, [navigate]);
+
   return (
     <div style={layoutStyles.root}>
       <ServerList
@@ -217,18 +257,33 @@ export default function ServerLayout() {
         onServerSelect={handleServerSelect}
       />
       {serverId && (
-        <ChannelList
-          getToken={getToken}
-          serverId={serverId}
-          serverName={serverData?.server?.name}
-          channels={serverData?.channels}
-          myRole={serverData?.myRole}
-          activeChannelId={channelId}
-          onChannelSelect={handleChannelSelect}
-          onChannelsUpdated={handleChannelsUpdated}
-          // TODO(Phase-E.5, 2026-02-25): Wire up real voice participant counts from LiveKit
-          voiceParticipantCounts={null}
-        />
+        <>
+          <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
+            <ChannelList
+              getToken={getToken}
+              serverId={serverId}
+              serverName={serverData?.server?.name}
+              channels={serverData?.channels}
+              myRole={serverData?.myRole}
+              activeChannelId={channelId}
+              onChannelSelect={handleChannelSelect}
+              onChannelsUpdated={handleChannelsUpdated}
+              // TODO(Phase-E.5, 2026-02-25): Wire up real voice participant counts from LiveKit
+              voiceParticipantCounts={null}
+              onLeaveServer={handleServerLeft}
+              onDeleteServer={handleServerLeft}
+            />
+          </div>
+          <div
+            style={layoutStyles.resizeHandle}
+            onMouseDown={handleSidebarResize}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-border)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize channel list"
+          />
+        </>
       )}
       <div style={layoutStyles.main}>
         <div style={layoutStyles.contentRow}>
@@ -248,6 +303,21 @@ export default function ServerLayout() {
                   onLeave={handleVoiceLeave}
                 />
               </div>
+            )}
+
+            {/* Persistent header for non-text, non-voice states (keeps Members button visible). */}
+            {!isViewingVoice && serverId && currentChannel?.type !== 'text' && (
+              <header style={layoutStyles.channelAreaHeader}>
+                <div />
+                <button
+                  type="button"
+                  style={layoutStyles.membersToggle}
+                  onClick={() => setShowMembers((v) => !v)}
+                  aria-pressed={showMembers}
+                >
+                  Members
+                </button>
+              </header>
             )}
 
             {!isViewingVoice && (
