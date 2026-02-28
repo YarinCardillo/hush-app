@@ -33,7 +33,7 @@ export default function ConfirmModal({ title, message, confirmLabel = 'Confirm',
       >
         <div style={modalStyles.title}>{title}</div>
         {message && (
-          <p style={{ color: 'var(--hush-text-secondary)', fontSize: '0.85rem', margin: '8px 0 0', lineHeight: 1.5 }}>
+          <p style={{ color: 'var(--hush-text-secondary)', fontSize: '0.85rem', margin: '8px 0 0', lineHeight: 1.5, overflowWrap: 'break-word', wordBreak: 'break-word' }}>
             {message}
           </p>
         )}
