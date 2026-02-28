@@ -7,9 +7,13 @@ const MAX_WIDTH = 400;
 
 export function useSidebarResize() {
   const [width, setWidth] = useState(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    const parsed = stored ? parseInt(stored, 10) : NaN;
-    return Number.isNaN(parsed) ? DEFAULT_WIDTH : Math.min(Math.max(parsed, MIN_WIDTH), MAX_WIDTH);
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const parsed = stored ? parseInt(stored, 10) : NaN;
+      return Number.isNaN(parsed) ? DEFAULT_WIDTH : Math.min(Math.max(parsed, MIN_WIDTH), MAX_WIDTH);
+    } catch {
+      return DEFAULT_WIDTH;
+    }
   });
 
   const dragState = useRef(null); // { startX, startWidth }
