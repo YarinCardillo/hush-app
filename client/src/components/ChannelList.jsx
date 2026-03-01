@@ -127,6 +127,22 @@ const styles = {
     fontSize: '0.75rem',
     color: 'var(--hush-text-muted)',
   },
+  voiceParticipantRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '2px 0 2px 28px',
+    fontSize: '0.75rem',
+    color: 'var(--hush-text-muted)',
+  },
+  voiceParticipantDot: {
+    width: '5px',
+    height: '5px',
+    borderRadius: '50%',
+    background: 'var(--hush-live)',
+    boxShadow: '0 0 4px var(--hush-live-glow)',
+    flexShrink: 0,
+  },
   addBtn: {
     padding: '4px',
     width: '24px',
@@ -499,7 +515,7 @@ function InviteModal({ getToken, serverId, onClose }) {
   );
 }
 
-function CategorySection({ group, collapsed = false, onToggleCollapsed, activeChannelId, onChannelSelect, voiceParticipantCounts, isAdmin, onDeleteCategory, onDeleteChannel }) {
+function CategorySection({ group, collapsed = false, onToggleCollapsed, activeChannelId, onChannelSelect, voiceParticipants, isAdmin, onDeleteCategory, onDeleteChannel }) {
   const [hovered, setHovered] = useState(false);
   const channelIds = useMemo(() => group.channels.map((ch) => ch.id), [group.channels]);
   const isCategory = group.key !== null;
@@ -522,14 +538,15 @@ function CategorySection({ group, collapsed = false, onToggleCollapsed, activeCh
       {group.channels.map((ch) => {
         const isActive = activeChannelId === ch.id;
         const isVoice = ch.type === CHANNEL_TYPE_VOICE;
-        const rawCount = voiceParticipantCounts?.get(ch.id) ?? 0;
+        const channelParticipants = isVoice ? (voiceParticipants?.get(ch.id) ?? []) : [];
         return (
           <SortableChannelRow
             key={ch.id}
             channel={ch}
             isActive={isActive}
             onSelect={() => onChannelSelect(ch)}
-            participantCount={isVoice && rawCount > 0 ? rawCount : null}
+            participantCount={channelParticipants.length > 0 ? channelParticipants.length : null}
+            voiceParticipants={channelParticipants}
             isAdmin={isAdmin}
             onDelete={() => onDeleteChannel?.(ch)}
           />
@@ -630,73 +647,81 @@ function CategorySection({ group, collapsed = false, onToggleCollapsed, activeCh
   );
 }
 
-function ChannelRowContent({ channel, isActive, onSelect, participantCount, dragStyle, dragRef, dragListeners, isDragging, isAdmin, onDelete }) {
+function ChannelRowContent({ channel, isActive, onSelect, participantCount, voiceParticipants = [], dragStyle, dragRef, dragListeners, isDragging, isAdmin, onDelete }) {
   const [hover, setHover] = useState(false);
   const isVoice = channel.type === CHANNEL_TYPE_VOICE;
 
   return (
-    <div
-      ref={dragRef}
-      role="button"
-      tabIndex={0}
-      style={{
-        ...styles.channelRow(isActive),
-        ...(hover && !isActive ? styles.channelRowHover : {}),
-        ...dragStyle,
-        opacity: isDragging ? 0.4 : 1,
-      }}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      {...dragListeners}
-    >
-      <span style={styles.channelIcon} aria-hidden>
-        {isVoice ? (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-            <line x1="12" y1="19" x2="12" y2="23" />
-            <line x1="8" y1="23" x2="16" y2="23" />
-          </svg>
-        ) : (
-          <span style={{ opacity: 0.8 }}>#</span>
+    <div>
+      <div
+        ref={dragRef}
+        role="button"
+        tabIndex={0}
+        style={{
+          ...styles.channelRow(isActive),
+          ...(hover && !isActive ? styles.channelRowHover : {}),
+          ...dragStyle,
+          opacity: isDragging ? 0.4 : 1,
+        }}
+        onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        {...dragListeners}
+      >
+        <span style={styles.channelIcon} aria-hidden>
+          {isVoice ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          ) : (
+            <span style={{ opacity: 0.8 }}>#</span>
+          )}
+        </span>
+        <span style={styles.channelName}>{channel.name}</span>
+        {isVoice && participantCount != null && (
+          <span style={styles.voiceCount}>{participantCount}</span>
         )}
-      </span>
-      <span style={styles.channelName}>{channel.name}</span>
-      {isVoice && participantCount != null && (
-        <span style={styles.voiceCount}>{participantCount}</span>
-      )}
-      {isAdmin && (
-        <button
-          type="button"
-          title="Delete channel"
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px',
-            color: 'var(--hush-danger)', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
-          onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6l-1 14H6L5 6" />
-            <path d="M10 11v6M14 11v6" />
-            <path d="M9 6V4h6v2" />
-          </svg>
-        </button>
-      )}
+        {isAdmin && (
+          <button
+            type="button"
+            title="Delete channel"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px',
+              color: 'var(--hush-danger)', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
+            onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14H6L5 6" />
+              <path d="M10 11v6M14 11v6" />
+              <path d="M9 6V4h6v2" />
+            </svg>
+          </button>
+        )}
+      </div>
+      {voiceParticipants.length > 0 && voiceParticipants.map((p) => (
+        <div key={p.userId} style={styles.voiceParticipantRow}>
+          <span style={styles.voiceParticipantDot} />
+          <span>{p.displayName}</span>
+        </div>
+      ))}
     </div>
   );
 }
 
-function SortableChannelRow({ channel, isActive, onSelect, participantCount, isAdmin, onDelete }) {
+function SortableChannelRow({ channel, isActive, onSelect, participantCount, voiceParticipants, isAdmin, onDelete }) {
   const {
     attributes,
     listeners,
@@ -717,6 +742,7 @@ function SortableChannelRow({ channel, isActive, onSelect, participantCount, isA
       isActive={isActive}
       onSelect={onSelect}
       participantCount={participantCount}
+      voiceParticipants={voiceParticipants}
       dragStyle={style}
       dragRef={setNodeRef}
       dragListeners={isAdmin ? { ...attributes, ...listeners } : {}}
@@ -727,13 +753,14 @@ function SortableChannelRow({ channel, isActive, onSelect, participantCount, isA
   );
 }
 
-function ChannelRow({ channel, isActive, onSelect, participantCount }) {
+function ChannelRow({ channel, isActive, onSelect, participantCount, voiceParticipants }) {
   return (
     <ChannelRowContent
       channel={channel}
       isActive={isActive}
       onSelect={onSelect}
       participantCount={participantCount}
+      voiceParticipants={voiceParticipants}
       dragStyle={{}}
       isDragging={false}
     />
@@ -796,7 +823,7 @@ export default function ChannelList({
   activeChannelId,
   onChannelSelect,
   onChannelsUpdated,
-  voiceParticipantCounts,
+  voiceParticipants,
   onLeaveServer,
   onDeleteServer,
 }) {
@@ -1167,7 +1194,7 @@ export default function ChannelList({
                 onToggleCollapsed={group.key !== null ? () => handleToggleCollapsed(group.key) : undefined}
                 activeChannelId={activeChannelId}
                 onChannelSelect={onChannelSelect}
-                voiceParticipantCounts={voiceParticipantCounts}
+                voiceParticipants={voiceParticipants}
                 isAdmin={isAdmin}
                 onDeleteCategory={(id, name) => setConfirmDelete({ id, name, isCategory: true })}
                 onDeleteChannel={(ch) => setConfirmDelete({ id: ch.id, name: ch.name, isCategory: false })}
@@ -1187,7 +1214,7 @@ export default function ChannelList({
               onSelect={() => {}}
               participantCount={
                 draggedChannel.type === CHANNEL_TYPE_VOICE
-                  ? (voiceParticipantCounts?.get(draggedChannel.id) ?? 0)
+                  ? ((voiceParticipants?.get(draggedChannel.id) ?? []).length || null)
                   : null
               }
             />
@@ -1253,7 +1280,6 @@ export default function ChannelList({
           serverName={serverName}
           isAdmin={isAdmin}
           onClose={() => setShowSettings(false)}
-          onLeaveServer={onLeaveServer}
           onDeleteServer={onDeleteServer}
         />
       )}

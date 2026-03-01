@@ -119,15 +119,24 @@ export default function ServerLayout() {
   // Persistent voice session — survives channel/server navigation until Leave is clicked.
   const [activeVoiceChannel, setActiveVoiceChannel] = useState(null);
   const [activeVoiceServerId, setActiveVoiceServerId] = useState(null);
+  // Increment on each voice join so VoiceChannel remounts and effect (connectRoom) runs on re-entry.
+  const [voiceMountKey, setVoiceMountKey] = useState(0);
   const [pendingVoiceSwitch, setPendingVoiceSwitch] = useState(null); // channel to switch to after confirmation
   // Member IDs captured at join time for the voice channel's server.
   // When on a different server we can't derive them from current `members`.
   const activeVoiceMemberIdsRef = useRef([]);
+  // Set in handleVoiceLeave so the next onOrbPhaseChange('idle') from unmounting VoiceChannel
+  // is accepted (isViewingVoice is still true until state commits).
+  const leavingVoiceRef = useRef(false);
 
   // Orb phase is lifted here so a single persistent <HushOrb> element can smoothly
   // transition between voice states (idle/waiting/activating) and the idle placeholder
   // without unmounting and remounting across navigation.
   const [orbPhase, setOrbPhase] = useState('idle');
+
+  // Voice participants per channel (server-authoritative via LiveKit webhooks).
+  // Map<channelId, Array<{ userId, displayName }>>
+  const [voiceParticipants, setVoiceParticipants] = useState(() => new Map());
 
   const { width: sidebarWidth, handleMouseDown: handleSidebarResize } = useSidebarResize();
 
@@ -136,6 +145,31 @@ export default function ServerLayout() {
 
   // Whether the user is currently viewing the active voice channel.
   const isViewingVoice = activeVoiceChannel != null && channelId === activeVoiceChannel.id;
+
+  // When not viewing voice or when leaving: always show idle. Prevents hidden VoiceChannel
+  // from overwriting with waiting/activating, and ensures orb resets on leave.
+  const handleOrbPhaseChange = useCallback((phase) => {
+    setOrbPhase((prev) => {
+      if (!isViewingVoice) return 'idle';
+      if (leavingVoiceRef.current) return 'idle';
+      const guard = phase === 'idle' && (prev === 'waiting' || prev === 'activating');
+      const next = guard ? prev : phase;
+      // #region agent log
+      fetch("http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"9c0847"},body:JSON.stringify({sessionId:"9c0847",location:"ServerLayout.jsx:handleOrbPhaseChange",message:"orb phase update",data:{phase,prev,next,isViewingVoice,leaving:!!leavingVoiceRef.current},timestamp:Date.now(),hypothesisId:"D"})}).catch(()=>{});
+      // #endregion
+      if (guard) return prev;
+      if (phase === 'idle') leavingVoiceRef.current = false;
+      return phase;
+    });
+  }, [isViewingVoice]);
+
+  // When not viewing the voice channel (navigated away or left), show placeholder orb.
+  useEffect(() => {
+    if (!isViewingVoice) {
+      leavingVoiceRef.current = false;
+      setOrbPhase('idle');
+    }
+  }, [isViewingVoice]);
 
   // Member IDs to pass to VoiceChannel: live when on same server, captured otherwise.
   const memberIds = members.map((m) => m.userId);
@@ -161,6 +195,40 @@ export default function ServerLayout() {
     const handler = (data) => setOnlineUserIds(new Set(data.user_ids ?? []));
     wsClient.on('presence.update', handler);
     return () => wsClient.off('presence.update', handler);
+  }, [wsClient]);
+
+  // Subscribe to server-level WS events for voice state updates.
+  useEffect(() => {
+    if (!wsClient || !serverId) return;
+    const subscribe = () => {
+      try { wsClient.send('subscribe.server', { server_id: serverId }); } catch { /* not connected yet */ }
+    };
+    subscribe();
+    wsClient.on('open', subscribe);
+    return () => {
+      wsClient.off('open', subscribe);
+      try { wsClient.send('unsubscribe.server', { server_id: serverId }); } catch { /* disconnected */ }
+    };
+  }, [wsClient, serverId]);
+
+  // Listen for voice_state_update events from backend (LiveKit webhook-driven).
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      const { channel_id, participants } = data;
+      if (!channel_id) return;
+      setVoiceParticipants((prev) => {
+        const next = new Map(prev);
+        if (!participants || participants.length === 0) {
+          next.delete(channel_id);
+        } else {
+          next.set(channel_id, participants);
+        }
+        return next;
+      });
+    };
+    wsClient.on('voice_state_update', handler);
+    return () => wsClient.off('voice_state_update', handler);
   }, [wsClient]);
 
   // TODO(Phase-F, 2026-02-26): Subscribe to membership-change WS events to refresh members in real-time.
@@ -204,6 +272,7 @@ export default function ServerLayout() {
   // channelAreaHeader shows before VoiceChannel's header takes over.
   if (currentChannel?.type === 'voice' && currentChannel.id !== activeVoiceChannel?.id) {
     activeVoiceMemberIdsRef.current = memberIds;
+    setVoiceMountKey((k) => k + 1);
     setActiveVoiceChannel(currentChannel);
     setActiveVoiceServerId(serverId);
   }
@@ -224,6 +293,7 @@ export default function ServerLayout() {
     navigate(`/server/${serverId}/channel/${channel.id}`);
     if (channel.type === 'voice') {
       activeVoiceMemberIdsRef.current = memberIds;
+      setVoiceMountKey((k) => k + 1);
       setActiveVoiceChannel(channel);
       setActiveVoiceServerId(serverId);
     }
@@ -235,6 +305,7 @@ export default function ServerLayout() {
     if (!channel) return;
     navigate(`/server/${serverId}/channel/${channel.id}`);
     activeVoiceMemberIdsRef.current = memberIds;
+    setVoiceMountKey((k) => k + 1);
     setActiveVoiceChannel(channel);
     setActiveVoiceServerId(serverId);
   }, [pendingVoiceSwitch, serverId, memberIds, navigate]);
@@ -244,6 +315,10 @@ export default function ServerLayout() {
   };
 
   const handleVoiceLeave = useCallback(() => {
+    // Voice participant state is now server-authoritative (LiveKit webhook).
+    // No client-side count manipulation needed.
+    // So the next onOrbPhaseChange('idle') from unmounting VoiceChannel is accepted.
+    leavingVoiceRef.current = true;
     // Reset orbPhase before unmounting VoiceChannel so the persistent HushOrb
     // can transition smoothly from the current phase (e.g. waiting) to idle.
     setOrbPhase('idle');
@@ -281,8 +356,7 @@ export default function ServerLayout() {
               activeChannelId={channelId}
               onChannelSelect={handleChannelSelect}
               onChannelsUpdated={handleChannelsUpdated}
-              // TODO(Phase-E.5, 2026-02-25): Wire up real voice participant counts from LiveKit
-              voiceParticipantCounts={null}
+              voiceParticipants={voiceParticipants}
               onLeaveServer={handleServerLeft}
               onDeleteServer={handleServerLeft}
             />
@@ -305,7 +379,7 @@ export default function ServerLayout() {
             {activeVoiceChannel && (
               <div style={layoutStyles.voiceWrapper(isViewingVoice)}>
                 <VoiceChannel
-                  key={activeVoiceChannel.id}
+                  key={`${activeVoiceChannel.id}-${voiceMountKey}`}
                   channel={activeVoiceChannel}
                   serverId={activeVoiceServerId}
                   getToken={getToken}
@@ -318,7 +392,7 @@ export default function ServerLayout() {
                   showParticipantsPanel={showParticipantsPanel}
                   onTogglePanel={togglePanel}
                   onLeave={handleVoiceLeave}
-                  onOrbPhaseChange={setOrbPhase}
+                  onOrbPhaseChange={handleOrbPhaseChange}
                 />
               </div>
             )}
@@ -401,7 +475,11 @@ export default function ServerLayout() {
                 justifyContent: 'center',
                 paddingTop: hasOrbTopHeader ? 48 : 0,
                 paddingBottom: 69,
-                paddingRight: (!isViewingVoice && !isMobile && showMembers) ? 260 : 0,
+                paddingRight: (!isMobile && (
+                  isViewingVoice
+                    ? (showMembers || showChatPanel || showParticipantsPanel)
+                    : showMembers
+                )) ? 260 : 0,
                 transition: 'padding-right var(--duration-fast) var(--ease-out)',
                 pointerEvents: 'none',
               }}>

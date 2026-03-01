@@ -255,6 +255,9 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
 
   useEffect(() => {
     if (!wsClient || !channel?.id || !serverId) return;
+    // #region agent log
+    fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'VoiceChannel.jsx:useEffect',message:'VoiceChannel effect running, calling connectRoom',data:{roomName,channelId:channel?.id},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     connectRoomRef.current(roomName, displayName, channel.id).catch(() => {
       // Connection errors are surfaced via useRoom's `error` state
     });
@@ -275,7 +278,12 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
       });
     }
 
-    return () => { disconnectRoomRef.current(); };
+    return () => {
+      // #region agent log
+      fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'VoiceChannel.jsx:useEffect cleanup',message:'VoiceChannel effect cleanup, calling disconnectRoom',data:{},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      disconnectRoomRef.current();
+    };
   }, [wsClient, channel?.id, serverId, roomName, displayName]);
 
   useEffect(() => {

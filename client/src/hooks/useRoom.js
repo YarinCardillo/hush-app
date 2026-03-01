@@ -122,15 +122,39 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
     }
   }, []);
 
+  const syncParticipantsFromRoom = useCallback(() => {
+    const room = roomRef.current;
+    if (!room) return;
+    const next = Array.from(room.remoteParticipants.values()).map((p) => ({
+      id: p.identity,
+      displayName: p.name || p.identity,
+    }));
+    setParticipants((prev) => {
+      if (
+        prev.length === next.length
+        && prev.every((p, i) => p.id === next[i]?.id && p.displayName === next[i]?.displayName)
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
+
   // ─── Connect to LiveKit Room ──────────────────────────
   const connectRoom = useCallback(
     async (roomName, displayName, channelId) => {
       const epoch = ++connectionEpochRef.current;
       const isStale = () => epoch !== connectionEpochRef.current;
+      // #region agent log
+      fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:connectRoom:entry',message:'connectRoom started',data:{epoch,roomName},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       if (!wsClient) {
         setError('WebSocket not connected. Please try again.');
         return;
       }
+      // Clear any error from a previous session so VoiceChannel doesn't
+      // render the error UI while this new connection is in-progress.
+      setError(null);
       try {
         if (roomRef.current) {
           roomRef.current.disconnect();
@@ -241,21 +265,23 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
 
         const room = new Room(roomOptions);
 
-        // ─── Event Listeners ──────────────────────────────
-
         // ParticipantConnected: update list and send E2EE key via e2eeKeyManager
         room.on(RoomEvent.ParticipantConnected, async (participant) => {
           if (isStale()) return;
           console.log(
             `[livekit] Participant connected: ${participant.identity}`,
           );
-          setParticipants((prev) => [
-            ...prev,
-            {
-              id: participant.identity,
-              displayName: participant.name || participant.identity,
-            },
-          ]);
+          setParticipants((prev) => {
+            if (prev.some((p) => p.id === participant.identity)) return prev;
+            return [
+              ...prev,
+              {
+                id: participant.identity,
+                displayName: participant.name || participant.identity,
+              },
+            ];
+          });
+          queueMicrotask(syncParticipantsFromRoom);
           const e2eeRefs = {
             channelIdRef,
             e2eeKeyProviderRef,
@@ -282,6 +308,7 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
           setParticipants((prev) =>
             prev.filter((p) => p.id !== participant.identity),
           );
+          queueMicrotask(syncParticipantsFromRoom);
           for (const [trackSid, info] of availableScreensRef.current.entries()) {
             if (info.participantId === participant.identity) {
               availableScreensRef.current.delete(trackSid);
@@ -328,6 +355,9 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
         // Connected fires synchronously during room.connect(), before roomRef is set.
         // Use the local `room` variable from the closure, not roomRef.current.
         room.on(RoomEvent.Connected, async () => {
+          // #region agent log
+          fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:RoomEvent.Connected',message:'RoomEvent.Connected fired',data:{epoch:connectionEpochRef.current},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
           if (isStale()) return;
           if (!keyProvider || !channelIdRef.current) return;
           if (room.remoteParticipants.size === 0) {
@@ -353,6 +383,9 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
 
         // If superseded during connect (e.g. StrictMode remount), discard this room
         if (isStale()) {
+          // #region agent log
+          fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:after connect',message:'stale after room.connect(), skipping setIsReady',data:{epoch,currentEpoch:connectionEpochRef.current},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
           room.disconnect();
           return;
         }
@@ -398,20 +431,29 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
         scheduleScreensUpdate();
         setParticipants(initialParticipants);
 
+        // #region agent log
+        fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:setIsReady true',message:'setting isReady true',data:{epoch,roomName},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         setIsReady(true);
         preloadNoiseGateWorklet();
         console.log('[livekit] Connected to room:', roomName);
       } catch (err) {
         if (isStale()) return;
+        // #region agent log
+        fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:connectRoom catch',message:'connectRoom error',data:{epoch,errMessage:err?.message},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         console.error('[livekit] Connection error:', err);
         setError(err.message);
       }
     },
-    [scheduleRemoteTracksUpdate, scheduleScreensUpdate, wsClient, encryptForUser, decryptFromUser, currentUserId, getToken],
+    [scheduleRemoteTracksUpdate, scheduleScreensUpdate, syncParticipantsFromRoom, wsClient, encryptForUser, decryptFromUser, currentUserId, getToken],
   );
 
   // ─── Disconnect from Room ─────────────────────────────
   const disconnectRoom = useCallback(async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:disconnectRoom',message:'disconnectRoom called',data:{epochBefore:connectionEpochRef.current},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     connectionEpochRef.current++;
     setError(null);
     setKeyExchangeMessage(null);
@@ -608,6 +650,23 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
     [scheduleRemoteTracksUpdate, scheduleScreensUpdate],
   );
 
+  // ─── Periodic + visibility sync for participants. This is a safety net for
+  // missed SDK events (e.g. browser throttling/background tabs).
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      syncParticipantsFromRoom();
+    }, 1500);
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      syncParticipantsFromRoom();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [syncParticipantsFromRoom]);
+
   // ─── Cleanup on Unmount ───────────────────────────────
   useEffect(() => {
     return () => {
@@ -618,6 +677,9 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
       const room = roomRef.current;
       const localTracksMap = localTracksRef.current;
       if (room) {
+        // Increment epoch before disconnecting so the RoomEvent.Disconnected
+        // handler treats this as stale and does not set the error state.
+        connectionEpochRef.current++;
         if (localTracksMap && typeof localTracksMap.forEach === 'function') {
           localTracksMap.forEach((info) => {
             if (info?.track && typeof info.track.stop === 'function') {

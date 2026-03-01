@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { updateServer, deleteServer, leaveServer, getServerMembers } from '../lib/api';
+import { updateServer, deleteServer, getServerMembers } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
 
 const TAB_OVERVIEW = 'overview';
@@ -197,7 +197,7 @@ const styles = {
   },
 };
 
-function OverviewTab({ getToken, serverId, serverName, isAdmin, onDeleteServer, onLeaveServer }) {
+function OverviewTab({ getToken, serverId, serverName, isAdmin, onDeleteServer }) {
   const [name, setName] = useState(serverName ?? '');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -239,16 +239,6 @@ function OverviewTab({ getToken, serverId, serverName, isAdmin, onDeleteServer, 
     }
   };
 
-  const handleLeaveConfirmed = async () => {
-    setConfirmAction(null);
-    try {
-      await leaveServer(getToken(), serverId);
-      onLeaveServer?.();
-    } catch (err) {
-      setSaveError(err.message || 'Failed to leave server');
-    }
-  };
-
   return (
     <>
       <div style={styles.sectionTitle}>Overview</div>
@@ -285,24 +275,10 @@ function OverviewTab({ getToken, serverId, serverName, isAdmin, onDeleteServer, 
         </div>
       )}
 
-      <div style={styles.dangerZone}>
-        <div style={styles.dangerTitle}>Danger zone</div>
-
-        <div style={styles.dangerAction}>
-          <span style={styles.dangerActionText}>
-            Leave this server. You won't be able to rejoin unless invited.
-          </span>
-          <button
-            type="button"
-            className="btn btn-danger"
-            onClick={() => setConfirmAction('leave')}
-          >
-            Leave Server
-          </button>
-        </div>
-
-        {isAdmin && (
-          <div style={{ ...styles.dangerAction, paddingTop: '12px', borderTop: '1px solid color-mix(in srgb, var(--hush-danger) 30%, transparent)' }}>
+      {isAdmin && (
+        <div style={styles.dangerZone}>
+          <div style={styles.dangerTitle}>Danger zone</div>
+          <div style={styles.dangerAction}>
             <span style={styles.dangerActionText}>
               Permanently delete this server and all its channels. This cannot be undone.
             </span>
@@ -314,8 +290,8 @@ function OverviewTab({ getToken, serverId, serverName, isAdmin, onDeleteServer, 
               Delete Server
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {confirmAction === 'delete' && (
         <ConfirmModal
@@ -323,15 +299,6 @@ function OverviewTab({ getToken, serverId, serverName, isAdmin, onDeleteServer, 
           message={`Permanently delete "${serverName}"? All channels and messages will be lost. This cannot be undone.`}
           confirmLabel="Delete"
           onConfirm={handleDeleteConfirmed}
-          onCancel={() => setConfirmAction(null)}
-        />
-      )}
-      {confirmAction === 'leave' && (
-        <ConfirmModal
-          title="Leave server"
-          message={`Leave "${serverName}"? You'll need an invite to rejoin.`}
-          confirmLabel="Leave"
-          onConfirm={handleLeaveConfirmed}
           onCancel={() => setConfirmAction(null)}
         />
       )}
@@ -396,7 +363,6 @@ export default function ServerSettingsModal({
   isAdmin,
   onClose,
   onDeleteServer,
-  onLeaveServer,
 }) {
   const [tab, setTab] = useState(TAB_OVERVIEW);
   const [isOpen, setIsOpen] = useState(false);
@@ -449,7 +415,6 @@ export default function ServerSettingsModal({
             serverName={serverName}
             isAdmin={isAdmin}
             onDeleteServer={onDeleteServer}
-            onLeaveServer={onLeaveServer}
           />
         )}
         {tab === TAB_MEMBERS && (

@@ -153,7 +153,7 @@ export default function HushOrb({ phase = 'idle', label }) {
       <div style={{ marginTop: 36, height: 20, display: 'flex', alignItems: 'center' }}>
         <span style={{
           color: phase === 'activating' ? 'var(--hush-amber)' : 'var(--hush-text-muted)',
-          fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase',
+          fontSize: 11, letterSpacing: '0.18em', marginRight: '-0.18em', textTransform: 'uppercase',
           fontFamily: 'var(--font-mono, monospace)',
           opacity: labelVisible ? 1 : 0,
           transition: 'color 0.6s ease, opacity 0.22s ease',
@@ -162,15 +162,13 @@ export default function HushOrb({ phase = 'idle', label }) {
         </span>
       </div>
 
-      <div style={{ marginTop: 20, display: 'flex', gap: 6 }}>
-        {[0, 1, 2].map((i) => (
-          <div key={i} style={{
-            width: 5, height: 5, borderRadius: '50%',
-            background: i === 0 && phase !== 'idle' ? 'var(--hush-amber)' : 'var(--hush-elevated)',
-            transition: 'background 0.4s ease',
-            animation: phase === 'waiting' && i === 0 ? 'dotPing 1.4s ease-in-out infinite' : 'none',
-          }} />
-        ))}
+      <div style={{ marginTop: 20 }}>
+        <div style={{
+          width: 5, height: 5, borderRadius: '50%',
+          background: phase !== 'idle' ? 'var(--hush-amber)' : 'var(--hush-elevated)',
+          transition: 'background 0.4s ease',
+          animation: phase === 'waiting' ? 'dotPing 1.4s ease-in-out infinite' : 'none',
+        }} />
       </div>
 
       <style>{`

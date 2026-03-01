@@ -44,6 +44,12 @@ const styles = {
     flex: 1,
     minHeight: 0,
     display: 'flex',
+    overflow: 'hidden',
+  },
+  chatArea: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
   },
@@ -61,10 +67,10 @@ export default function TextChannel({
   recipientUserIds = [],
   showMembers = false,
   onToggleMembers,
+  sidebarSlot = null,
 }) {
   const { user } = useAuth();
   const currentUserId = user?.id ?? '';
-
   const getStore = useCallback(() => {
     return signalStore.openStore(user?.id ?? '', getDeviceId());
   }, [user?.id]);
@@ -84,15 +90,18 @@ export default function TextChannel({
           </button>
         )}
       </header>
-      <div style={{ ...styles.main, paddingRight: showMembers ? 240 : 0 }}>
-        <Chat
-          channelId={channel.id}
-          currentUserId={currentUserId}
-          getToken={getToken}
-          getStore={getStore}
-          wsClient={wsClient}
-          recipientUserIds={recipientUserIds}
-        />
+      <div style={styles.main}>
+        <div style={styles.chatArea}>
+          <Chat
+            channelId={channel.id}
+            currentUserId={currentUserId}
+            getToken={getToken}
+            getStore={getStore}
+            wsClient={wsClient}
+            recipientUserIds={recipientUserIds}
+          />
+        </div>
+        {sidebarSlot}
       </div>
     </div>
   );
