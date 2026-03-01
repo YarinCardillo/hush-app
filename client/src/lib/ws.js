@@ -113,11 +113,17 @@ export function createWsClient(opts) {
       // Detach handlers before closing so onclose doesn't trigger scheduleReconnect.
       const s = socket;
       socket = null;
-      s.onopen = null;
       s.onmessage = null;
       s.onclose = null;
       s.onerror = null;
-      s.close();
+      if (s.readyState === WebSocket.CONNECTING) {
+        // Calling close() on a CONNECTING socket causes a browser warning.
+        // Instead, let it finish opening then immediately close it.
+        s.onopen = () => s.close();
+      } else {
+        s.onopen = null;
+        s.close();
+      }
     }
     authSent = false;
   }
