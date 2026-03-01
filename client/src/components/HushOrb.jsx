@@ -9,7 +9,7 @@ const EYE_STATES = {
 
 const ORB_STYLES = {
   idle: {
-    bg: 'radial-gradient(circle at 38% 35%, #26241e 0%, #1b1912 50%, #13120a 100%)',
+    bg: 'radial-gradient(circle at 38% 35%, var(--hush-elevated) 0%, var(--hush-surface) 50%, var(--hush-black) 100%)',
     shadow: '0 0 12px rgba(0,0,0,0.4)',
     eyeColor: '#3a3a4e',
     glowBg: 'radial-gradient(circle, rgba(213,79,18,0) 0%, transparent 70%)',
@@ -109,14 +109,14 @@ export default function HushOrb({ phase = 'idle', label }) {
         {phase === 'activating' && [0, 1, 2, 3, 4].map((i) => (
           <div key={i} style={{
             position: 'absolute', width: 3, height: 3, borderRadius: '50%',
-            background: '#d54f12', opacity: 0,
+            background: 'var(--hush-amber)', opacity: 0,
             animation: `particle${i % 3} 1s ease-out ${i * 0.12}s forwards`,
           }} />
         ))}
       </div>
       <div style={{ marginTop: 36, height: 20, display: 'flex', alignItems: 'center' }}>
         <span style={{
-          color: phase === 'activating' ? 'rgba(213,79,18,0.7)' : 'rgba(255,255,255,0.15)',
+          color: phase === 'activating' ? 'var(--hush-amber)' : 'var(--hush-text-muted)',
           fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase',
           fontFamily: 'var(--font-mono, monospace)',
           transition: 'color 0.6s ease',
@@ -128,7 +128,7 @@ export default function HushOrb({ phase = 'idle', label }) {
         {[0, 1, 2].map((i) => (
           <div key={i} style={{
             width: 5, height: 5, borderRadius: '50%',
-            background: i === 0 && phase !== 'idle' ? '#d54f12' : 'rgba(255,255,255,0.08)',
+            background: i === 0 && phase !== 'idle' ? 'var(--hush-amber)' : 'var(--hush-elevated)',
             transition: 'background 0.4s ease',
             animation: phase === 'waiting' && i === 0 ? 'dotPing 1.4s ease-in-out infinite' : 'none',
           }} />
