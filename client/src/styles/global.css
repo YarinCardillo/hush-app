@@ -44,12 +44,12 @@
   --hush-header-block-border: rgba(255, 255, 255, 0.06);
 
   /* ── HushOrb mascot — waiting state (dark theme defaults) ── */
-  --orb-waiting-from:   #3c2018;
-  --orb-waiting-mid:    #261408;
+  --orb-waiting-from:   #5a2c14;
+  --orb-waiting-mid:    #3a1e0c;
   --orb-waiting-to:     #1b1912;
-  --orb-waiting-shadow: 0 0 24px rgba(213,79,18,0.1);
-  --orb-waiting-glow:   rgba(213,79,18,0.04);
-  --orb-waiting-ring:   rgba(213,79,18,0.06);
+  --orb-waiting-shadow: 0 0 36px rgba(213,79,18,0.3), 0 0 12px rgba(213,79,18,0.18);
+  --orb-waiting-glow:   rgba(213,79,18,0.09);
+  --orb-waiting-ring:   rgba(213,79,18,0.2);
 
   /* ── Typography ── */
   --font-sans:  'Sora', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -161,12 +161,12 @@
   --hush-header-block-bg:    rgba(255, 255, 255, 0.03);
   --hush-header-block-border: rgba(255, 255, 255, 0.06);
 
-  --orb-waiting-from:   #3c2018;
-  --orb-waiting-mid:    #261408;
+  --orb-waiting-from:   #5a2c14;
+  --orb-waiting-mid:    #3a1e0c;
   --orb-waiting-to:     #1b1912;
-  --orb-waiting-shadow: 0 0 24px rgba(213,79,18,0.1);
-  --orb-waiting-glow:   rgba(213,79,18,0.04);
-  --orb-waiting-ring:   rgba(213,79,18,0.06);
+  --orb-waiting-shadow: 0 0 36px rgba(213,79,18,0.3), 0 0 12px rgba(213,79,18,0.18);
+  --orb-waiting-glow:   rgba(213,79,18,0.09);
+  --orb-waiting-ring:   rgba(213,79,18,0.2);
 }
 
 /* ── Reset ─────────────────────────────────────── */
