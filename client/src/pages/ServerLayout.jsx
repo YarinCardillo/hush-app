@@ -36,20 +36,13 @@ const layoutStyles = {
     overflow: 'hidden',
     position: 'relative',
   },
-  memberPanel: {
-    position: 'absolute',
-    right: 0,
-    top: 48,
-    bottom: 0,
-    width: 240,
-    overflow: 'hidden',
-  },
   channelArea: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
     minWidth: 0,
     overflow: 'hidden',
+    position: 'relative', // needed for the persistent HushOrb overlay
   },
   voiceWrapper: (visible) => ({
     display: visible ? 'flex' : 'none',
@@ -57,6 +50,8 @@ const layoutStyles = {
     flexDirection: 'column',
     minHeight: 0,
     overflow: 'hidden',
+    position: 'relative',
+    zIndex: 1, // sits above the absolute HushOrb overlay; video tiles cover the orb naturally
   }),
   placeholder: {
     flex: 1,
@@ -115,7 +110,11 @@ export default function ServerLayout() {
   const [wsClient, setWsClient] = useState(null);
   const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
   const [members, setMembers] = useState([]);
-  const [showMembers, setShowMembers] = useState(() => breakpoint !== 'mobile');
+  const [openPanel, setOpenPanel] = useState(null); // 'members' | 'chat' | 'participants' | null
+  const togglePanel = useCallback((name) => setOpenPanel((prev) => prev === name ? null : name), []);
+  const showMembers = openPanel === 'members';
+  const showChatPanel = openPanel === 'chat';
+  const showParticipantsPanel = openPanel === 'participants';
 
   // Persistent voice session — survives channel/server navigation until Leave is clicked.
   const [activeVoiceChannel, setActiveVoiceChannel] = useState(null);
@@ -124,6 +123,11 @@ export default function ServerLayout() {
   // Member IDs captured at join time for the voice channel's server.
   // When on a different server we can't derive them from current `members`.
   const activeVoiceMemberIdsRef = useRef([]);
+
+  // Orb phase is lifted here so a single persistent <HushOrb> element can smoothly
+  // transition between voice states (idle/waiting/activating) and the idle placeholder
+  // without unmounting and remounting across navigation.
+  const [orbPhase, setOrbPhase] = useState('idle');
 
   const { width: sidebarWidth, handleMouseDown: handleSidebarResize } = useSidebarResize();
 
@@ -190,15 +194,19 @@ export default function ServerLayout() {
 
   const currentChannel = serverData?.channels?.find((c) => c.id === channelId);
 
+  // True when a 48px header is visible at the top of channelArea:
+  // VoiceChannel always renders its own 48px header; the non-voice, non-text state
+  // renders channelAreaHeader (48px) only when a server is selected but no channel.
+  const hasOrbTopHeader = isViewingVoice || (!isViewingVoice && !!serverId && !currentChannel);
+
   // Auto-join when navigating directly to a voice channel URL.
-  useEffect(() => {
-    if (currentChannel?.type === 'voice' && currentChannel.id !== activeVoiceChannel?.id) {
-      activeVoiceMemberIdsRef.current = memberIds;
-      setActiveVoiceChannel(currentChannel);
-      setActiveVoiceServerId(serverId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentChannel?.id, currentChannel?.type]);
+  // Synchronous state update during render avoids a one-frame flash where
+  // channelAreaHeader shows before VoiceChannel's header takes over.
+  if (currentChannel?.type === 'voice' && currentChannel.id !== activeVoiceChannel?.id) {
+    activeVoiceMemberIdsRef.current = memberIds;
+    setActiveVoiceChannel(currentChannel);
+    setActiveVoiceServerId(serverId);
+  }
 
   const handleServerSelect = (server) => {
     if (server?.id) {
@@ -236,6 +244,9 @@ export default function ServerLayout() {
   };
 
   const handleVoiceLeave = useCallback(() => {
+    // Reset orbPhase before unmounting VoiceChannel so the persistent HushOrb
+    // can transition smoothly from the current phase (e.g. waiting) to idle.
+    setOrbPhase('idle');
     setActiveVoiceChannel(null);
     setActiveVoiceServerId(null);
     activeVoiceMemberIdsRef.current = [];
@@ -244,6 +255,7 @@ export default function ServerLayout() {
 
   // Called after the user successfully leaves or deletes the server.
   const handleServerLeft = useCallback(() => {
+    setOrbPhase('idle');
     setActiveVoiceChannel(null);
     setActiveVoiceServerId(null);
     activeVoiceMemberIdsRef.current = [];
@@ -301,29 +313,19 @@ export default function ServerLayout() {
                   recipientUserIds={voiceRecipientIds}
                   members={members}
                   onlineUserIds={onlineUserIds}
+                  showMembers={showMembers}
+                  showChatPanel={showChatPanel}
+                  showParticipantsPanel={showParticipantsPanel}
+                  onTogglePanel={togglePanel}
                   onLeave={handleVoiceLeave}
+                  onOrbPhaseChange={setOrbPhase}
                 />
               </div>
             )}
 
-            {/* Persistent header for non-text, non-voice states (keeps Members button visible). */}
-            {!isViewingVoice && serverId && currentChannel?.type !== 'text' && (
-              <header style={layoutStyles.channelAreaHeader}>
-                <div />
-                <button
-                  type="button"
-                  style={layoutStyles.membersToggle}
-                  onClick={() => setShowMembers((v) => !v)}
-                  aria-pressed={showMembers}
-                >
-                  Members
-                </button>
-              </header>
-            )}
-
             {!isViewingVoice && (
               loading ? (
-                <div style={layoutStyles.placeholder}>Loading…</div>
+                <div style={{ ...layoutStyles.placeholder, position: 'relative', zIndex: 1 }}>Loading…</div>
               ) : currentChannel?.type === 'text' ? (
                 <TextChannel
                   key={currentChannel.id}
@@ -333,35 +335,92 @@ export default function ServerLayout() {
                   wsClient={wsClient}
                   recipientUserIds={memberIds}
                   showMembers={showMembers}
-                  onToggleMembers={() => setShowMembers((v) => !v)}
+                  onToggleMembers={() => togglePanel('members')}
+                  sidebarSlot={!isMobile ? (
+                    <div className={`sidebar-desktop ${showMembers ? 'sidebar-desktop-open' : ''}`}>
+                      <div className="sidebar-desktop-inner">
+                        <MemberList
+                          members={members}
+                          onlineUserIds={onlineUserIds}
+                          currentUserId={currentUserId}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 />
               ) : currentChannel && currentChannel.type !== 'voice' ? (
-                <div style={layoutStyles.placeholder}>Unknown channel type</div>
+                <div style={{ ...layoutStyles.placeholder, position: 'relative', zIndex: 1 }}>Unknown channel type</div>
               ) : (
-                <div style={{
-                  ...layoutStyles.placeholder,
-                  // paddingLeft: 0 aligns the horizontal center with VideoGrid's empty state
-                  // (streamsArea has padding:6px; placeholder had padding:24px → 12px offset).
-                  // paddingBottom: 93 matches vertical position (controls bar = 69px + 24px base).
-                  paddingLeft: 0,
-                  paddingBottom: 93,
-                  paddingRight: !isMobile && showMembers ? 240 : 0,
-                  transition: 'padding-right var(--duration-fast) var(--ease-out)',
-                }}>
+                <>
+                  {/* Header with Members toggle for non-text, non-voice states */}
+                  {serverId && !currentChannel && (
+                    <header style={layoutStyles.channelAreaHeader}>
+                      <div />
+                      <button
+                        type="button"
+                        style={layoutStyles.membersToggle}
+                        onClick={() => togglePanel('members')}
+                        aria-pressed={showMembers}
+                      >
+                        Members
+                      </button>
+                    </header>
+                  )}
+                  {/* Spacer that lets the desktop sidebar take in-flow width on the right */}
+                  <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                    <div style={{ flex: 1 }} />
+                    {!isMobile && (
+                      <div className={`sidebar-desktop ${showMembers ? 'sidebar-desktop-open' : ''}`}>
+                        <div className="sidebar-desktop-inner">
+                          <MemberList
+                            members={members}
+                            onlineUserIds={onlineUserIds}
+                            currentUserId={currentUserId}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )
+            )}
+
+            {/*
+              Persistent HushOrb overlay — single DOM instance that survives navigation.
+              VoiceChannel reports its phase via onOrbPhaseChange; handleVoiceLeave resets
+              to 'idle' before unmounting, giving the CSS @property tokens time to transition.
+              z-index: 0 keeps it below voiceWrapper (z-index: 1), so video tiles cover it
+              naturally while the transparent VideoGrid empty state lets it show through.
+            */}
+            {!loading && (!currentChannel || currentChannel.type === 'voice') && (
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingTop: hasOrbTopHeader ? 48 : 0,
+                paddingBottom: 69,
+                paddingRight: (!isViewingVoice && !isMobile && showMembers) ? 260 : 0,
+                transition: 'padding-right var(--duration-fast) var(--ease-out)',
+                pointerEvents: 'none',
+              }}>
+                <div style={{ pointerEvents: 'auto' }}>
                   <HushOrb
-                    phase="idle"
-                    label={serverId ? 'select a channel' : 'select a server'}
+                    phase={orbPhase}
+                    label={isViewingVoice ? undefined : (serverId ? 'select a channel' : 'select a server')}
                   />
                 </div>
-              )
+              </div>
             )}
           </div>
 
-          {serverId && !isViewingVoice && isMobile ? (
+          {/* Mobile overlay — fixed position, doesn't affect layout */}
+          {serverId && !isViewingVoice && isMobile && (
             <>
               <div
                 className={`sidebar-overlay ${showMembers ? 'sidebar-overlay-open' : ''}`}
-                onClick={() => setShowMembers(false)}
+                onClick={() => setOpenPanel(null)}
                 aria-hidden={!showMembers}
               />
               <div className={`sidebar-panel-right ${showMembers ? 'sidebar-panel-open' : ''}`}>
@@ -372,15 +431,7 @@ export default function ServerLayout() {
                 />
               </div>
             </>
-          ) : serverId && !isViewingVoice && showMembers ? (
-            <div style={layoutStyles.memberPanel}>
-              <MemberList
-                members={members}
-                onlineUserIds={onlineUserIds}
-                currentUserId={currentUserId}
-              />
-            </div>
-          ) : null}
+          )}
         </div>
       </div>
       {pendingVoiceSwitch && (

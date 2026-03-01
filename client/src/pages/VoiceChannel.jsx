@@ -18,6 +18,7 @@ import Controls from '../components/Controls';
 import QualityPickerModal from '../components/QualityPickerModal';
 import DevicePickerModal from '../components/DevicePickerModal';
 import Chat from '../components/Chat';
+import MemberList from '../components/MemberList';
 
 const styles = {
   page: {
@@ -161,7 +162,7 @@ function getFriendlyRoomError(errorMessage) {
  * Voice channel view: LiveKit room (server-{serverId}-channel-{channel.id}), video grid, controls, chat sidebar.
  * Used by ServerLayout when currentChannel.type === 'voice'.
  */
-export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], showMembers = false, onToggleMembers, onLeave }) {
+export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], members = [], onlineUserIds, showMembers = false, showChatPanel = false, showParticipantsPanel = false, onTogglePanel, onLeave, onOrbPhaseChange }) {
   const navigate = useNavigate();
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile';
@@ -182,8 +183,6 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   const [localScreenWatched, setLocalScreenWatched] = useState(false);
   const [showMicPicker, setShowMicPicker] = useState(false);
   const [showWebcamPicker, setShowWebcamPicker] = useState(false);
-  const [showChatPanel, setShowChatPanel] = useState(false);
-  const [showParticipantsPanel, setShowParticipantsPanel] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [participantsBadge, setParticipantsBadge] = useState(false);
   const showChatPanelRef = useRef(false);
@@ -234,6 +233,8 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
 
   // idle = connecting; waiting = alone; activating = others in room
   const orbPhase = !isReady ? 'idle' : (participants.length > 0 ? 'activating' : 'waiting');
+
+  useEffect(() => { onOrbPhaseChange?.(orbPhase); }, [orbPhase, onOrbPhaseChange]);
 
   const connectRoomRef = useRef(connectRoom);
   connectRoomRef.current = connectRoom;
@@ -296,18 +297,6 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     return () => clearInterval(intervalId);
   }, [localTracks]);
 
-  const toggleChat = useCallback(() => {
-    setShowChatPanel((prev) => {
-      if (!prev) setShowParticipantsPanel(false);
-      return !prev;
-    });
-  }, []);
-  const toggleParticipants = useCallback(() => {
-    setShowParticipantsPanel((prev) => {
-      if (!prev) setShowChatPanel(false);
-      return !prev;
-    });
-  }, []);
 
   useEffect(() => {
     showChatPanelRef.current = showChatPanel;
@@ -507,7 +496,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
           <button
             style={{ ...styles.participantCount, position: 'relative' }}
             title="Chat"
-            onClick={toggleChat}
+            onClick={() => onTogglePanel('chat')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -531,7 +520,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
           <button
             style={{ ...styles.participantCount, position: 'relative' }}
             title="Participants"
-            onClick={toggleParticipants}
+            onClick={() => onTogglePanel('participants')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -555,42 +544,60 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
               />
             )}
           </button>
-          {onToggleMembers && (
-            <button
-              style={styles.membersToggle}
-              title="Members"
-              onClick={onToggleMembers}
-              aria-pressed={showMembers}
-            >
-              Members
-            </button>
-          )}
+          <button
+            style={styles.membersToggle}
+            title="Members"
+            onClick={() => onTogglePanel('members')}
+            aria-pressed={showMembers}
+          >
+            Members
+          </button>
         </div>
       </div>
 
-      <div style={{ ...styles.main, paddingRight: showMembers ? 240 : 0, transition: 'padding-right var(--duration-fast) var(--ease-out)' }}>
-        <VideoGrid
-          localTracks={localTracks}
-          remoteTracks={remoteTracks}
-          availableScreens={availableScreens}
-          watchedScreens={watchedScreens}
-          loadingScreens={loadingScreens}
-          isScreenSharing={isScreenSharing}
-          localScreenWatched={localScreenWatched}
-          isMobile={isMobile}
-          breakpoint={breakpoint}
-          orbPhase={orbPhase}
-          onWatchScreen={watchScreen}
-          onUnwatchScreen={unwatchScreen}
-          onWatchLocalScreen={() => setLocalScreenWatched(true)}
-          onUnwatchLocalScreen={() => setLocalScreenWatched(false)}
-        />
+      <div style={styles.main}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <VideoGrid
+            localTracks={localTracks}
+            remoteTracks={remoteTracks}
+            availableScreens={availableScreens}
+            watchedScreens={watchedScreens}
+            loadingScreens={loadingScreens}
+            isScreenSharing={isScreenSharing}
+            localScreenWatched={localScreenWatched}
+            isMobile={isMobile}
+            breakpoint={breakpoint}
+            onWatchScreen={watchScreen}
+            onUnwatchScreen={unwatchScreen}
+            onWatchLocalScreen={() => setLocalScreenWatched(true)}
+            onUnwatchLocalScreen={() => setLocalScreenWatched(false)}
+          />
+          <Controls
+            isReady={isReady}
+            isScreenSharing={isScreenSharing}
+            isMicOn={isMicOn}
+            isWebcamOn={isWebcamOn}
+            quality={quality}
+            isMobile={isMobile}
+            mediaE2EEUnavailable={mediaE2EEUnavailable}
+            showScreenShare={!isLowLatency}
+            showWebcam={!isLowLatency}
+            showQualityPicker={!isLowLatency}
+            onScreenShare={handleScreenShare}
+            onOpenQualityOrWindow={() => setShowQualityPicker(true)}
+            onMic={handleMic}
+            onWebcam={handleWebcam}
+            onMicDeviceSwitch={handleMicDeviceSwitch}
+            onWebcamDeviceSwitch={handleWebcamDeviceSwitch}
+            onLeave={handleLeave}
+          />
+        </div>
 
         {isMobile ? (
           <>
             <div
               className={`sidebar-overlay ${showParticipantsPanel ? 'sidebar-overlay-open' : ''}`}
-              onClick={() => setShowParticipantsPanel(false)}
+              onClick={() => onTogglePanel('participants')}
               aria-hidden={!showParticipantsPanel}
             />
             <div className={`sidebar-panel-right ${showParticipantsPanel ? 'sidebar-panel-open' : ''}`}>
@@ -610,7 +617,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
             </div>
             <div
               className={`sidebar-overlay ${showChatPanel ? 'sidebar-overlay-open' : ''}`}
-              onClick={() => setShowChatPanel(false)}
+              onClick={() => onTogglePanel('chat')}
               aria-hidden={!showChatPanel}
             />
             <div className={`sidebar-panel-right ${showChatPanel ? 'sidebar-panel-open' : ''}`}>
@@ -627,17 +634,21 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
                 />
               </div>
             </div>
+            <div
+              className={`sidebar-overlay ${showMembers ? 'sidebar-overlay-open' : ''}`}
+              onClick={() => onTogglePanel('members')}
+              aria-hidden={!showMembers}
+            />
+            <div className={`sidebar-panel-right ${showMembers ? 'sidebar-panel-open' : ''}`}>
+              <MemberList
+                members={members}
+                onlineUserIds={onlineUserIds ?? new Set()}
+                currentUserId={currentUserId}
+              />
+            </div>
           </>
         ) : (
           <>
-            <div
-              className={`sidebar-overlay ${showParticipantsPanel || showChatPanel ? 'sidebar-overlay-open' : ''}`}
-              onClick={() => {
-                setShowParticipantsPanel(false);
-                setShowChatPanel(false);
-              }}
-              aria-hidden={!showParticipantsPanel && !showChatPanel}
-            />
             <div className={`sidebar-desktop ${showParticipantsPanel ? 'sidebar-desktop-open' : ''}`}>
               <div className="sidebar-desktop-inner" style={styles.sidebar(false)}>
                 <div style={styles.sidebarSection}>
@@ -669,6 +680,15 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
                     onNewMessage={handleNewChatMessage}
                   />
                 </div>
+              </div>
+            </div>
+            <div className={`sidebar-desktop ${showMembers ? 'sidebar-desktop-open' : ''}`}>
+              <div className="sidebar-desktop-inner">
+                <MemberList
+                  members={members}
+                  onlineUserIds={onlineUserIds ?? new Set()}
+                  currentUserId={currentUserId}
+                />
               </div>
             </div>
           </>
@@ -703,31 +723,6 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
           onCancel={() => setShowWebcamPicker(false)}
         />
       )}
-
-      <div style={{
-        paddingRight: !isMobile && showMembers ? 240 : 0,
-        transition: 'padding-right var(--duration-fast) var(--ease-out)',
-      }}>
-        <Controls
-          isReady={isReady}
-          isScreenSharing={isScreenSharing}
-          isMicOn={isMicOn}
-          isWebcamOn={isWebcamOn}
-          quality={quality}
-          isMobile={isMobile}
-          mediaE2EEUnavailable={mediaE2EEUnavailable}
-          showScreenShare={!isLowLatency}
-          showWebcam={!isLowLatency}
-          showQualityPicker={!isLowLatency}
-          onScreenShare={handleScreenShare}
-          onOpenQualityOrWindow={() => setShowQualityPicker(true)}
-          onMic={handleMic}
-          onWebcam={handleWebcam}
-          onMicDeviceSwitch={handleMicDeviceSwitch}
-          onWebcamDeviceSwitch={handleWebcamDeviceSwitch}
-          onLeave={handleLeave}
-        />
-      </div>
 
       {keyExchangeMessage && (
         <div className="toast" role="alert">

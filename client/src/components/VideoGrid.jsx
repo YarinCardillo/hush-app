@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import { Track } from 'livekit-client';
 import StreamView from './StreamView';
 import ScreenShareCard from './ScreenShareCard';
-import HushOrb from './HushOrb';
 import { MEDIA_SOURCES, STANDBY_AFTER_MS, isScreenShareSource } from '../utils/constants';
 
 const styles = {
@@ -183,7 +182,6 @@ export default function VideoGrid({
   localScreenWatched,
   isMobile,
   breakpoint,
-  orbPhase = 'idle',
   onWatchScreen,
   onUnwatchScreen,
   onWatchLocalScreen,
@@ -219,9 +217,9 @@ export default function VideoGrid({
     <>
       <div style={{ ...styles.streamsArea(isMobile, totalCards), ...gridStyle }}>
         {totalCards === 0 ? (
-          <div style={styles.empty}>
-            <HushOrb phase={orbPhase} />
-          </div>
+          // HushOrb is rendered by ServerLayout as a persistent element.
+          // Empty div preserves the flex layout; the orb shows through via z-index.
+          <div style={styles.empty} />
         ) : (
           <>
             {orderedStreams.map((stream) => (
