@@ -16,11 +16,11 @@ const ORB_STYLES = {
     ringColor: 'transparent',
   },
   waiting: {
-    bg: 'radial-gradient(circle at 38% 35%, #3c2018 0%, #261408 50%, #1b1912 100%)',
-    shadow: '0 0 24px rgba(213,79,18,0.1)',
+    bg: 'radial-gradient(circle at 38% 35%, var(--orb-waiting-from) 0%, var(--orb-waiting-mid) 50%, var(--orb-waiting-to) 100%)',
+    shadow: 'var(--orb-waiting-shadow)',
     eyeColor: '#8888a0',
-    glowBg: 'radial-gradient(circle, rgba(213,79,18,0.04) 0%, transparent 70%)',
-    ringColor: 'rgba(213,79,18,0.06)',
+    glowBg: 'radial-gradient(circle, var(--orb-waiting-glow) 0%, transparent 70%)',
+    ringColor: 'var(--orb-waiting-ring)',
   },
   activating: {
     bg: 'radial-gradient(circle at 38% 35%, #e85a1a 0%, #d54f12 45%, #a33d0e 100%)',

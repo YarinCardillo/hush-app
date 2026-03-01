@@ -43,6 +43,14 @@
   --hush-header-block-bg:    rgba(255, 255, 255, 0.03);
   --hush-header-block-border: rgba(255, 255, 255, 0.06);
 
+  /* ── HushOrb mascot — waiting state (dark theme defaults) ── */
+  --orb-waiting-from:   #3c2018;
+  --orb-waiting-mid:    #261408;
+  --orb-waiting-to:     #1b1912;
+  --orb-waiting-shadow: 0 0 24px rgba(213,79,18,0.1);
+  --orb-waiting-glow:   rgba(213,79,18,0.04);
+  --orb-waiting-ring:   rgba(213,79,18,0.06);
+
   /* ── Typography ── */
   --font-sans:  'Sora', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono:  'JetBrains Mono', 'SF Mono', Consolas, monospace;
@@ -89,6 +97,13 @@
     --hush-btn-danger-hover: rgba(239, 68, 68, 0.12);
     --hush-header-block-bg:    rgba(0, 0, 0, 0.04);
     --hush-header-block-border: rgba(0, 0, 0, 0.08);
+
+    --orb-waiting-from:   #c8806a;
+    --orb-waiting-mid:    #d9b0a0;
+    --orb-waiting-to:     #e6e5e0;
+    --orb-waiting-shadow: 0 0 24px rgba(213,79,18,0.25);
+    --orb-waiting-glow:   rgba(213,79,18,0.12);
+    --orb-waiting-ring:   rgba(213,79,18,0.22);
   }
 }
 
@@ -114,6 +129,13 @@
   --hush-btn-danger-hover: rgba(239, 68, 68, 0.12);
   --hush-header-block-bg:    rgba(0, 0, 0, 0.04);
   --hush-header-block-border: rgba(0, 0, 0, 0.08);
+
+  --orb-waiting-from:   #c8806a;
+  --orb-waiting-mid:    #d9b0a0;
+  --orb-waiting-to:     #e6e5e0;
+  --orb-waiting-shadow: 0 0 24px rgba(213,79,18,0.25);
+  --orb-waiting-glow:   rgba(213,79,18,0.12);
+  --orb-waiting-ring:   rgba(213,79,18,0.22);
 }
 
 [data-theme="dark"] {
@@ -138,6 +160,13 @@
   --hush-btn-danger-hover: rgba(239, 68, 68, 0.15);
   --hush-header-block-bg:    rgba(255, 255, 255, 0.03);
   --hush-header-block-border: rgba(255, 255, 255, 0.06);
+
+  --orb-waiting-from:   #3c2018;
+  --orb-waiting-mid:    #261408;
+  --orb-waiting-to:     #1b1912;
+  --orb-waiting-shadow: 0 0 24px rgba(213,79,18,0.1);
+  --orb-waiting-glow:   rgba(213,79,18,0.04);
+  --orb-waiting-ring:   rgba(213,79,18,0.06);
 }
 
 /* ── Reset ─────────────────────────────────────── */
