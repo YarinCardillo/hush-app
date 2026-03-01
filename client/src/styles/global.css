@@ -98,12 +98,12 @@
     --hush-header-block-bg:    rgba(0, 0, 0, 0.04);
     --hush-header-block-border: rgba(0, 0, 0, 0.08);
 
-    --orb-waiting-from:   #c8806a;
-    --orb-waiting-mid:    #d9b0a0;
-    --orb-waiting-to:     #e6e5e0;
-    --orb-waiting-shadow: 0 0 24px rgba(213,79,18,0.25);
-    --orb-waiting-glow:   rgba(213,79,18,0.12);
-    --orb-waiting-ring:   rgba(213,79,18,0.22);
+    --orb-waiting-from:   #b86450;
+    --orb-waiting-mid:    #cc9480;
+    --orb-waiting-to:     #ddc8c0;
+    --orb-waiting-shadow: 0 0 36px rgba(213,79,18,0.4), 0 0 14px rgba(213,79,18,0.25);
+    --orb-waiting-glow:   rgba(213,79,18,0.18);
+    --orb-waiting-ring:   rgba(213,79,18,0.35);
   }
 }
 

@@ -18,7 +18,7 @@ const ORB_STYLES = {
   waiting: {
     bg: 'radial-gradient(circle at 38% 35%, var(--orb-waiting-from) 0%, var(--orb-waiting-mid) 50%, var(--orb-waiting-to) 100%)',
     shadow: 'var(--orb-waiting-shadow)',
-    eyeColor: '#b4b4cc',
+    eyeColor: '#9898b0',
     glowBg: 'radial-gradient(circle, var(--orb-waiting-glow) 0%, transparent 70%)',
     ringColor: 'var(--orb-waiting-ring)',
   },
