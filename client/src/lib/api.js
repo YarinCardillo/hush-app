@@ -266,6 +266,58 @@ export async function deleteChannel(token, channelId) {
 }
 
 /**
+ * Update server name and/or icon (admin only).
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @param {{ name?: string, iconUrl?: string }} body
+ * @returns {Promise<void>}
+ */
+export async function updateServer(token, serverId, body) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `update server ${res.status}`);
+  }
+}
+
+/**
+ * Delete a server (admin only).
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @returns {Promise<void>}
+ */
+export async function deleteServer(token, serverId) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `delete server ${res.status}`);
+  }
+}
+
+/**
+ * Leave a server. Admins auto-transfer ownership to the next member.
+ * Returns 409 if user is the sole member — they must delete instead.
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @returns {Promise<void>}
+ */
+export async function leaveServer(token, serverId) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/leave`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `leave server ${res.status}`);
+  }
+}
+
+/**
  * Call after Go backend register/login. Ensures identity exists in IndexedDB and uploads keys.
  * When using Go auth (Phase E), call this after successful login/register with token, userId, and a stable deviceId (e.g. from localStorage).
  * @param {string} token - JWT from auth response
