@@ -9,25 +9,25 @@ const EYE_STATES = {
 
 const ORB_STYLES = {
   idle: {
-    bg: 'radial-gradient(circle at 38% 35%, #a06820 0%, #5c3a0e 50%, #2e1c08 100%)',
-    shadow: '0 0 16px rgba(100,60,10,0.2), inset 0 1px 0 rgba(255,255,255,0.04)',
-    eyeColor: '#d4832a',
-    glowBg: 'radial-gradient(circle, rgba(251,176,64,0.04) 0%, transparent 70%)',
-    ringColor: 'rgba(251,176,64,0.06)',
+    bg: 'radial-gradient(circle at 38% 35%, #26241e 0%, #1b1912 50%, #13120a 100%)',
+    shadow: '0 0 12px rgba(0,0,0,0.4)',
+    eyeColor: '#3a3a4e',
+    glowBg: 'radial-gradient(circle, rgba(213,79,18,0) 0%, transparent 70%)',
+    ringColor: 'transparent',
   },
   waiting: {
-    bg: 'radial-gradient(circle at 38% 35%, #e8a030 0%, #a06010 50%, #6a3d08 100%)',
-    shadow: '0 0 30px rgba(180,100,20,0.3), inset 0 1px 0 rgba(255,255,255,0.08)',
-    eyeColor: '#1a0e05',
-    glowBg: 'radial-gradient(circle, rgba(251,176,64,0.07) 0%, transparent 70%)',
-    ringColor: 'rgba(251,176,64,0.12)',
+    bg: 'radial-gradient(circle at 38% 35%, #3c2018 0%, #261408 50%, #1b1912 100%)',
+    shadow: '0 0 24px rgba(213,79,18,0.1)',
+    eyeColor: '#8888a0',
+    glowBg: 'radial-gradient(circle, rgba(213,79,18,0.04) 0%, transparent 70%)',
+    ringColor: 'rgba(213,79,18,0.06)',
   },
   activating: {
-    bg: 'radial-gradient(circle at 38% 35%, #ffd580 0%, #fbb040 45%, #c47a1a 100%)',
-    shadow: '0 0 60px rgba(251,176,64,0.5), 0 0 20px rgba(251,176,64,0.3), inset 0 1px 0 rgba(255,255,255,0.15)',
-    eyeColor: '#7a3d00',
-    glowBg: 'radial-gradient(circle, rgba(251,176,64,0.14) 0%, transparent 70%)',
-    ringColor: 'rgba(251,176,64,0.28)',
+    bg: 'radial-gradient(circle at 38% 35%, #e85a1a 0%, #d54f12 45%, #a33d0e 100%)',
+    shadow: '0 0 40px rgba(213,79,18,0.5), 0 0 16px rgba(213,79,18,0.3), inset 0 1px 0 rgba(255,255,255,0.1)',
+    eyeColor: '#13120a',
+    glowBg: 'radial-gradient(circle, rgba(213,79,18,0.14) 0%, transparent 70%)',
+    ringColor: 'rgba(213,79,18,0.28)',
   },
 };
 
@@ -68,7 +68,7 @@ function OrbEyes({ eyeState, color }) {
  *
  * @param {'idle'|'waiting'|'activating'} phase - Current room state.
  */
-export default function HushOrb({ phase = 'idle' }) {
+export default function HushOrb({ phase = 'idle', label }) {
   const [hovered, setHovered] = useState(false);
 
   const eyeState = hovered ? 'hover' : phase;
@@ -109,26 +109,26 @@ export default function HushOrb({ phase = 'idle' }) {
         {phase === 'activating' && [0, 1, 2, 3, 4].map((i) => (
           <div key={i} style={{
             position: 'absolute', width: 3, height: 3, borderRadius: '50%',
-            background: '#fbb040', opacity: 0,
+            background: '#d54f12', opacity: 0,
             animation: `particle${i % 3} 1s ease-out ${i * 0.12}s forwards`,
           }} />
         ))}
       </div>
       <div style={{ marginTop: 36, height: 20, display: 'flex', alignItems: 'center' }}>
         <span style={{
-          color: phase === 'activating' ? 'rgba(251,176,64,0.7)' : 'rgba(255,255,255,0.15)',
+          color: phase === 'activating' ? 'rgba(213,79,18,0.7)' : 'rgba(255,255,255,0.15)',
           fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase',
           fontFamily: 'var(--font-mono, monospace)',
           transition: 'color 0.6s ease',
         }}>
-          {LABELS[phase]}
+          {label ?? LABELS[phase]}
         </span>
       </div>
       <div style={{ marginTop: 20, display: 'flex', gap: 6 }}>
         {[0, 1, 2].map((i) => (
           <div key={i} style={{
             width: 5, height: 5, borderRadius: '50%',
-            background: i === 0 && phase !== 'idle' ? '#fbb040' : 'rgba(255,255,255,0.08)',
+            background: i === 0 && phase !== 'idle' ? '#d54f12' : 'rgba(255,255,255,0.08)',
             transition: 'background 0.4s ease',
             animation: phase === 'waiting' && i === 0 ? 'dotPing 1.4s ease-in-out infinite' : 'none',
           }} />
