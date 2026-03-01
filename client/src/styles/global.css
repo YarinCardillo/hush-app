@@ -169,6 +169,46 @@
   --orb-waiting-ring:   rgba(213,79,18,0.2);
 }
 
+/* ── HushOrb phase tokens — registered so CSS can interpolate gradients between phases ── */
+
+@property --ob-from           { syntax: '<color>';  inherits: true; initial-value: #26241e; }
+@property --ob-mid            { syntax: '<color>';  inherits: true; initial-value: #1b1912; }
+@property --ob-to             { syntax: '<color>';  inherits: true; initial-value: #13120a; }
+@property --ob-glow           { syntax: '<color>';  inherits: true; initial-value: rgba(213,79,18,0); }
+@property --ob-ring           { syntax: '<color>';  inherits: true; initial-value: rgba(213,79,18,0); }
+@property --ob-eye            { syntax: '<color>';  inherits: true; initial-value: #3a3a4e; }
+@property --ob-shadow-opacity { syntax: '<number>'; inherits: true; initial-value: 0; }
+
+[data-orb-phase="idle"] {
+  --ob-from:           var(--hush-elevated);
+  --ob-mid:            var(--hush-surface);
+  --ob-to:             var(--hush-black);
+  --ob-glow:           rgba(213,79,18,0);
+  --ob-ring:           rgba(213,79,18,0);
+  --ob-eye:            #3a3a4e;
+  --ob-shadow-opacity: 0;
+}
+
+[data-orb-phase="waiting"] {
+  --ob-from:           var(--orb-waiting-from);
+  --ob-mid:            var(--orb-waiting-mid);
+  --ob-to:             var(--orb-waiting-to);
+  --ob-glow:           var(--orb-waiting-glow);
+  --ob-ring:           var(--orb-waiting-ring);
+  --ob-eye:            #9898b0;
+  --ob-shadow-opacity: 0.3;
+}
+
+[data-orb-phase="activating"] {
+  --ob-from:           #e85a1a;
+  --ob-mid:            #d54f12;
+  --ob-to:             #a33d0e;
+  --ob-glow:           rgba(213,79,18,0.14);
+  --ob-ring:           rgba(213,79,18,0.28);
+  --ob-eye:            #13120a;
+  --ob-shadow-opacity: 1;
+}
+
 /* ── Reset ─────────────────────────────────────── */
 
 *,
