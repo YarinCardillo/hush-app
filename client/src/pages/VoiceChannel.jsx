@@ -578,7 +578,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
         </div>
       </div>
 
-      <div style={{ ...styles.main, paddingRight: showMembers ? 240 : 0 }}>
+      <div style={{ ...styles.main, paddingRight: showMembers ? 240 : 0 }} data-theme="dark">
         <VideoGrid
           localTracks={localTracks}
           remoteTracks={remoteTracks}
