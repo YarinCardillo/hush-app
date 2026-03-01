@@ -344,7 +344,7 @@ export default function ServerLayout() {
             )}
           </div>
 
-          {isMobile ? (
+          {serverId && isMobile ? (
             <>
               <div
                 className={`sidebar-overlay ${showMembers ? 'sidebar-overlay-open' : ''}`}
@@ -359,7 +359,7 @@ export default function ServerLayout() {
                 />
               </div>
             </>
-          ) : showMembers ? (
+          ) : serverId && showMembers ? (
             <div style={layoutStyles.memberPanel}>
               <MemberList
                 members={members}
