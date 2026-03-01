@@ -193,7 +193,6 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   const orbFlashTimerRef = useRef(null);
 
   const roomName = `server-${serverId}-channel-${channel.id}`;
-  const orbPhase = orbFlashing ? 'activating' : (isReady ? 'waiting' : 'idle');
   const isLowLatency = channel.voiceMode === 'low-latency';
 
   const getStore = useCallback(
@@ -234,6 +233,8 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     encryptForUser,
     decryptFromUser,
   });
+
+  const orbPhase = orbFlashing ? 'activating' : (isReady ? 'waiting' : 'idle');
 
   const connectRoomRef = useRef(connectRoom);
   connectRoomRef.current = connectRoom;

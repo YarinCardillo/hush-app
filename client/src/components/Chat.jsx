@@ -304,7 +304,13 @@ export default function Chat({
   // Subscribe to channel and listen for message.new
   useEffect(() => {
     if (!wsClient || !channelId) return;
-    wsClient.send('subscribe', { channel_id: channelId });
+
+    function doSubscribe() {
+      if (wsClient.isConnected()) wsClient.send('subscribe', { channel_id: channelId });
+    }
+    doSubscribe();
+    wsClient.on('open', doSubscribe);
+
     const onMessageNew = async (data) => {
       if (data.channel_id !== channelId) return;
       const id = data.id || `msg-${Date.now()}`;
@@ -361,9 +367,10 @@ export default function Chat({
     wsClient.on('message.new', onMessageNew);
     wsClient.on('error', onError);
     return () => {
+      wsClient.off('open', doSubscribe);
       wsClient.off('message.new', onMessageNew);
       wsClient.off('error', onError);
-      wsClient.send('unsubscribe', { channel_id: channelId });
+      if (wsClient.isConnected()) wsClient.send('unsubscribe', { channel_id: channelId });
     };
   }, [wsClient, channelId, currentUserId, onNewMessage]);
 

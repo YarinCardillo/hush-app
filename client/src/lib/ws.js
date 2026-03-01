@@ -116,8 +116,12 @@ export function createWsClient(opts) {
     authSent = false;
   }
 
+  function isConnected() {
+    return socket !== null && socket.readyState === WebSocket.OPEN;
+  }
+
   function send(type, payload = {}) {
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    if (!isConnected()) {
       throw new Error('WebSocket not connected');
     }
     socket.send(JSON.stringify({ type, ...payload }));
@@ -133,5 +137,5 @@ export function createWsClient(opts) {
     if (cbs) cbs.delete(callback);
   }
 
-  return { connect, disconnect, send, on, off };
+  return { connect, disconnect, send, isConnected, on, off };
 }
