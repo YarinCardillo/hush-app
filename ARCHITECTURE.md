@@ -13,7 +13,7 @@
 | Frontend | React 18 + Vite + hush-crypto (WASM) + livekit-client | Phases A-D DONE |
 | Media SFU | LiveKit Server | DONE |
 | Signaling | Go WebSocket (ws hub + client) | DONE |
-| Auth | Go backend (JWT, bcrypt, guest) | DONE — Home.jsx still uses Matrix auth as bridge, migrates in Phase E |
+| Auth | Go backend (JWT, bcrypt, guest) | DONE |
 | Chat | WebSocket + Signal Protocol (fan-out encryption) | DONE |
 | E2EE Chat | Signal Protocol (X3DH + Double Ratchet) via hush-crypto WASM | DONE |
 | E2EE Media | LiveKit Insertable Streams + Signal-encrypted WebSocket key distribution | DONE |
@@ -92,7 +92,7 @@ client/
 │   │   └── AuthContext.jsx       # Auth context (JWT-based, wraps useAuth)
 │   │
 │   ├── hooks/
-│   │   ├── useMatrixAuth.js      # Matrix auth (LEGACY — used by Home.jsx, to be removed in Phase E)
+│   │   ├── useAuth.js            # Go backend auth (JWT, register, login, guest, session rehydration)
 │   │   ├── useRoom.js            # LiveKit room: E2EE via Signal, track management, wsClient guard
 │   │   ├── useSignal.js          # Signal Protocol session management, encrypt/decrypt
 │   │   ├── useDevices.js         # Device enumeration (cameras, mics)
@@ -106,7 +106,6 @@ client/
 │   │   ├── e2eeKeyManager.js     # LiveKit E2EE key generation, distribution via Signal over WebSocket
 │   │   ├── e2eeKeyManager.test.js # 16 tests: retrySend, mediaKey listener, leader logic, rekey, base64
 │   │   ├── hushCrypto.js         # WASM wrapper: X3DH, Double Ratchet, key generation
-│   │   ├── matrixClient.js       # Matrix client factory (LEGACY — used by Home.jsx, to be removed)
 │   │   ├── signalStore.js        # Signal Protocol state in IndexedDB (identity, sessions, pre-keys)
 │   │   ├── signalStore.test.js   # Signal store tests
 │   │   ├── trackManager.js       # LiveKit track publishing/subscribing, quality settings
@@ -167,7 +166,6 @@ scripts/
 ├── setup.sh                      # Docker setup script
 └── checkpoint-B-test.md          # Manual test checklist
 
-synapse/                          # Synapse config and data (TO BE REMOVED in Phase E)
 ```
 
 ---
@@ -388,14 +386,15 @@ Only public keys are uploaded to the server. Private keys never leave the client
 - `design-system.md` — UI design language
 - `livekit/livekit.yaml` — LiveKit server config
 
-## Remove List (delete during refactor)
+## Remove List (completed)
 
-- `server/src/synapseAdmin.js` — Synapse admin API
-- `client/src/hooks/useMatrixAuth.js` — Matrix auth
-- `client/src/lib/matrixClient.js` — Matrix client factory
-- `client/src/contexts/AuthContext.jsx` — Matrix auth context (rewrite for JWT)
-- `synapse/` — entire Synapse directory
-- `scripts/test-synapse.sh` — Synapse test
-- `scripts/generate-synapse-config.sh` — Synapse config generator
-- `docker-compose.yml` Synapse and lk-jwt-service service entries
-- All `matrix-js-sdk` imports across client
+All Matrix/Synapse components removed:
+- `server/src/` — entire old Node.js server (replaced by Go backend)
+- `synapse/` — Synapse config and data
+- `client/src/hooks/useMatrixAuth.js`, `client/src/lib/matrixClient.js` — Matrix client code
+- `client/src/contexts/AuthContext.jsx` — rewritten for JWT (no Matrix)
+- `scripts/test-synapse.sh`, `scripts/generate-synapse-config.sh`, `scripts/test-chat.sh` — Matrix test scripts
+- `docker-compose.yml` — Synapse service, old Node.js `hush` service, Matrix env vars
+- `Dockerfile` — old Node.js root Dockerfile (Go backend has its own)
+- `docs/reference/MATRIX_REFERENCE.md` — Matrix protocol reference
+- All `matrix-js-sdk` imports removed from client

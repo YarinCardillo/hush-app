@@ -22,6 +22,7 @@ function sortWithinSection(members, onlineUserIds) {
 const styles = {
   panel: {
     width: '240px',
+    height: '100%',
     flexShrink: 0,
     background: 'var(--hush-surface)',
     borderLeft: '1px solid var(--hush-border)',

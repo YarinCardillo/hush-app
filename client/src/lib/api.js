@@ -157,6 +157,26 @@ export async function createServer(token, body) {
 }
 
 /**
+ * Create an invite code for a server.
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @param {{ maxUses?: number, expiresIn?: number }} [options]
+ * @returns {Promise<{ code: string, serverId: string, createdBy: string, maxUses: number, expiresAt: string }>}
+ */
+export async function createInvite(token, serverId, options = {}) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/invites`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `create invite ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
  * Resolve an invite code to server info (for join flow). No auth required.
  * @param {string} code - Invite code (from link or user input)
  * @returns {Promise<{ serverId: string, serverName: string }>}
@@ -211,6 +231,25 @@ export async function createChannel(token, serverId, body) {
 }
 
 /**
+ * Move a channel to a new parent and/or position (admin only).
+ * @param {string} token - JWT
+ * @param {string} channelId - Channel UUID
+ * @param {{ parentId?: string|null, position: number }} body
+ * @returns {Promise<void>}
+ */
+export async function moveChannel(token, channelId, body) {
+  const res = await fetchWithAuth(token, `/api/channels/${encodeURIComponent(channelId)}/move`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `move channel ${res.status}`);
+  }
+}
+
+/**
  * Delete a channel (admin only).
  * @param {string} token - JWT
  * @param {string} channelId - Channel UUID
@@ -223,6 +262,58 @@ export async function deleteChannel(token, channelId) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `delete channel ${res.status}`);
+  }
+}
+
+/**
+ * Update server name and/or icon (admin only).
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @param {{ name?: string, iconUrl?: string }} body
+ * @returns {Promise<void>}
+ */
+export async function updateServer(token, serverId, body) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `update server ${res.status}`);
+  }
+}
+
+/**
+ * Delete a server (admin only).
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @returns {Promise<void>}
+ */
+export async function deleteServer(token, serverId) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `delete server ${res.status}`);
+  }
+}
+
+/**
+ * Leave a server. Admins auto-transfer ownership to the next member.
+ * Returns 409 if user is the sole member — they must delete instead.
+ * @param {string} token - JWT
+ * @param {string} serverId - Server UUID
+ * @returns {Promise<void>}
+ */
+export async function leaveServer(token, serverId) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/leave`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `leave server ${res.status}`);
   }
 }
 

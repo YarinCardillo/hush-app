@@ -20,5 +20,25 @@ The refactor lives on `core-rewrite`. Each phase gets its own sub-branch:
 
 Committing directly to `core-rewrite` or `main` is forbidden.
 
+## PLAN.md — Development Roadmap
+
+`PLAN.md` is the source of truth for what has been built and what comes next. It is gitignored (local-only).
+
+**When completing a phase or sub-step:**
+- Mark it `✅ DONE` in the section header
+- Update the checkpoint note with a one-line summary of what was actually shipped
+- If extra work was done beyond the original spec, add a note (e.g. E.9 for UX polish)
+
+**When starting a new phase:**
+- Update `## 🎯 Current Focus` at the top to reflect the new active step
+- List the next 2–3 steps so the plan is always forward-looking
+
+**When adding new phases or sub-steps:**
+- Add them in the correct letter/number slot; if they are critical bug fixes, note them as 🔴
+- Keep B.5, B.6, etc. format for additions to existing phases; use new letters for standalone phases
+- Always update `## 🎯 Current Focus` after adding
+
+**Never skip this.** An outdated PLAN.md causes agents to re-do completed work or miss critical context.
+
 ## Signal Protocol & Cryptography
 Before modifying any file in `hush-crypto/`, `client/src/lib/signalStore.js`, `client/src/lib/hushCrypto.js`, `client/src/hooks/useSignal.js`, `client/src/lib/uploadKeysAfterAuth.js`, `server/internal/api/keys.go`, or `server/internal/db/keys.go`, ALWAYS read `signal-theory-context.md` first. It contains condensed Signal Protocol theory (X3DH, Double Ratchet, PQXDH, Sesame, key lifecycle invariants) extracted from the full specs in `.signal-specs/`.

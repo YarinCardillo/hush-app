@@ -84,17 +84,20 @@ export function useSignal({ getStore, getToken }) {
     const identity = await signalStore.getIdentity(db);
     if (!identity) throw new Error('No local identity');
 
-    const x3dhResult = await hushCrypto.performX3DH(JSON.stringify(bundleJson), identity.privateKey);
+    // Normalize Go API response (camelCase + base64) → WASM format (snake_case + arrays).
+    const bundle = normalizeBundleForWasm(bundleJson);
+    const bundleStr = JSON.stringify(bundle);
+    const x3dhResult = await hushCrypto.performX3DH(bundleStr, identity.privateKey);
 
     // AD = Encode(IK_A) || Encode(IK_B) — initiator first, then responder.
-    const remoteIk = coerceToUint8Array(bundleJson.identityKey ?? bundleJson.identity_key);
+    const remoteIk = coerceToUint8Array(bundle.identity_key);
     const ad = buildAssociatedData(identity.publicKey, remoteIk);
 
     const { ciphertext, updatedState } = await hushCrypto.encrypt(x3dhResult.stateBytes, plaintext, ad);
     await signalStore.setSession(db, remoteUserId, remoteDeviceId, updatedState, ad);
 
-    const spkId = bundleJson.signed_pre_key_id ?? 1;
-    const opkId = bundleJson.oneTimePreKeyId ?? bundleJson.one_time_pre_key_id ?? NO_OPK_SENTINEL;
+    const spkId = bundle.signed_pre_key_id ?? 1;
+    const opkId = bundle.one_time_pre_key_id ?? NO_OPK_SENTINEL;
 
     return buildPreKeyEnvelope(identity.publicKey, x3dhResult.ephemeralPublic, spkId, opkId, ciphertext);
   }
@@ -230,6 +233,38 @@ function parsePreKeyEnvelope(envelope) {
   const opkId = dv.getUint32(offset, true); offset += KEY_ID_BYTES;
   const drPayload = envelope.slice(offset);
   return { senderIk, senderEk, spkId, opkId, drPayload };
+}
+
+/**
+ * Normalizes a Go API pre-key bundle for WASM consumption:
+ * 1. Renames camelCase keys to snake_case (compiled WASM expects snake_case)
+ * 2. Decodes base64 string values to numeric arrays (Go []byte → Rust Vec<u8>)
+ * @param {object} bundle - Pre-key bundle from the Go API (camelCase, base64 bytes)
+ * @returns {object} Bundle with snake_case keys and numeric array values
+ */
+function normalizeBundleForWasm(bundle) {
+  const keyMap = {
+    identityKey: 'identity_key',
+    signedPreKey: 'signed_pre_key',
+    signedPreKeySignature: 'signed_pre_key_signature',
+    registrationId: 'registration_id',
+    oneTimePreKeyId: 'one_time_pre_key_id',
+    oneTimePreKey: 'one_time_pre_key',
+  };
+  const byteFields = new Set([
+    'identity_key', 'signed_pre_key', 'signed_pre_key_signature', 'one_time_pre_key',
+  ]);
+  const result = {};
+  for (const [key, value] of Object.entries(bundle)) {
+    const snakeKey = keyMap[key] ?? key;
+    if (byteFields.has(snakeKey) && typeof value === 'string') {
+      const binary = atob(value);
+      result[snakeKey] = Array.from(binary, (c) => c.charCodeAt(0));
+    } else {
+      result[snakeKey] = value;
+    }
+  }
+  return result;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ServerList from '../components/ServerList';
 import ChannelList from '../components/ChannelList';
@@ -10,6 +10,8 @@ import { createWsClient } from '../lib/ws';
 import { useAuth } from '../contexts/AuthContext';
 import { JWT_KEY } from '../hooks/useAuth';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { useSidebarResize } from '../hooks/useSidebarResize';
+import ConfirmModal from '../components/ConfirmModal';
 
 const layoutStyles = {
   root: {
@@ -31,6 +33,15 @@ const layoutStyles = {
     flexDirection: 'row',
     minWidth: 0,
     overflow: 'hidden',
+    position: 'relative',
+  },
+  memberPanel: {
+    position: 'absolute',
+    right: 0,
+    top: 48,
+    bottom: 0,
+    width: 240,
+    overflow: 'hidden',
   },
   channelArea: {
     flex: 1,
@@ -39,6 +50,13 @@ const layoutStyles = {
     minWidth: 0,
     overflow: 'hidden',
   },
+  voiceWrapper: (visible) => ({
+    display: visible ? 'flex' : 'none',
+    flex: 1,
+    flexDirection: 'column',
+    minHeight: 0,
+    overflow: 'hidden',
+  }),
   placeholder: {
     flex: 1,
     display: 'flex',
@@ -48,6 +66,35 @@ const layoutStyles = {
     color: 'var(--hush-text-muted)',
     fontSize: '0.9rem',
     textAlign: 'center',
+  },
+  resizeHandle: {
+    width: '4px',
+    flexShrink: 0,
+    cursor: 'col-resize',
+    background: 'transparent',
+    transition: 'background var(--duration-fast) var(--ease-out)',
+    zIndex: 10,
+  },
+  channelAreaHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 16px',
+    height: '48px',
+    background: 'var(--hush-surface)',
+    borderBottom: '1px solid var(--hush-border)',
+    flexShrink: 0,
+  },
+  membersToggle: {
+    padding: '4px 8px',
+    fontSize: '0.8rem',
+    fontFamily: 'var(--font-sans)',
+    background: 'none',
+    border: '1px solid var(--hush-border)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--hush-text-secondary)',
+    cursor: 'pointer',
+    flexShrink: 0,
   },
 };
 
@@ -69,8 +116,26 @@ export default function ServerLayout() {
   const [members, setMembers] = useState([]);
   const [showMembers, setShowMembers] = useState(() => breakpoint !== 'mobile');
 
+  // Persistent voice session — survives channel/server navigation until Leave is clicked.
+  const [activeVoiceChannel, setActiveVoiceChannel] = useState(null);
+  const [activeVoiceServerId, setActiveVoiceServerId] = useState(null);
+  const [pendingVoiceSwitch, setPendingVoiceSwitch] = useState(null); // channel to switch to after confirmation
+  // Member IDs captured at join time for the voice channel's server.
+  // When on a different server we can't derive them from current `members`.
+  const activeVoiceMemberIdsRef = useRef([]);
+
+  const { width: sidebarWidth, handleMouseDown: handleSidebarResize } = useSidebarResize();
+
   const currentUserId = user?.id ?? '';
   const isMobile = breakpoint === 'mobile';
+
+  // Whether the user is currently viewing the active voice channel.
+  const isViewingVoice = activeVoiceChannel != null && channelId === activeVoiceChannel.id;
+
+  // Member IDs to pass to VoiceChannel: live when on same server, captured otherwise.
+  const memberIds = members.map((m) => m.userId);
+  const voiceRecipientIds =
+    serverId === activeVoiceServerId ? memberIds : activeVoiceMemberIdsRef.current;
 
   useEffect(() => {
     if (!authToken) return;
@@ -122,6 +187,18 @@ export default function ServerLayout() {
     }
   }, [serverId, fetchServerData]);
 
+  const currentChannel = serverData?.channels?.find((c) => c.id === channelId);
+
+  // Auto-join when navigating directly to a voice channel URL.
+  useEffect(() => {
+    if (currentChannel?.type === 'voice' && currentChannel.id !== activeVoiceChannel?.id) {
+      activeVoiceMemberIdsRef.current = memberIds;
+      setActiveVoiceChannel(currentChannel);
+      setActiveVoiceServerId(serverId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentChannel?.id, currentChannel?.type]);
+
   const handleServerSelect = (server) => {
     if (server?.id) {
       navigate(`/server/${server.id}`, { replace: true });
@@ -129,17 +206,48 @@ export default function ServerLayout() {
   };
 
   const handleChannelSelect = (channel) => {
-    if (channel?.id && serverId) {
-      navigate(`/server/${serverId}/channel/${channel.id}`);
+    if (!channel?.id || !serverId) return;
+    // Switching to a different voice channel while already in one → ask first.
+    if (channel.type === 'voice' && activeVoiceChannel && channel.id !== activeVoiceChannel.id) {
+      setPendingVoiceSwitch(channel);
+      return;
+    }
+    navigate(`/server/${serverId}/channel/${channel.id}`);
+    if (channel.type === 'voice') {
+      activeVoiceMemberIdsRef.current = memberIds;
+      setActiveVoiceChannel(channel);
+      setActiveVoiceServerId(serverId);
     }
   };
+
+  const handleVoiceSwitchConfirmed = useCallback(() => {
+    const channel = pendingVoiceSwitch;
+    setPendingVoiceSwitch(null);
+    if (!channel) return;
+    navigate(`/server/${serverId}/channel/${channel.id}`);
+    activeVoiceMemberIdsRef.current = memberIds;
+    setActiveVoiceChannel(channel);
+    setActiveVoiceServerId(serverId);
+  }, [pendingVoiceSwitch, serverId, memberIds, navigate]);
 
   const handleChannelsUpdated = (data) => {
     setServerData(data);
   };
 
-  const currentChannel = serverData?.channels?.find((c) => c.id === channelId);
-  const memberIds = members.map((m) => m.userId);
+  const handleVoiceLeave = useCallback(() => {
+    setActiveVoiceChannel(null);
+    setActiveVoiceServerId(null);
+    activeVoiceMemberIdsRef.current = [];
+    navigate(`/server/${serverId}`);
+  }, [navigate, serverId]);
+
+  // Called after the user successfully leaves or deletes the server.
+  const handleServerLeft = useCallback(() => {
+    setActiveVoiceChannel(null);
+    setActiveVoiceServerId(null);
+    activeVoiceMemberIdsRef.current = [];
+    navigate('/');
+  }, [navigate]);
 
   return (
     <div style={layoutStyles.root}>
@@ -149,26 +257,73 @@ export default function ServerLayout() {
         onServerSelect={handleServerSelect}
       />
       {serverId && (
-        <ChannelList
-          getToken={getToken}
-          serverId={serverId}
-          serverName={serverData?.server?.name}
-          channels={serverData?.channels}
-          myRole={serverData?.myRole}
-          activeChannelId={channelId}
-          onChannelSelect={handleChannelSelect}
-          onChannelsUpdated={handleChannelsUpdated}
-          // TODO(Phase-E.5, 2026-02-25): Wire up real voice participant counts from LiveKit
-          voiceParticipantCounts={null}
-        />
+        <>
+          <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
+            <ChannelList
+              getToken={getToken}
+              serverId={serverId}
+              serverName={serverData?.server?.name}
+              channels={serverData?.channels}
+              myRole={serverData?.myRole}
+              activeChannelId={channelId}
+              onChannelSelect={handleChannelSelect}
+              onChannelsUpdated={handleChannelsUpdated}
+              // TODO(Phase-E.5, 2026-02-25): Wire up real voice participant counts from LiveKit
+              voiceParticipantCounts={null}
+              onLeaveServer={handleServerLeft}
+              onDeleteServer={handleServerLeft}
+            />
+          </div>
+          <div
+            style={layoutStyles.resizeHandle}
+            onMouseDown={handleSidebarResize}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-border)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize channel list"
+          />
+        </>
       )}
       <div style={layoutStyles.main}>
-        {loading ? (
-          <div style={layoutStyles.placeholder}>Loading…</div>
-        ) : channelId && currentChannel ? (
-          <div style={layoutStyles.contentRow}>
-            <div style={layoutStyles.channelArea}>
-              {currentChannel.type === 'text' ? (
+        <div style={layoutStyles.contentRow}>
+          <div style={layoutStyles.channelArea}>
+            {/* Persistent voice session: always mounted while active, hidden when not viewing. */}
+            {activeVoiceChannel && (
+              <div style={layoutStyles.voiceWrapper(isViewingVoice)}>
+                <VoiceChannel
+                  key={activeVoiceChannel.id}
+                  channel={activeVoiceChannel}
+                  serverId={activeVoiceServerId}
+                  getToken={getToken}
+                  wsClient={wsClient}
+                  recipientUserIds={voiceRecipientIds}
+                  showMembers={showMembers}
+                  onToggleMembers={() => setShowMembers((v) => !v)}
+                  onLeave={handleVoiceLeave}
+                />
+              </div>
+            )}
+
+            {/* Persistent header for non-text, non-voice states (keeps Members button visible). */}
+            {!isViewingVoice && serverId && currentChannel?.type !== 'text' && (
+              <header style={layoutStyles.channelAreaHeader}>
+                <div />
+                <button
+                  type="button"
+                  style={layoutStyles.membersToggle}
+                  onClick={() => setShowMembers((v) => !v)}
+                  aria-pressed={showMembers}
+                >
+                  Members
+                </button>
+              </header>
+            )}
+
+            {!isViewingVoice && (
+              loading ? (
+                <div style={layoutStyles.placeholder}>Loading…</div>
+              ) : currentChannel?.type === 'text' ? (
                 <TextChannel
                   key={currentChannel.id}
                   channel={currentChannel}
@@ -179,50 +334,51 @@ export default function ServerLayout() {
                   showMembers={showMembers}
                   onToggleMembers={() => setShowMembers((v) => !v)}
                 />
-              ) : currentChannel.type === 'voice' ? (
-                <VoiceChannel
-                  key={currentChannel.id}
-                  channel={currentChannel}
-                  serverId={serverId}
-                  getToken={getToken}
-                  wsClient={wsClient}
-                  recipientUserIds={memberIds}
-                  showMembers={showMembers}
-                  onToggleMembers={() => setShowMembers((v) => !v)}
-                />
-              ) : (
+              ) : currentChannel && currentChannel.type !== 'voice' ? (
                 <div style={layoutStyles.placeholder}>Unknown channel type</div>
-              )}
-            </div>
-            {isMobile ? (
-              <>
-                <div
-                  className={`sidebar-overlay ${showMembers ? 'sidebar-overlay-open' : ''}`}
-                  onClick={() => setShowMembers(false)}
-                  aria-hidden={!showMembers}
-                />
-                <div className={`sidebar-panel-right ${showMembers ? 'sidebar-panel-open' : ''}`}>
-                  <MemberList
-                    members={members}
-                    onlineUserIds={onlineUserIds}
-                    currentUserId={currentUserId}
-                  />
+              ) : (
+                <div style={layoutStyles.placeholder}>
+                  {serverId ? 'Select a channel' : 'Select a server'}
                 </div>
-              </>
-            ) : showMembers ? (
+              )
+            )}
+          </div>
+
+          {serverId && isMobile ? (
+            <>
+              <div
+                className={`sidebar-overlay ${showMembers ? 'sidebar-overlay-open' : ''}`}
+                onClick={() => setShowMembers(false)}
+                aria-hidden={!showMembers}
+              />
+              <div className={`sidebar-panel-right ${showMembers ? 'sidebar-panel-open' : ''}`}>
+                <MemberList
+                  members={members}
+                  onlineUserIds={onlineUserIds}
+                  currentUserId={currentUserId}
+                />
+              </div>
+            </>
+          ) : serverId && showMembers ? (
+            <div style={layoutStyles.memberPanel}>
               <MemberList
                 members={members}
                 onlineUserIds={onlineUserIds}
                 currentUserId={currentUserId}
               />
-            ) : null}
-          </div>
-        ) : serverId ? (
-          <div style={layoutStyles.placeholder}>Select a channel</div>
-        ) : (
-          <div style={layoutStyles.placeholder}>Select a server</div>
-        )}
+            </div>
+          ) : null}
+        </div>
       </div>
+      {pendingVoiceSwitch && (
+        <ConfirmModal
+          title="Switch voice channel"
+          message={`You are currently connected to "${activeVoiceChannel?.name}". Switch to "${pendingVoiceSwitch.name}"?`}
+          confirmLabel="Switch"
+          onConfirm={handleVoiceSwitchConfirmed}
+          onCancel={() => setPendingVoiceSwitch(null)}
+        />
+      )}
     </div>
   );
 }

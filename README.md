@@ -99,7 +99,7 @@ Full media E2EE requires Insertable Streams and the LiveKit E2EE worker. See [SE
 
 - **[SECURITY.md](SECURITY.md):** E2EE implementation, trust model, limitations.
 - **[CHANGELOG.md](CHANGELOG.md):** Release history and notable changes.
-- **[docs/](docs/README.md):** Full documentation index: testing, room lifecycle, Matrix reference, audit reports.
+- **[docs/](docs/README.md):** Full documentation index: testing, room lifecycle, audit reports.
 
 ---
 

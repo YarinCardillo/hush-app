@@ -663,8 +663,10 @@ export default function Home() {
 
               <form style={styles.form} onSubmit={handleGuestSubmit}>
                 <div>
-                  <label style={styles.fieldLabel}>Your Name</label>
+                  <label htmlFor="guest-display-name" style={styles.fieldLabel}>Your Name</label>
                   <input
+                    id="guest-display-name"
+                    name="display-name"
                     className="input"
                     type="text"
                     placeholder="How others will see you"
@@ -672,6 +674,7 @@ export default function Home() {
                     onChange={(e) => setDisplayName(e.target.value)}
                     required
                     maxLength={30}
+                    autoComplete="off"
                   />
                 </div>
 
@@ -715,8 +718,10 @@ export default function Home() {
               </button>
               <form style={styles.form} onSubmit={handleLoginSubmit}>
                 <div>
-                  <label style={styles.fieldLabel}>Username or email</label>
+                  <label htmlFor="login-username" style={styles.fieldLabel}>Username or email</label>
                   <input
+                    id="login-username"
+                    name="username"
                     className="input"
                     type="text"
                     placeholder="alice or alice@example.com"
@@ -727,8 +732,10 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label style={styles.fieldLabel}>Password</label>
+                  <label htmlFor="login-password" style={styles.fieldLabel}>Password</label>
                   <input
+                    id="login-password"
+                    name="password"
                     className="input"
                     type="password"
                     placeholder="Password"
@@ -777,8 +784,10 @@ export default function Home() {
               </button>
               <form style={styles.form} onSubmit={handleRegisterSubmit}>
                 <div>
-                  <label style={styles.fieldLabel}>Username</label>
+                  <label htmlFor="register-username" style={styles.fieldLabel}>Username</label>
                   <input
+                    id="register-username"
+                    name="username"
                     className="input"
                     type="text"
                     placeholder="Choose a username (e.g. alice)"
@@ -789,8 +798,10 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label style={styles.fieldLabel}>Password</label>
+                  <label htmlFor="register-password" style={styles.fieldLabel}>Password</label>
                   <input
+                    id="register-password"
+                    name="new-password"
                     className="input"
                     type="password"
                     placeholder="Min 8 characters"
@@ -802,8 +813,10 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label style={styles.fieldLabel}>Confirm password</label>
+                  <label htmlFor="register-password-confirm" style={styles.fieldLabel}>Confirm password</label>
                   <input
+                    id="register-password-confirm"
+                    name="new-password-confirm"
                     className="input"
                     type="password"
                     placeholder="Repeat your password"
@@ -815,8 +828,10 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label style={styles.fieldLabel}>Display name</label>
+                  <label htmlFor="register-display-name" style={styles.fieldLabel}>Display name</label>
                   <input
+                    id="register-display-name"
+                    name="display-name"
                     className="input"
                     type="text"
                     placeholder="How others will see you in rooms"
@@ -824,6 +839,7 @@ export default function Home() {
                     onChange={(e) => setRegisterDisplayName(e.target.value)}
                     required
                     maxLength={30}
+                    autoComplete="off"
                   />
                 </div>
                 <button

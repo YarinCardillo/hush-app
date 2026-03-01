@@ -14,11 +14,6 @@ server/hush
 *.so
 *.dylib
 
-# Synapse homeserver data
-synapse/homeserver.yaml
-synapse/data/
-synapse/*.signing.key
-
 # Claude Code / agent instructions (local workflow)
 .claude/
 CLAUDE.md

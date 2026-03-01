@@ -1,6 +1,9 @@
 /**
  * Lazy-loaded hush-crypto WASM module.
  * Call init() before any other method (e.g. on first encrypt or after login).
+ *
+ * All WASM functions return structured JS objects via serde_wasm_bindgen.
+ * Vec<u8> fields arrive as Uint8Array; u32 fields as JS numbers.
  */
 
 let module = null;
@@ -58,10 +61,10 @@ export async function generatePreKeyBundle(identityPublic, identityPrivate, regi
  */
 export async function performX3DH(remoteBundleJson, identityPrivate) {
   await init();
-  const result = module.performX3DH(remoteBundleJson, identityPrivate);
+  const out = module.performX3DH(remoteBundleJson, identityPrivate);
   return {
-    stateBytes: new Uint8Array(result.state_bytes),
-    ephemeralPublic: new Uint8Array(result.ephemeral_public),
+    stateBytes: new Uint8Array(out.state_bytes),
+    ephemeralPublic: new Uint8Array(out.ephemeral_public),
   };
 }
 
@@ -80,7 +83,7 @@ export async function performX3DHResponder(
   aliceIdentityPublic, aliceEphemeralPublic,
 ) {
   await init();
-  const result = module.performX3DHResponder(
+  const out = module.performX3DHResponder(
     identityPrivate,
     spkPrivate,
     spkPublic,
@@ -88,7 +91,7 @@ export async function performX3DHResponder(
     aliceIdentityPublic,
     aliceEphemeralPublic,
   );
-  return new Uint8Array(result.state_bytes);
+  return new Uint8Array(out.state_bytes);
 }
 
 /**
