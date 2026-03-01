@@ -299,8 +299,8 @@ export default function ServerLayout() {
                   getToken={getToken}
                   wsClient={wsClient}
                   recipientUserIds={voiceRecipientIds}
-                  showMembers={showMembers}
-                  onToggleMembers={() => setShowMembers((v) => !v)}
+                  members={members}
+                  onlineUserIds={onlineUserIds}
                   onLeave={handleVoiceLeave}
                 />
               </div>
@@ -338,7 +338,14 @@ export default function ServerLayout() {
               ) : currentChannel && currentChannel.type !== 'voice' ? (
                 <div style={layoutStyles.placeholder}>Unknown channel type</div>
               ) : (
-                <div style={layoutStyles.placeholder}>
+                <div style={{
+                  ...layoutStyles.placeholder,
+                  // Match the orb's vertical position in VoiceChannel (controls bar = 69px)
+                  // so idle→waiting transition is seamless when entering/leaving a voice room.
+                  paddingBottom: 93,
+                  paddingRight: !isMobile && showMembers ? 240 : 0,
+                  transition: 'padding-right var(--duration-fast) var(--ease-out)',
+                }}>
                   <HushOrb
                     phase="idle"
                     label={serverId ? 'select a channel' : 'select a server'}
@@ -348,7 +355,7 @@ export default function ServerLayout() {
             )}
           </div>
 
-          {serverId && isMobile ? (
+          {serverId && !isViewingVoice && isMobile ? (
             <>
               <div
                 className={`sidebar-overlay ${showMembers ? 'sidebar-overlay-open' : ''}`}
@@ -363,7 +370,7 @@ export default function ServerLayout() {
                 />
               </div>
             </>
-          ) : serverId && showMembers ? (
+          ) : serverId && !isViewingVoice && showMembers ? (
             <div style={layoutStyles.memberPanel}>
               <MemberList
                 members={members}
