@@ -340,8 +340,10 @@ export default function ServerLayout() {
               ) : (
                 <div style={{
                   ...layoutStyles.placeholder,
-                  // Match the orb's vertical position in VoiceChannel (controls bar = 69px)
-                  // so idle→waiting transition is seamless when entering/leaving a voice room.
+                  // paddingLeft: 0 aligns the horizontal center with VideoGrid's empty state
+                  // (streamsArea has padding:6px; placeholder had padding:24px → 12px offset).
+                  // paddingBottom: 93 matches vertical position (controls bar = 69px + 24px base).
+                  paddingLeft: 0,
                   paddingBottom: 93,
                   paddingRight: !isMobile && showMembers ? 240 : 0,
                   transition: 'padding-right var(--duration-fast) var(--ease-out)',
