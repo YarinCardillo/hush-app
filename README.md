@@ -1,6 +1,6 @@
 # Hush
 
-**Stream without limits. Privacy by default.**
+**Your server. Nobody else's. Privacy by default.**
 
 High-quality screen sharing with end-to-end encryption. Open source, self-hostable. Signal Protocol for chat, LiveKit for media, both E2EE.
 
