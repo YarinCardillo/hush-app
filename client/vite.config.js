@@ -3,25 +3,6 @@ import react from '@vitejs/plugin-react';
 import wasm from 'vite-plugin-wasm';
 import topLevelAwait from 'vite-plugin-top-level-await';
 
-// Rewrites the /wasm/hush_crypto.js import in hushCrypto.js before
-// vite:import-analysis transforms it. Vite only flags string literal arguments
-// to import() that resolve to /public — wrapping the path in an IIFE arrow
-// ((_u) => import(_u)) makes the argument a variable reference, bypassing
-// the check. Production is unaffected (rollupOptions.external handles it).
-const wasmPublicImportPlugin = {
-  name: 'wasm-public-import',
-  enforce: 'pre',
-  transform(code, id) {
-    if (!id.includes('hushCrypto')) return;
-    const before = code.includes("import(/* @vite-ignore */ '/wasm/hush_crypto.js')");
-    const out = code.replace(
-      "import(/* @vite-ignore */ '/wasm/hush_crypto.js')",
-      "((_u) => import(_u))('/wasm/hush_crypto.js')",
-    );
-    return out;
-  },
-};
-
 // Custom middleware to force correct MIME type for WASM files
 const wasmContentTypePlugin = {
   name: 'wasm-content-type-plugin',
@@ -46,7 +27,6 @@ const wasmContentTypePlugin = {
 
 export default defineConfig({
   plugins: [
-    wasmPublicImportPlugin,
     wasmContentTypePlugin,
     wasm(),
     topLevelAwait(),
@@ -82,7 +62,6 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
     rollupOptions: {
-      external: ['/wasm/hush_crypto.js'],
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
