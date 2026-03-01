@@ -66,7 +66,7 @@ export function createWsClient(opts) {
   }
 
   function connect() {
-    if (socket && socket.readyState === WebSocket.OPEN) return;
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
     const urlWithToken = getToken() ? `${wsUrl}?token=${encodeURIComponent(getToken())}` : wsUrl;
     const ws = new WebSocket(urlWithToken);
     socket = ws;
@@ -110,8 +110,14 @@ export function createWsClient(opts) {
     }
     reconnectAttempt = 0;
     if (socket) {
-      socket.close();
+      // Detach handlers before closing so onclose doesn't trigger scheduleReconnect.
+      const s = socket;
       socket = null;
+      s.onopen = null;
+      s.onmessage = null;
+      s.onclose = null;
+      s.onerror = null;
+      s.close();
     }
     authSent = false;
   }
