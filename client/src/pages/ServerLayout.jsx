@@ -12,6 +12,7 @@ import { JWT_KEY } from '../hooks/useAuth';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useSidebarResize } from '../hooks/useSidebarResize';
 import ConfirmModal from '../components/ConfirmModal';
+import HushOrb from '../components/HushOrb';
 
 const layoutStyles = {
   root: {
@@ -338,7 +339,10 @@ export default function ServerLayout() {
                 <div style={layoutStyles.placeholder}>Unknown channel type</div>
               ) : (
                 <div style={layoutStyles.placeholder}>
-                  {serverId ? 'Select a channel' : 'Select a server'}
+                  <HushOrb
+                    phase="idle"
+                    label={serverId ? 'select a channel' : 'select a server'}
+                  />
                 </div>
               )
             )}
