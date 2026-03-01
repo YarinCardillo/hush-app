@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Track } from 'livekit-client';
 import StreamView from './StreamView';
 import ScreenShareCard from './ScreenShareCard';
+import HushOrb from './HushOrb';
 import { MEDIA_SOURCES, STANDBY_AFTER_MS, isScreenShareSource } from '../utils/constants';
 
 const styles = {
@@ -18,34 +19,9 @@ const styles = {
   }),
   empty: {
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     height: '100%',
-    color: 'var(--hush-text-muted)',
-    gap: '16px',
-    textAlign: 'center',
-    padding: '40px',
-  },
-  emptyIcon: {
-    width: '56px',
-    height: '56px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 'var(--radius-lg)',
-    background: 'var(--hush-surface)',
-    border: '1px solid transparent',
-  },
-  emptyTitle: {
-    fontSize: '1rem',
-    fontWeight: 500,
-    color: 'var(--hush-text-secondary)',
-  },
-  emptyDescription: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-text-muted)',
-    maxWidth: '280px',
   },
 };
 
@@ -207,6 +183,7 @@ export default function VideoGrid({
   localScreenWatched,
   isMobile,
   breakpoint,
+  orbPhase = 'idle',
   onWatchScreen,
   onUnwatchScreen,
   onWatchLocalScreen,
@@ -243,22 +220,7 @@ export default function VideoGrid({
       <div style={{ ...styles.streamsArea(isMobile, totalCards), ...gridStyle }}>
         {totalCards === 0 ? (
           <div style={styles.empty}>
-            <div style={styles.emptyIcon}>
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="var(--hush-text-ghost)"
-                strokeWidth="1.5"
-              >
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
-            </div>
-            <div style={styles.emptyTitle}>no active streams</div>
-            <div style={styles.emptyDescription}>click share to start streaming</div>
+            <HushOrb phase={orbPhase} />
           </div>
         ) : (
           <>

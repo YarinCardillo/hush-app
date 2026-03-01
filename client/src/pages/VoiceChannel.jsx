@@ -186,11 +186,14 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   const [showParticipantsPanel, setShowParticipantsPanel] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [participantsBadge, setParticipantsBadge] = useState(false);
+  const [orbFlashing, setOrbFlashing] = useState(false);
   const showChatPanelRef = useRef(false);
   const showParticipantsPanelRef = useRef(false);
   const seenParticipantIdsRef = useRef(null);
+  const orbFlashTimerRef = useRef(null);
 
   const roomName = `server-${serverId}-channel-${channel.id}`;
+  const orbPhase = orbFlashing ? 'activating' : (isReady ? 'waiting' : 'idle');
   const isLowLatency = channel.voiceMode === 'low-latency';
 
   const getStore = useCallback(
@@ -325,9 +328,18 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
       return;
     }
     const hasNew = participants.some((p) => !seenParticipantIdsRef.current.has(p.id));
-    if (hasNew && !showParticipantsPanelRef.current) setParticipantsBadge(true);
+    if (hasNew) {
+      if (!showParticipantsPanelRef.current) setParticipantsBadge(true);
+      setOrbFlashing(true);
+      if (orbFlashTimerRef.current) clearTimeout(orbFlashTimerRef.current);
+      orbFlashTimerRef.current = setTimeout(() => setOrbFlashing(false), 1800);
+    }
     participants.forEach((p) => seenParticipantIdsRef.current.add(p.id));
   }, [participants, isReady]);
+
+  useEffect(() => () => {
+    if (orbFlashTimerRef.current) clearTimeout(orbFlashTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!isScreenSharing) setLocalScreenWatched(false);
@@ -576,6 +588,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
           localScreenWatched={localScreenWatched}
           isMobile={isMobile}
           breakpoint={breakpoint}
+          orbPhase={orbPhase}
           onWatchScreen={watchScreen}
           onUnwatchScreen={unwatchScreen}
           onWatchLocalScreen={() => setLocalScreenWatched(true)}
@@ -700,25 +713,30 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
         />
       )}
 
-      <Controls
-        isReady={isReady}
-        isScreenSharing={isScreenSharing}
-        isMicOn={isMicOn}
-        isWebcamOn={isWebcamOn}
-        quality={quality}
-        isMobile={isMobile}
-        mediaE2EEUnavailable={mediaE2EEUnavailable}
-        showScreenShare={!isLowLatency}
-        showWebcam={!isLowLatency}
-        showQualityPicker={!isLowLatency}
-        onScreenShare={handleScreenShare}
-        onOpenQualityOrWindow={() => setShowQualityPicker(true)}
-        onMic={handleMic}
-        onWebcam={handleWebcam}
-        onMicDeviceSwitch={handleMicDeviceSwitch}
-        onWebcamDeviceSwitch={handleWebcamDeviceSwitch}
-        onLeave={handleLeave}
-      />
+      <div style={{
+        paddingRight: !isMobile && showMembers ? 240 : 0,
+        transition: 'padding-right var(--duration-fast) var(--ease-out)',
+      }}>
+        <Controls
+          isReady={isReady}
+          isScreenSharing={isScreenSharing}
+          isMicOn={isMicOn}
+          isWebcamOn={isWebcamOn}
+          quality={quality}
+          isMobile={isMobile}
+          mediaE2EEUnavailable={mediaE2EEUnavailable}
+          showScreenShare={!isLowLatency}
+          showWebcam={!isLowLatency}
+          showQualityPicker={!isLowLatency}
+          onScreenShare={handleScreenShare}
+          onOpenQualityOrWindow={() => setShowQualityPicker(true)}
+          onMic={handleMic}
+          onWebcam={handleWebcam}
+          onMicDeviceSwitch={handleMicDeviceSwitch}
+          onWebcamDeviceSwitch={handleWebcamDeviceSwitch}
+          onLeave={handleLeave}
+        />
+      </div>
 
       {keyExchangeMessage && (
         <div className="toast" role="alert">
