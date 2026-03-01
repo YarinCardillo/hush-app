@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 const EYE_STATES = {
   idle: { left: 'M -6 0 Q 0 1.5 6 0', right: 'M -6 0 Q 0 1.5 6 0', opacity: 0.4 },
-  waiting: { left: 'M -5 2 Q 0 -4 5 2', right: 'M -5 2 Q 0 -4 5 2', opacity: 0.7 },
+  waiting: { left: 'M -5 2 Q 0 -4 5 2', right: 'M -5 2 Q 0 -4 5 2', opacity: 0.88 },
   activating: { left: 'M -6 3 Q 0 -7 6 3', right: 'M -6 3 Q 0 -7 6 3', opacity: 1 },
   hover: { left: 'M -5 -1.5 Q 0 3.5 5 -1.5', right: 'M -5 -1.5 Q 0 3.5 5 -1.5', opacity: 0.6 },
 };
@@ -18,7 +18,7 @@ const ORB_STYLES = {
   waiting: {
     bg: 'radial-gradient(circle at 38% 35%, var(--orb-waiting-from) 0%, var(--orb-waiting-mid) 50%, var(--orb-waiting-to) 100%)',
     shadow: 'var(--orb-waiting-shadow)',
-    eyeColor: '#8888a0',
+    eyeColor: '#b4b4cc',
     glowBg: 'radial-gradient(circle, var(--orb-waiting-glow) 0%, transparent 70%)',
     ringColor: 'var(--orb-waiting-ring)',
   },

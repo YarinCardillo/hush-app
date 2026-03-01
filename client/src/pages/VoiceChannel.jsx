@@ -186,11 +186,9 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   const [showParticipantsPanel, setShowParticipantsPanel] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [participantsBadge, setParticipantsBadge] = useState(false);
-  const [orbFlashing, setOrbFlashing] = useState(false);
   const showChatPanelRef = useRef(false);
   const showParticipantsPanelRef = useRef(false);
   const seenParticipantIdsRef = useRef(null);
-  const orbFlashTimerRef = useRef(null);
 
   const roomName = `server-${serverId}-channel-${channel.id}`;
   const isLowLatency = channel.voiceMode === 'low-latency';
@@ -234,7 +232,8 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     decryptFromUser,
   });
 
-  const orbPhase = orbFlashing ? 'activating' : (isReady ? 'waiting' : 'idle');
+  // idle = connecting; waiting = alone; activating = others in room
+  const orbPhase = !isReady ? 'idle' : (participants.length > 0 ? 'activating' : 'waiting');
 
   const connectRoomRef = useRef(connectRoom);
   connectRoomRef.current = connectRoom;
@@ -329,18 +328,9 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
       return;
     }
     const hasNew = participants.some((p) => !seenParticipantIdsRef.current.has(p.id));
-    if (hasNew) {
-      if (!showParticipantsPanelRef.current) setParticipantsBadge(true);
-      setOrbFlashing(true);
-      if (orbFlashTimerRef.current) clearTimeout(orbFlashTimerRef.current);
-      orbFlashTimerRef.current = setTimeout(() => setOrbFlashing(false), 1800);
-    }
+    if (hasNew && !showParticipantsPanelRef.current) setParticipantsBadge(true);
     participants.forEach((p) => seenParticipantIdsRef.current.add(p.id));
   }, [participants, isReady]);
-
-  useEffect(() => () => {
-    if (orbFlashTimerRef.current) clearTimeout(orbFlashTimerRef.current);
-  }, []);
 
   useEffect(() => {
     if (!isScreenSharing) setLocalScreenWatched(false);
