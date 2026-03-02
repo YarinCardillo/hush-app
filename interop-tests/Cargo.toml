@@ -1,0 +1,14 @@
+[package]
+name = "interop-tests"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+libsignal-dezire = { git = "https://github.com/YarinCardillo/libsignal-dezire.git", rev = "3a16e43" }
+libsignal-core = { git = "https://github.com/signalapp/libsignal", rev = "ffaa9f0435569d6775d8be636f268f882ed67ce3" }
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+curve25519-dalek = "4"
+hmac = "0.12"
+sha2 = "0.10"
+hkdf = "0.12"
