@@ -250,7 +250,7 @@ export default function ServerLayout() {
     return () => wsClient.off('channel_created', handler);
   }, [wsClient]);
 
-  // Refresh full member list when someone joins or leaves the server.
+  // Refresh full member list when someone joins, leaves, or changes role.
   useEffect(() => {
     if (!wsClient) return;
     const handler = () => {
@@ -261,11 +261,66 @@ export default function ServerLayout() {
     };
     wsClient.on('member_joined', handler);
     wsClient.on('member_left', handler);
+    wsClient.on('member_role_changed', handler);
     return () => {
       wsClient.off('member_joined', handler);
       wsClient.off('member_left', handler);
+      wsClient.off('member_role_changed', handler);
     };
   }, [wsClient, serverId]);
+
+  // Remove channel from local state when it's deleted by an admin.
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      if (!data.channel_id) return;
+      setServerData((prev) => {
+        if (!prev) return prev;
+        return { ...prev, channels: prev.channels.filter((ch) => ch.id !== data.channel_id) };
+      });
+    };
+    wsClient.on('channel_deleted', handler);
+    return () => wsClient.off('channel_deleted', handler);
+  }, [wsClient]);
+
+  // Re-fetch channel list when a channel is moved (reordered).
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = () => {
+      if (serverId) fetchServerData(serverId);
+    };
+    wsClient.on('channel_moved', handler);
+    return () => wsClient.off('channel_moved', handler);
+  }, [wsClient, serverId, fetchServerData]);
+
+  // Update server metadata (name, icon) when changed by an admin.
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      if (!data.server_id) return;
+      setServerData((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, server: { ...prev.server } };
+        if (data.name !== undefined) updated.server.name = data.name;
+        if (data.icon_url !== undefined) updated.server.iconUrl = data.icon_url;
+        return updated;
+      });
+    };
+    wsClient.on('server_updated', handler);
+    return () => wsClient.off('server_updated', handler);
+  }, [wsClient]);
+
+  // Navigate away when the current server is deleted.
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      if (data.server_id === serverId) {
+        navigate('/');
+      }
+    };
+    wsClient.on('server_deleted', handler);
+    return () => wsClient.off('server_deleted', handler);
+  }, [wsClient, serverId, navigate]);
 
   useEffect(() => {
     if (!serverId || !authToken) return;

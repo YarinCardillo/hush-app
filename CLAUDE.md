@@ -40,5 +40,28 @@ Committing directly to `core-rewrite` or `main` is forbidden.
 
 **Never skip this.** An outdated PLAN.md causes agents to re-do completed work or miss critical context.
 
+## WebSocket Broadcast Checklist (MANDATORY)
+
+When implementing or modifying any API endpoint that **creates, updates, deletes, or changes state** of a shared resource (server, channel, member, role), you MUST broadcast a WS event so connected clients stay in sync.
+
+**Before marking a feature complete, ask:**
+- Does this mutation affect what other connected users see?
+- If yes, is there a corresponding `hub.BroadcastToServer()` call?
+
+**Existing broadcast events (reference):**
+| Event | Trigger | File |
+|-|-|-|
+| `channel_created` | POST /servers/:id/channels | servers.go |
+| `channel_deleted` | DELETE /channels/:id | channels.go |
+| `channel_moved` | PUT /channels/:id/move | channels.go |
+| `server_updated` | PUT /servers/:id | servers.go |
+| `server_deleted` | DELETE /servers/:id | servers.go |
+| `member_joined` | POST /servers/:id/join | servers.go |
+| `member_left` | POST /servers/:id/leave | servers.go |
+| `member_role_changed` | ownership transfer in leave | servers.go |
+| `voice_state_update` | LiveKit webhook | livekit.go |
+
+**Pattern:** nil-check hub, marshal JSON with `type` field, call `h.hub.BroadcastToServer(serverID, msg)`.
+
 ## Signal Protocol & Cryptography
 Before modifying any file in `hush-crypto/`, `client/src/lib/signalStore.js`, `client/src/lib/hushCrypto.js`, `client/src/hooks/useSignal.js`, `client/src/lib/uploadKeysAfterAuth.js`, `server/internal/api/keys.go`, or `server/internal/db/keys.go`, ALWAYS read `signal-theory-context.md` first. It contains condensed Signal Protocol theory (X3DH, Double Ratchet, PQXDH, Sesame, key lifecycle invariants) extracted from the full specs in `.signal-specs/`.

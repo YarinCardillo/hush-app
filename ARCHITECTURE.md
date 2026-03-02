@@ -309,6 +309,28 @@ livekit/
 
 ---
 
+## WebSocket Broadcast Events
+
+The WS hub broadcasts server-scoped events so all connected members see real-time updates. Every API mutation that changes shared state must emit a broadcast.
+
+| Event | Payload fields | Trigger |
+|-|-|-|
+| `channel_created` | `channel` (full object) | Channel created |
+| `channel_deleted` | `channel_id`, `server_id` | Channel deleted |
+| `channel_moved` | `channel_id`, `server_id`, `parent_id`, `position` | Channel reordered |
+| `server_updated` | `server_id`, `name?`, `icon_url?` | Server metadata changed |
+| `server_deleted` | `server_id` | Server deleted (broadcast before DB delete) |
+| `member_joined` | `user_id`, `display_name` | User joins server |
+| `member_left` | `user_id` | User leaves server |
+| `member_role_changed` | `user_id`, `role` | Role change (e.g. ownership transfer) |
+| `voice_state_update` | `channel_id`, `participants` | LiveKit webhook |
+
+**Pattern**: nil-check hub, `json.Marshal` with `type` field, `h.hub.BroadcastToServer(serverID, msg)`.
+
+**When adding new endpoints**: if the mutation affects what other users see, add a broadcast event.
+
+---
+
 ## End-to-End Encryption (E2EE)
 
 ### Signal Protocol for Chat
