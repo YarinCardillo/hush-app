@@ -30,6 +30,8 @@ Hush is a privacy-first Discord alternative for screen sharing, voice, video, an
 
 ### Self-hosting (Docker)
 
+No prerequisites other than Docker. The client image builds the WASM crypto and React SPA automatically.
+
 ```bash
 git clone https://github.com/YarinCardillo/hush-app
 cd hush-app
@@ -39,7 +41,18 @@ docker-compose up -d
 
 Open `https://your-domain` (Caddy handles TLS and proxies the Go backend + LiveKit).
 
-For local dev with hot reload: `docker-compose up -d` for backend services, then `npm run dev` in the client directory.
+### Local development
+
+Prerequisites: [Node.js 22+](https://nodejs.org/), [Rust](https://rustup.rs/), [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/).
+
+```bash
+docker-compose up -d postgres redis livekit   # backend services
+cd client
+npm install
+npm run dev                                    # builds WASM automatically on first run
+```
+
+The `dev` and `build` scripts detect if `hush-crypto` WASM output is missing and build it via `wasm-pack`. Use `npm run build:wasm:force` to rebuild manually.
 
 ### Configuration
 

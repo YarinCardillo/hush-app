@@ -4,10 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:wasm": "node scripts/build-wasm.js",
+    "build:wasm:force": "node scripts/build-wasm.js --force",
+    "predev": "node scripts/build-wasm.js",
     "dev": "vite",
+    "prebuild": "node scripts/build-wasm.js && node scripts/copy-icons.js",
     "build": "vite build",
     "preview": "vite preview",
-    "prebuild": "node scripts/copy-icons.js",
     "test": "vitest",
     "test:run": "vitest run"
   },
