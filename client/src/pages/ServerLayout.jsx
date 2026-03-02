@@ -283,16 +283,6 @@ export default function ServerLayout() {
     return () => wsClient.off('channel_deleted', handler);
   }, [wsClient]);
 
-  // Re-fetch channel list when a channel is moved (reordered).
-  useEffect(() => {
-    if (!wsClient) return;
-    const handler = () => {
-      if (serverId) fetchServerData(serverId);
-    };
-    wsClient.on('channel_moved', handler);
-    return () => wsClient.off('channel_moved', handler);
-  }, [wsClient, serverId, fetchServerData]);
-
   // Update server metadata (name, icon) when changed by an admin.
   useEffect(() => {
     if (!wsClient) return;
@@ -341,6 +331,16 @@ export default function ServerLayout() {
       setLoading(false);
     }
   }, []);
+
+  // Re-fetch channel list when a channel is moved (reordered).
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = () => {
+      if (serverId) fetchServerData(serverId);
+    };
+    wsClient.on('channel_moved', handler);
+    return () => wsClient.off('channel_moved', handler);
+  }, [wsClient, serverId, fetchServerData]);
 
   useEffect(() => {
     if (serverId) {
