@@ -833,6 +833,7 @@ export default function ChannelList({
   const [showServerMenu, setShowServerMenu] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaveError, setLeaveError] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null); // { id, name, isCategory }
   const [activeId, setActiveId] = useState(null);
   const [localChannels, setLocalChannels] = useState(channels ?? []);
@@ -874,13 +875,14 @@ export default function ChannelList({
 
   const handleLeaveConfirmed = useCallback(async () => {
     setConfirmLeave(false);
+    setLeaveError(null);
     const token = getToken();
     if (token) {
       try {
         await leaveServer(token, serverId);
         onLeaveServer?.();
-      } catch {
-        // Leave failed — stay on server
+      } catch (err) {
+        setLeaveError(err.message || 'Failed to leave server');
       }
     }
   }, [getToken, serverId, onLeaveServer]);
@@ -1271,6 +1273,15 @@ export default function ChannelList({
           confirmLabel="Leave"
           onConfirm={handleLeaveConfirmed}
           onCancel={() => setConfirmLeave(false)}
+        />
+      )}
+      {leaveError && (
+        <ConfirmModal
+          title="Cannot leave server"
+          message={leaveError}
+          confirmLabel="OK"
+          onConfirm={() => setLeaveError(null)}
+          onCancel={() => setLeaveError(null)}
         />
       )}
       {showSettings && (
