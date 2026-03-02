@@ -2,7 +2,10 @@ import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import AppBackground from './components/AppBackground';
-import { GUEST_SESSION_KEY, JWT_KEY } from './hooks/useAuth';
+import { applyThemeMode, getStoredThemeMode } from './components/UserSettingsModal';
+
+// Apply stored theme before first paint to avoid FOUC.
+applyThemeMode(getStoredThemeMode());
 
 const Home = lazy(() => import('./pages/Home'));
 const Invite = lazy(() => import('./pages/Invite'));
@@ -45,26 +48,11 @@ function FaviconThemeSync() {
   return null;
 }
 
-/** Clears guest session and JWT on tab close so guest is truly one-off. */
-function GuestSessionCleanup() {
-  useEffect(() => {
-    const handler = () => {
-      if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
-        sessionStorage.removeItem(JWT_KEY);
-        sessionStorage.removeItem(GUEST_SESSION_KEY);
-      }
-    };
-    window.addEventListener('pagehide', handler);
-    return () => window.removeEventListener('pagehide', handler);
-  }, []);
-  return null;
-}
 
 export default function App() {
   return (
     <AuthProvider>
       <FaviconThemeSync />
-      <GuestSessionCleanup />
       <AppBackground />
       <Suspense fallback={fallback}>
         <Routes>

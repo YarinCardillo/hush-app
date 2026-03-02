@@ -154,9 +154,6 @@ export default function ServerLayout() {
       if (leavingVoiceRef.current) return 'idle';
       const guard = phase === 'idle' && (prev === 'waiting' || prev === 'activating');
       const next = guard ? prev : phase;
-      // #region agent log
-      fetch("http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"9c0847"},body:JSON.stringify({sessionId:"9c0847",location:"ServerLayout.jsx:handleOrbPhaseChange",message:"orb phase update",data:{phase,prev,next,isViewingVoice,leaving:!!leavingVoiceRef.current},timestamp:Date.now(),hypothesisId:"D"})}).catch(()=>{});
-      // #endregion
       if (guard) return prev;
       if (phase === 'idle') leavingVoiceRef.current = false;
       return phase;
@@ -166,10 +163,17 @@ export default function ServerLayout() {
   // When not viewing the voice channel (navigated away or left), show placeholder orb.
   useEffect(() => {
     if (!isViewingVoice) {
-      leavingVoiceRef.current = false;
       setOrbPhase('idle');
     }
   }, [isViewingVoice]);
+
+  // Reset the leaving-voice guard only after the URL has actually changed.
+  // navigate() updates channelId asynchronously; if we reset earlier (e.g. when
+  // isViewingVoice flips), the stale channelId still points to the voice channel
+  // and the render-time auto-join would re-activate it.
+  useEffect(() => {
+    leavingVoiceRef.current = false;
+  }, [channelId]);
 
   // Member IDs to pass to VoiceChannel: live when on same server, captured otherwise.
   const memberIds = members.map((m) => m.userId);
@@ -270,7 +274,9 @@ export default function ServerLayout() {
   // Auto-join when navigating directly to a voice channel URL.
   // Synchronous state update during render avoids a one-frame flash where
   // channelAreaHeader shows before VoiceChannel's header takes over.
-  if (currentChannel?.type === 'voice' && currentChannel.id !== activeVoiceChannel?.id) {
+  // Guard: skip when the user is actively leaving voice — otherwise the stale
+  // channelId in the URL (not yet updated by navigate()) would re-activate the channel.
+  if (currentChannel?.type === 'voice' && currentChannel.id !== activeVoiceChannel?.id && !leavingVoiceRef.current) {
     activeVoiceMemberIdsRef.current = memberIds;
     setVoiceMountKey((k) => k + 1);
     setActiveVoiceChannel(currentChannel);
@@ -393,6 +399,7 @@ export default function ServerLayout() {
                   onTogglePanel={togglePanel}
                   onLeave={handleVoiceLeave}
                   onOrbPhaseChange={handleOrbPhaseChange}
+                  serverParticipants={voiceParticipants.get(activeVoiceChannel.id) ?? []}
                 />
               </div>
             )}

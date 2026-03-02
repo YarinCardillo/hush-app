@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getDeviceId } from '../hooks/useAuth';
@@ -162,13 +162,20 @@ function getFriendlyRoomError(errorMessage) {
  * Voice channel view: LiveKit room (server-{serverId}-channel-{channel.id}), video grid, controls, chat sidebar.
  * Used by ServerLayout when currentChannel.type === 'voice'.
  */
-export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], members = [], onlineUserIds, showMembers = false, showChatPanel = false, showParticipantsPanel = false, onTogglePanel, onLeave, onOrbPhaseChange }) {
+export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], members = [], onlineUserIds, showMembers = false, showChatPanel = false, showParticipantsPanel = false, onTogglePanel, onLeave, onOrbPhaseChange, serverParticipants = [] }) {
   const navigate = useNavigate();
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile';
   const { user } = useAuth();
   const currentUserId = user?.id ?? '';
   const displayName = user?.displayName ?? 'Anonymous';
+
+  // Server-authoritative participant list (excludes self for display; "You" is shown separately).
+  const displayParticipants = useMemo(
+    () => serverParticipants.filter((p) => p.userId !== currentUserId),
+    [serverParticipants, currentUserId],
+  );
+  const totalParticipantCount = serverParticipants.length;
 
   const [quality, setQuality] = useState(DEFAULT_QUALITY);
   const [recommendedQualityKey, setRecommendedQualityKey] = useState(null);
@@ -232,7 +239,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   });
 
   // idle = connecting; waiting = alone; activating = others in room
-  const orbPhase = !isReady ? 'idle' : (participants.length > 0 ? 'activating' : 'waiting');
+  const orbPhase = !isReady ? 'idle' : (displayParticipants.length > 0 ? 'activating' : 'waiting');
 
   useEffect(() => { onOrbPhaseChange?.(orbPhase); }, [orbPhase, onOrbPhaseChange]);
 
@@ -255,9 +262,6 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
 
   useEffect(() => {
     if (!wsClient || !channel?.id || !serverId) return;
-    // #region agent log
-    fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'VoiceChannel.jsx:useEffect',message:'VoiceChannel effect running, calling connectRoom',data:{roomName,channelId:channel?.id},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
     connectRoomRef.current(roomName, displayName, channel.id).catch(() => {
       // Connection errors are surfaced via useRoom's `error` state
     });
@@ -279,9 +283,6 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     }
 
     return () => {
-      // #region agent log
-      fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'VoiceChannel.jsx:useEffect cleanup',message:'VoiceChannel effect cleanup, calling disconnectRoom',data:{},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       disconnectRoomRef.current();
     };
   }, [wsClient, channel?.id, serverId, roomName, displayName]);
@@ -321,13 +322,13 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   useEffect(() => {
     if (!isReady) return;
     if (seenParticipantIdsRef.current === null) {
-      seenParticipantIdsRef.current = new Set(participants.map((p) => p.id));
+      seenParticipantIdsRef.current = new Set(displayParticipants.map((p) => p.userId));
       return;
     }
-    const hasNew = participants.some((p) => !seenParticipantIdsRef.current.has(p.id));
+    const hasNew = displayParticipants.some((p) => !seenParticipantIdsRef.current.has(p.userId));
     if (hasNew && !showParticipantsPanelRef.current) setParticipantsBadge(true);
-    participants.forEach((p) => seenParticipantIdsRef.current.add(p.id));
-  }, [participants, isReady]);
+    displayParticipants.forEach((p) => seenParticipantIdsRef.current.add(p.userId));
+  }, [displayParticipants, isReady]);
 
   useEffect(() => {
     if (!isScreenSharing) setLocalScreenWatched(false);
@@ -536,7 +537,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
               <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
-            {participants.length + 1}
+            {totalParticipantCount || 1}
             {participantsBadge && (
               <span
                 style={{
@@ -610,13 +611,13 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
             />
             <div className={`sidebar-panel-right ${showParticipantsPanel ? 'sidebar-panel-open' : ''}`}>
               <div style={styles.sidebarSection}>
-                <div style={styles.sidebarLabel}>Participants ({participants.length + 1})</div>
+                <div style={styles.sidebarLabel}>Participants ({totalParticipantCount || 1})</div>
                 <div style={styles.peerItem}>
                   <div style={styles.peerDot(isScreenSharing)} />
                   <span>You</span>
                 </div>
-                {participants.map((p) => (
-                  <div key={p.id} style={styles.peerItem}>
+                {displayParticipants.map((p) => (
+                  <div key={p.userId} style={styles.peerItem}>
                     <div style={styles.peerDot(true)} />
                     <span>{p.displayName}</span>
                   </div>
@@ -660,13 +661,13 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
             <div className={`sidebar-desktop ${showParticipantsPanel ? 'sidebar-desktop-open' : ''}`}>
               <div className="sidebar-desktop-inner" style={styles.sidebar(false)}>
                 <div style={styles.sidebarSection}>
-                  <div style={styles.sidebarLabel}>Participants ({participants.length + 1})</div>
+                  <div style={styles.sidebarLabel}>Participants ({totalParticipantCount || 1})</div>
                   <div style={styles.peerItem}>
                     <div style={styles.peerDot(isScreenSharing)} />
                     <span>You</span>
                   </div>
-                  {participants.map((p) => (
-                    <div key={p.id} style={styles.peerItem}>
+                  {displayParticipants.map((p) => (
+                    <div key={p.userId} style={styles.peerItem}>
                       <div style={styles.peerDot(true)} />
                       <span>{p.displayName}</span>
                     </div>

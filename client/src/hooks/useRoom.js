@@ -145,9 +145,6 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
     async (roomName, displayName, channelId) => {
       const epoch = ++connectionEpochRef.current;
       const isStale = () => epoch !== connectionEpochRef.current;
-      // #region agent log
-      fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:connectRoom:entry',message:'connectRoom started',data:{epoch,roomName},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       if (!wsClient) {
         setError('WebSocket not connected. Please try again.');
         return;
@@ -355,9 +352,6 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
         // Connected fires synchronously during room.connect(), before roomRef is set.
         // Use the local `room` variable from the closure, not roomRef.current.
         room.on(RoomEvent.Connected, async () => {
-          // #region agent log
-          fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:RoomEvent.Connected',message:'RoomEvent.Connected fired',data:{epoch:connectionEpochRef.current},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-          // #endregion
           if (isStale()) return;
           if (!keyProvider || !channelIdRef.current) return;
           if (room.remoteParticipants.size === 0) {
@@ -383,9 +377,6 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
 
         // If superseded during connect (e.g. StrictMode remount), discard this room
         if (isStale()) {
-          // #region agent log
-          fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:after connect',message:'stale after room.connect(), skipping setIsReady',data:{epoch,currentEpoch:connectionEpochRef.current},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
           room.disconnect();
           return;
         }
@@ -431,17 +422,11 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
         scheduleScreensUpdate();
         setParticipants(initialParticipants);
 
-        // #region agent log
-        fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:setIsReady true',message:'setting isReady true',data:{epoch,roomName},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
         setIsReady(true);
         preloadNoiseGateWorklet();
         console.log('[livekit] Connected to room:', roomName);
       } catch (err) {
         if (isStale()) return;
-        // #region agent log
-        fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:connectRoom catch',message:'connectRoom error',data:{epoch,errMessage:err?.message},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         console.error('[livekit] Connection error:', err);
         setError(err.message);
       }
@@ -451,9 +436,6 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
 
   // ─── Disconnect from Room ─────────────────────────────
   const disconnectRoom = useCallback(async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7620/ingest/7286e849-da20-443b-90f4-e7144feec8af',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9c0847'},body:JSON.stringify({sessionId:'9c0847',location:'useRoom.js:disconnectRoom',message:'disconnectRoom called',data:{epochBefore:connectionEpochRef.current},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     connectionEpochRef.current++;
     setError(null);
     setKeyExchangeMessage(null);
@@ -475,7 +457,7 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
 
       cleanupMicPipeline();
 
-      roomRef.current.disconnect();
+      await roomRef.current.disconnect();
       roomRef.current = null;
       e2eeKeyProviderRef.current = null;
       keyBytesRef.current = null;
