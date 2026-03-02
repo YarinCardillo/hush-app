@@ -26,6 +26,8 @@ vi.mock('../hooks/useSignal', () => ({
   useSignal: vi.fn(() => ({
     encryptForUser: vi.fn(),
     decryptFromUser: vi.fn(),
+    getCachedMessage: vi.fn(() => Promise.resolve(null)),
+    setCachedMessage: vi.fn(() => Promise.resolve()),
   })),
 }));
 vi.mock('../hooks/useRoom', () => ({

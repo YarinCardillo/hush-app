@@ -17,14 +17,30 @@ function uint8ArrayToBase64(u8) {
   return btoa(bin);
 }
 
-async function decryptMessageRow(m, currentUserId, decryptFromUser) {
+async function decryptMessageRow(m, currentUserId, decryptFromUser, getCachedMessage, setCachedMessage) {
   const ts = new Date(m.timestamp).getTime();
+  if (typeof getCachedMessage === 'function') {
+    const cached = await getCachedMessage(m.id);
+    if (cached) {
+      return {
+        id: m.id,
+        sender: cached.senderId,
+        displayName: cached.senderId === currentUserId ? 'You' : truncateUserId(cached.senderId),
+        content: cached.content,
+        timestamp: cached.timestamp,
+        decryptionFailed: false,
+      };
+    }
+  }
   let content = null;
   let decryptionFailed = false;
   try {
     const ct = base64ToUint8Array(m.ciphertext);
     const pt = await decryptFromUser(m.senderId, DEFAULT_DEVICE_ID, ct);
     content = new TextDecoder().decode(pt);
+    if (content !== null && typeof setCachedMessage === 'function') {
+      await setCachedMessage(m.id, { content, senderId: m.senderId, timestamp: ts });
+    }
   } catch (_) {
     decryptionFailed = true;
   }
@@ -220,7 +236,7 @@ export default function Chat({
   wsClientRef.current = wsClientProp;
   const scrollRestoreRef = useRef(null);
 
-  const { encryptForUser, decryptFromUser } = useSignal({
+  const { encryptForUser, decryptFromUser, getCachedMessage, setCachedMessage } = useSignal({
     getStore: getStore ?? (() => Promise.resolve(null)),
     getToken: getToken ?? (() => null),
   });
@@ -229,6 +245,10 @@ export default function Chat({
   decryptFromUserRef.current = decryptFromUser;
   const encryptForUserRef = useRef(encryptForUser);
   encryptForUserRef.current = encryptForUser;
+  const getCachedMessageRef = useRef(getCachedMessage);
+  getCachedMessageRef.current = getCachedMessage;
+  const setCachedMessageRef = useRef(setCachedMessage);
+  setCachedMessageRef.current = setCachedMessage;
 
   const wsClient = wsClientProp;
 
@@ -247,7 +267,15 @@ export default function Chat({
         const decrypted = [];
         for (let i = list.length - 1; i >= 0; i--) {
           const m = list[i];
-          decrypted.push(await decryptMessageRow(m, currentUserId, decryptFromUserRef.current));
+          decrypted.push(
+            await decryptMessageRow(
+              m,
+              currentUserId,
+              decryptFromUserRef.current,
+              getCachedMessageRef.current,
+              setCachedMessageRef.current
+            )
+          );
           knownMessageIdsRef.current.add(m.id);
         }
         setMessages(decrypted);
@@ -281,7 +309,15 @@ export default function Chat({
         const m = list[i];
         if (knownMessageIdsRef.current.has(m.id)) continue;
         knownMessageIdsRef.current.add(m.id);
-        older.push(await decryptMessageRow(m, currentUserId, decryptFromUserRef.current));
+        older.push(
+          await decryptMessageRow(
+            m,
+            currentUserId,
+            decryptFromUserRef.current,
+            getCachedMessageRef.current,
+            setCachedMessageRef.current
+          )
+        );
       }
       const el = messagesScrollRef.current;
       const oldScrollHeight = el?.scrollHeight ?? 0;
@@ -321,11 +357,17 @@ export default function Chat({
 
       // Self-echo: server confirmed our message was persisted.
       // The ciphertext was encrypted for the recipient, so we can't decrypt it.
-      // Match the oldest pending optimistic message and confirm it.
+      // Match the oldest pending optimistic message and confirm it; cache plaintext for re-entry.
       if (senderId === currentUserId) {
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.pending && m.sender === currentUserId);
           if (idx >= 0) {
+            const pendingMsg = prev[idx];
+            setCachedMessageRef.current?.(id, {
+              content: pendingMsg.content ?? '',
+              senderId: currentUserId,
+              timestamp: ts,
+            });
             return prev.map((m, i) => (i === idx ? { ...m, id, pending: false, failed: false, timestamp: ts } : m));
           }
           return prev;
@@ -344,6 +386,9 @@ export default function Chat({
           const ct = base64ToUint8Array(ciphertext);
           const pt = await decryptFromUserRef.current(senderId, DEFAULT_DEVICE_ID, ct);
           content = new TextDecoder().decode(pt);
+          if (content !== null && setCachedMessageRef.current) {
+            setCachedMessageRef.current(id, { content, senderId, timestamp: ts });
+          }
         } catch (_) {
           decryptionFailed = true;
         }

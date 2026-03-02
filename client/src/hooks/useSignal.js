@@ -7,11 +7,13 @@
  *   Regular:           [0x02][DR payload]
  */
 
+import { useRef } from 'react';
 import * as hushCrypto from '../lib/hushCrypto';
 import * as api from '../lib/api';
 import * as signalStore from '../lib/signalStore';
 
 const DEFAULT_DEVICE_ID = 'default';
+const MSG_STORE_KEY_SALT = 'hush-msg-store-v1';
 
 const MSG_TYPE_PREKEY = 0x01;
 const MSG_TYPE_REGULAR = 0x02;
@@ -21,12 +23,52 @@ const NO_OPK_SENTINEL = 0xFFFFFFFF;
 const PREKEY_HEADER_BYTES = 1 + IDENTITY_KEY_BYTES + IDENTITY_KEY_BYTES + KEY_ID_BYTES + KEY_ID_BYTES; // 75
 
 /**
+ * Derives the message cache device key from identity private key (HKDF).
+ * Key is held in memory only, never persisted.
+ * @param {Uint8Array} identityPrivateKey
+ * @returns {Promise<CryptoKey>} AES-GCM key for message cache encrypt/decrypt
+ */
+export async function deriveMessageStoreKey(identityPrivateKey) {
+  const hkdfKey = await crypto.subtle.importKey(
+    'raw',
+    identityPrivateKey,
+    { name: 'HKDF' },
+    false,
+    ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new TextEncoder().encode(MSG_STORE_KEY_SALT),
+      info: new Uint8Array(0),
+    },
+    hkdfKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+/**
  * @param {object} opts
  * @param {() => Promise<IDBDatabase|null>} opts.getStore
  * @param {() => string|null} opts.getToken
- * @returns {{ encryptForUser: Function, decryptFromUser: Function }}
+ * @returns {{ encryptForUser: Function, decryptFromUser: Function, getCachedMessage: Function, setCachedMessage: Function }}
  */
 export function useSignal({ getStore, getToken }) {
+  const deviceKeyRef = useRef(/** @type {CryptoKey|null} */ (null));
+
+  async function getDeviceKey() {
+    if (deviceKeyRef.current) return deviceKeyRef.current;
+    const db = await getStore();
+    if (!db) return null;
+    const identity = await signalStore.getIdentity(db);
+    if (!identity) return null;
+    const key = await deriveMessageStoreKey(identity.privateKey);
+    deviceKeyRef.current = key;
+    return key;
+  }
   /**
    * Encrypts plaintext for a remote user. Establishes session via X3DH if needed.
    * @param {string} remoteUserId
@@ -177,7 +219,23 @@ export function useSignal({ getStore, getToken }) {
     return api.getPreKeyBundleByDevice(token, remoteUserId, remoteDeviceId);
   }
 
-  return { encryptForUser, decryptFromUser };
+  async function getCachedMessage(msgId) {
+    const db = await getStore();
+    if (!db) return null;
+    const key = await getDeviceKey();
+    if (!key) return null;
+    return signalStore.getCachedMessage(db, msgId, key);
+  }
+
+  async function setCachedMessage(msgId, payload) {
+    const db = await getStore();
+    if (!db) return;
+    const key = await getDeviceKey();
+    if (!key) return;
+    await signalStore.setCachedMessage(db, msgId, payload, key);
+  }
+
+  return { encryptForUser, decryptFromUser, getCachedMessage, setCachedMessage };
 }
 
 // ---------------------------------------------------------------------------

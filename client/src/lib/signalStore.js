@@ -2,7 +2,8 @@
  * Signal Protocol state in IndexedDB.
  * Store prefix: hush-signal-${userId}-${deviceId} (one DB per local user+device).
  * Stores: identity, registrationId, sessions (per remote user+device),
- *         signedPreKeys (private), otpPrivateKeys (private, deleted after use).
+ *         signedPreKeys (private), otpPrivateKeys (private, deleted after use),
+ *         messages (encrypted plaintext cache per message ID, B.5).
  */
 
 const DB_NAME_PREFIX = 'hush-signal-';
@@ -11,7 +12,9 @@ const STORE_SESSIONS = 'sessions';
 const STORE_PREKEYS = 'prekeys';
 const STORE_SIGNED_PREKEYS = 'signedPreKeys';
 const STORE_OTP_PRIVATE = 'otpPrivateKeys';
-const DB_VERSION = 2;
+const STORE_MESSAGES = 'messages';
+const DB_VERSION = 3;
+const MSG_CACHE_IV_BYTES = 12;
 
 /**
  * Opens the Signal store for the given user and device.
@@ -41,6 +44,9 @@ export function openStore(userId, deviceId) {
       }
       if (!db.objectStoreNames.contains(STORE_OTP_PRIVATE)) {
         db.createObjectStore(STORE_OTP_PRIVATE, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(STORE_MESSAGES)) {
+        db.createObjectStore(STORE_MESSAGES, { keyPath: 'id' });
       }
     };
   });
@@ -272,4 +278,87 @@ export async function getPreKeys(db) {
  */
 export async function setPreKeys(db, blob) {
   await put(db, STORE_PREKEYS, 'prekeys', blob);
+}
+
+// ---------------------------------------------------------------------------
+// Message cache (B.5) — decrypted plaintext encrypted at rest with device key
+// ---------------------------------------------------------------------------
+
+/**
+ * Gets a message record from the messages store (keyPath 'id').
+ * @param {IDBDatabase} db
+ * @param {string} msgId
+ * @returns {Promise<{ id: string, blob: number[] }|null>}
+ */
+function getMessageRecord(db, msgId) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_MESSAGES, 'readonly');
+    const store = tx.objectStore(STORE_MESSAGES);
+    const req = store.get(msgId);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Puts a message record into the messages store.
+ * @param {IDBDatabase} db
+ * @param {string} msgId
+ * @param {number[]} blob - IV (12 bytes) || AES-GCM ciphertext
+ */
+function putMessageRecord(db, msgId, blob) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_MESSAGES, 'readwrite');
+    const store = tx.objectStore(STORE_MESSAGES);
+    const req = store.put({ id: msgId, blob });
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Returns decrypted cached message or null if missing/invalid.
+ * @param {IDBDatabase} db
+ * @param {string} msgId
+ * @param {CryptoKey} deviceKey - AES-GCM key for message cache
+ * @returns {Promise<{ content: string, senderId: string, timestamp: number }|null>}
+ */
+export async function getCachedMessage(db, msgId, deviceKey) {
+  const row = await getMessageRecord(db, msgId);
+  if (!row?.blob?.length) return null;
+  const blob = new Uint8Array(row.blob);
+  if (blob.length <= MSG_CACHE_IV_BYTES) return null;
+  const iv = blob.slice(0, MSG_CACHE_IV_BYTES);
+  const ciphertext = blob.slice(MSG_CACHE_IV_BYTES);
+  try {
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv, tagLength: 128 },
+      deviceKey,
+      ciphertext
+    );
+    return JSON.parse(new TextDecoder().decode(decrypted));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Encrypts and stores a message in the cache.
+ * @param {IDBDatabase} db
+ * @param {string} msgId
+ * @param {{ content: string, senderId: string, timestamp: number }} payload
+ * @param {CryptoKey} deviceKey - AES-GCM key for message cache
+ */
+export async function setCachedMessage(db, msgId, payload, deviceKey) {
+  const iv = crypto.getRandomValues(new Uint8Array(MSG_CACHE_IV_BYTES));
+  const plaintext = new TextEncoder().encode(JSON.stringify(payload));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, tagLength: 128 },
+    deviceKey,
+    plaintext
+  );
+  const blob = new Uint8Array(iv.length + ciphertext.byteLength);
+  blob.set(iv, 0);
+  blob.set(new Uint8Array(ciphertext), iv.length);
+  await putMessageRecord(db, msgId, Array.from(blob));
 }
