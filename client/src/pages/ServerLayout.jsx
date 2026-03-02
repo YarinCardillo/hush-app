@@ -235,6 +235,21 @@ export default function ServerLayout() {
     return () => wsClient.off('voice_state_update', handler);
   }, [wsClient]);
 
+  // Listen for channel_created events so other members see new channels instantly.
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      if (!data.channel) return;
+      setServerData((prev) => {
+        if (!prev) return prev;
+        if (prev.channels.some((ch) => ch.id === data.channel.id)) return prev;
+        return { ...prev, channels: [...prev.channels, data.channel] };
+      });
+    };
+    wsClient.on('channel_created', handler);
+    return () => wsClient.off('channel_created', handler);
+  }, [wsClient]);
+
   // TODO(Phase-F, 2026-02-26): Subscribe to membership-change WS events to refresh members in real-time.
   useEffect(() => {
     if (!serverId || !authToken) return;
