@@ -250,7 +250,23 @@ export default function ServerLayout() {
     return () => wsClient.off('channel_created', handler);
   }, [wsClient]);
 
-  // TODO(Phase-F, 2026-02-26): Subscribe to membership-change WS events to refresh members in real-time.
+  // Refresh full member list when someone joins or leaves the server.
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = () => {
+      const token = getToken();
+      if (serverId && token) {
+        getServerMembers(token, serverId).then(setMembers).catch(() => {});
+      }
+    };
+    wsClient.on('member_joined', handler);
+    wsClient.on('member_left', handler);
+    return () => {
+      wsClient.off('member_joined', handler);
+      wsClient.off('member_left', handler);
+    };
+  }, [wsClient, serverId]);
+
   useEffect(() => {
     if (!serverId || !authToken) return;
     const token = getToken();

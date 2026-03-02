@@ -17,22 +17,30 @@ function uint8ArrayToBase64(u8) {
   return btoa(bin);
 }
 
-async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedMessage, setCachedMessage, displayNameMap }) {
+async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedMessage, setCachedMessage }) {
   const ts = new Date(m.timestamp).getTime();
-  const resolveDisplayName = (userId) =>
-    userId === currentUserId ? 'You' : (displayNameMap?.get(userId) ?? truncateUserId(userId));
   if (typeof getCachedMessage === 'function') {
     const cached = await getCachedMessage(m.id);
     if (cached) {
       return {
         id: m.id,
         sender: cached.senderId,
-        displayName: resolveDisplayName(cached.senderId),
         content: cached.content,
         timestamp: cached.timestamp,
         decryptionFailed: false,
       };
     }
+  }
+  // Sender's own messages are encrypted for recipients, not for self.
+  // Without a cache hit, the sender can never decrypt them.
+  if (m.senderId === currentUserId) {
+    return {
+      id: m.id,
+      sender: m.senderId,
+      content: null,
+      timestamp: ts,
+      decryptionFailed: true,
+    };
   }
   let content = null;
   let decryptionFailed = false;
@@ -43,13 +51,13 @@ async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedM
     if (typeof setCachedMessage === 'function') {
       await setCachedMessage(m.id, { content, senderId: m.senderId, timestamp: ts });
     }
-  } catch (_) {
+  } catch (err) {
+    console.warn('[chat] Decrypt failed for msg', m.id, 'from', m.senderId, err);
     decryptionFailed = true;
   }
   return {
     id: m.id,
     sender: m.senderId,
-    displayName: resolveDisplayName(m.senderId),
     content,
     timestamp: ts,
     decryptionFailed,
@@ -244,6 +252,9 @@ export default function Chat({
     for (const m of members) {
       if (m.userId && m.displayName) map.set(m.userId, m.displayName);
     }
+    if (map.size === 0 && members.length > 0) {
+      console.warn('[chat] displayNameMap empty despite', members.length, 'members — check member shape:', members[0]);
+    }
     return map;
   }, [members]);
 
@@ -260,9 +271,6 @@ export default function Chat({
   getCachedMessageRef.current = getCachedMessage;
   const setCachedMessageRef = useRef(setCachedMessage);
   setCachedMessageRef.current = setCachedMessage;
-  const displayNameMapRef = useRef(displayNameMap);
-  displayNameMapRef.current = displayNameMap;
-
   const wsClient = wsClientProp;
 
   // Load history and subscribe to channel
@@ -285,7 +293,6 @@ export default function Chat({
               decryptFromUser: decryptFromUserRef.current,
               getCachedMessage: getCachedMessageRef.current,
               setCachedMessage: setCachedMessageRef.current,
-              displayNameMap: displayNameMapRef.current,
             })
           );
           knownMessageIdsRef.current.add(m.id);
@@ -403,7 +410,6 @@ export default function Chat({
       const msg = {
         id,
         sender: senderId,
-        displayName: displayNameMapRef.current?.get(senderId) ?? truncateUserId(senderId),
         content,
         timestamp: ts,
         decryptionFailed,
@@ -450,7 +456,6 @@ export default function Chat({
     const optimisticMessage = {
       id: tempId,
       sender: currentUserId,
-      displayName: 'You',
       content: trimmed,
       timestamp: Date.now(),
       decryptionFailed: false,
@@ -548,7 +553,7 @@ export default function Chat({
                 >
                   <div style={styles.messageHeader}>
                     <span style={styles.senderName(isOwn)}>
-                      {isOwn ? 'You' : msg.displayName}
+                      {isOwn ? 'You' : (displayNameMap.get(msg.sender) ?? truncateUserId(msg.sender))}
                     </span>
                     <span style={styles.timestamp}>{formatTime(msg.timestamp)}</span>
                   </div>
