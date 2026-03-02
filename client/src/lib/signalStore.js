@@ -46,7 +46,7 @@ export function openStore(userId, deviceId) {
         db.createObjectStore(STORE_OTP_PRIVATE, { keyPath: 'key' });
       }
       if (!db.objectStoreNames.contains(STORE_MESSAGES)) {
-        db.createObjectStore(STORE_MESSAGES, { keyPath: 'id' });
+        db.createObjectStore(STORE_MESSAGES, { keyPath: 'key' });
       }
     };
   });
@@ -282,39 +282,9 @@ export async function setPreKeys(db, blob) {
 
 // ---------------------------------------------------------------------------
 // Message cache (B.5) — decrypted plaintext encrypted at rest with device key
+// TODO(B.5, 2026-03-02): Cache eviction — delete entries older than N days
+// TODO(B.5, 2026-03-02): Invalidate cache when identity key changes (re-registration)
 // ---------------------------------------------------------------------------
-
-/**
- * Gets a message record from the messages store (keyPath 'id').
- * @param {IDBDatabase} db
- * @param {string} msgId
- * @returns {Promise<{ id: string, blob: number[] }|null>}
- */
-function getMessageRecord(db, msgId) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_MESSAGES, 'readonly');
-    const store = tx.objectStore(STORE_MESSAGES);
-    const req = store.get(msgId);
-    req.onsuccess = () => resolve(req.result ?? null);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-/**
- * Puts a message record into the messages store.
- * @param {IDBDatabase} db
- * @param {string} msgId
- * @param {number[]} blob - IV (12 bytes) || AES-GCM ciphertext
- */
-function putMessageRecord(db, msgId, blob) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_MESSAGES, 'readwrite');
-    const store = tx.objectStore(STORE_MESSAGES);
-    const req = store.put({ id: msgId, blob });
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
-}
 
 /**
  * Returns decrypted cached message or null if missing/invalid.
@@ -324,9 +294,9 @@ function putMessageRecord(db, msgId, blob) {
  * @returns {Promise<{ content: string, senderId: string, timestamp: number }|null>}
  */
 export async function getCachedMessage(db, msgId, deviceKey) {
-  const row = await getMessageRecord(db, msgId);
-  if (!row?.blob?.length) return null;
-  const blob = new Uint8Array(row.blob);
+  const row = await get(db, STORE_MESSAGES, msgId);
+  if (!row?.blob) return null;
+  const blob = row.blob instanceof Uint8Array ? row.blob : new Uint8Array(row.blob);
   if (blob.length <= MSG_CACHE_IV_BYTES) return null;
   const iv = blob.slice(0, MSG_CACHE_IV_BYTES);
   const ciphertext = blob.slice(MSG_CACHE_IV_BYTES);
@@ -360,5 +330,5 @@ export async function setCachedMessage(db, msgId, payload, deviceKey) {
   const blob = new Uint8Array(iv.length + ciphertext.byteLength);
   blob.set(iv, 0);
   blob.set(new Uint8Array(ciphertext), iv.length);
-  await putMessageRecord(db, msgId, Array.from(blob));
+  await put(db, STORE_MESSAGES, msgId, { blob });
 }

@@ -41,7 +41,7 @@ export async function deriveMessageStoreKey(identityPrivateKey) {
       name: 'HKDF',
       hash: 'SHA-256',
       salt: new TextEncoder().encode(MSG_STORE_KEY_SALT),
-      info: new Uint8Array(0),
+      info: new TextEncoder().encode('hush-message-cache-encryption'),
     },
     hkdfKey,
     { name: 'AES-GCM', length: 256 },
@@ -58,16 +58,22 @@ export async function deriveMessageStoreKey(identityPrivateKey) {
  */
 export function useSignal({ getStore, getToken }) {
   const deviceKeyRef = useRef(/** @type {CryptoKey|null} */ (null));
+  const deviceKeyPromiseRef = useRef(/** @type {Promise<CryptoKey|null>|null} */ (null));
 
   async function getDeviceKey() {
     if (deviceKeyRef.current) return deviceKeyRef.current;
-    const db = await getStore();
-    if (!db) return null;
-    const identity = await signalStore.getIdentity(db);
-    if (!identity) return null;
-    const key = await deriveMessageStoreKey(identity.privateKey);
-    deviceKeyRef.current = key;
-    return key;
+    if (deviceKeyPromiseRef.current) return deviceKeyPromiseRef.current;
+    const promise = (async () => {
+      const db = await getStore();
+      if (!db) return null;
+      const identity = await signalStore.getIdentity(db);
+      if (!identity) return null;
+      const key = await deriveMessageStoreKey(identity.privateKey);
+      deviceKeyRef.current = key;
+      return key;
+    })();
+    deviceKeyPromiseRef.current = promise;
+    return promise;
   }
   /**
    * Encrypts plaintext for a remote user. Establishes session via X3DH if needed.

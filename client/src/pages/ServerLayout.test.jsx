@@ -37,10 +37,11 @@ vi.mock('../lib/ws', () => ({
 }));
 
 vi.mock('./TextChannel', () => ({
-  default: function MockTextChannel({ channel }) {
+  default: function MockTextChannel({ channel, sidebarSlot }) {
     return (
       <div data-testid="text-channel">
         <span>#{channel?.name}</span>
+        {sidebarSlot}
       </div>
     );
   },
@@ -79,7 +80,7 @@ describe('ServerLayout', () => {
 
   it('shows "Select a server" when no serverId in URL', () => {
     renderWithRoute('/server');
-    expect(screen.getByText('Select a server')).toBeInTheDocument();
+    expect(screen.getByText('select a server')).toBeInTheDocument();
   });
 
   it('shows "Select a channel" when serverId but no channelId', async () => {
@@ -90,7 +91,7 @@ describe('ServerLayout', () => {
     });
     renderWithRoute('/server/s1');
     await waitFor(() => {
-      expect(screen.getByText('Select a channel')).toBeInTheDocument();
+      expect(screen.getByText('select a channel')).toBeInTheDocument();
     });
   });
 

@@ -56,7 +56,7 @@ describe('ChannelList', () => {
     expect(screen.getByText('chat')).toBeInTheDocument();
   });
 
-  it('does not show voice participant count when zero', () => {
+  it('does not show voice participants when list is empty', () => {
     render(
       <ChannelList
         getToken={getToken}
@@ -66,14 +66,19 @@ describe('ChannelList', () => {
         myRole="member"
         activeChannelId={null}
         onChannelSelect={() => {}}
-        voiceParticipantCounts={new Map([[voiceChannel.id, 0]])}
+        voiceParticipants={new Map([[voiceChannel.id, []]])}
       />
     );
     expect(screen.queryByText('0')).not.toBeInTheDocument();
     expect(screen.queryByText('—')).not.toBeInTheDocument();
   });
 
-  it('shows voice participant count when greater than zero', () => {
+  it('shows voice participant names when participants are present', () => {
+    const participants = [
+      { userId: 'u1', displayName: 'Alice' },
+      { userId: 'u2', displayName: 'Bob' },
+      { userId: 'u3', displayName: 'Charlie' },
+    ];
     render(
       <ChannelList
         getToken={getToken}
@@ -83,10 +88,12 @@ describe('ChannelList', () => {
         myRole="member"
         activeChannelId={null}
         onChannelSelect={() => {}}
-        voiceParticipantCounts={new Map([[voiceChannel.id, 3]])}
+        voiceParticipants={new Map([[voiceChannel.id, participants]])}
       />
     );
-    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.getByText('Bob')).toBeInTheDocument();
+    expect(screen.getByText('Charlie')).toBeInTheDocument();
   });
 
   it('category header shows drag handle for admin', () => {
@@ -138,6 +145,11 @@ describe('ChannelList', () => {
     );
     const deleteBtn = screen.getByTitle('Delete category');
     deleteBtn.click();
+    // Confirmation modal appears — click the "Delete" button to confirm.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    });
+    screen.getByRole('button', { name: 'Delete' }).click();
     await waitFor(() => {
       expect(deleteChannel).toHaveBeenCalledWith('test-token', categoryChannel.id);
     });

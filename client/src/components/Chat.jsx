@@ -17,7 +17,7 @@ function uint8ArrayToBase64(u8) {
   return btoa(bin);
 }
 
-async function decryptMessageRow(m, currentUserId, decryptFromUser, getCachedMessage, setCachedMessage) {
+async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedMessage, setCachedMessage }) {
   const ts = new Date(m.timestamp).getTime();
   if (typeof getCachedMessage === 'function') {
     const cached = await getCachedMessage(m.id);
@@ -38,7 +38,7 @@ async function decryptMessageRow(m, currentUserId, decryptFromUser, getCachedMes
     const ct = base64ToUint8Array(m.ciphertext);
     const pt = await decryptFromUser(m.senderId, DEFAULT_DEVICE_ID, ct);
     content = new TextDecoder().decode(pt);
-    if (content !== null && typeof setCachedMessage === 'function') {
+    if (typeof setCachedMessage === 'function') {
       await setCachedMessage(m.id, { content, senderId: m.senderId, timestamp: ts });
     }
   } catch (_) {
@@ -268,13 +268,11 @@ export default function Chat({
         for (let i = list.length - 1; i >= 0; i--) {
           const m = list[i];
           decrypted.push(
-            await decryptMessageRow(
-              m,
-              currentUserId,
-              decryptFromUserRef.current,
-              getCachedMessageRef.current,
-              setCachedMessageRef.current
-            )
+            await decryptMessageRow(m, currentUserId, {
+              decryptFromUser: decryptFromUserRef.current,
+              getCachedMessage: getCachedMessageRef.current,
+              setCachedMessage: setCachedMessageRef.current,
+            })
           );
           knownMessageIdsRef.current.add(m.id);
         }
@@ -310,13 +308,11 @@ export default function Chat({
         if (knownMessageIdsRef.current.has(m.id)) continue;
         knownMessageIdsRef.current.add(m.id);
         older.push(
-          await decryptMessageRow(
-            m,
-            currentUserId,
-            decryptFromUserRef.current,
-            getCachedMessageRef.current,
-            setCachedMessageRef.current
-          )
+          await decryptMessageRow(m, currentUserId, {
+            decryptFromUser: decryptFromUserRef.current,
+            getCachedMessage: getCachedMessageRef.current,
+            setCachedMessage: setCachedMessageRef.current,
+          })
         );
       }
       const el = messagesScrollRef.current;
@@ -359,19 +355,16 @@ export default function Chat({
       // The ciphertext was encrypted for the recipient, so we can't decrypt it.
       // Match the oldest pending optimistic message and confirm it; cache plaintext for re-entry.
       if (senderId === currentUserId) {
+        let cachedContent = null;
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.pending && m.sender === currentUserId);
-          if (idx >= 0) {
-            const pendingMsg = prev[idx];
-            setCachedMessageRef.current?.(id, {
-              content: pendingMsg.content ?? '',
-              senderId: currentUserId,
-              timestamp: ts,
-            });
-            return prev.map((m, i) => (i === idx ? { ...m, id, pending: false, failed: false, timestamp: ts } : m));
-          }
-          return prev;
+          if (idx < 0) return prev;
+          cachedContent = prev[idx].content ?? '';
+          return prev.map((m, i) => (i === idx ? { ...m, id, pending: false, failed: false, timestamp: ts } : m));
         });
+        if (cachedContent !== null) {
+          setCachedMessageRef.current?.(id, { content: cachedContent, senderId: currentUserId, timestamp: ts });
+        }
         return;
       }
 
@@ -386,7 +379,7 @@ export default function Chat({
           const ct = base64ToUint8Array(ciphertext);
           const pt = await decryptFromUserRef.current(senderId, DEFAULT_DEVICE_ID, ct);
           content = new TextDecoder().decode(pt);
-          if (content !== null && setCachedMessageRef.current) {
+          if (setCachedMessageRef.current) {
             setCachedMessageRef.current(id, { content, senderId, timestamp: ts });
           }
         } catch (_) {
