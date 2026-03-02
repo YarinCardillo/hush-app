@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as api from '../lib/api';
 import { useSignal } from '../hooks/useSignal';
 
@@ -17,15 +17,17 @@ function uint8ArrayToBase64(u8) {
   return btoa(bin);
 }
 
-async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedMessage, setCachedMessage }) {
+async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedMessage, setCachedMessage, displayNameMap }) {
   const ts = new Date(m.timestamp).getTime();
+  const resolveDisplayName = (userId) =>
+    userId === currentUserId ? 'You' : (displayNameMap?.get(userId) ?? truncateUserId(userId));
   if (typeof getCachedMessage === 'function') {
     const cached = await getCachedMessage(m.id);
     if (cached) {
       return {
         id: m.id,
         sender: cached.senderId,
-        displayName: cached.senderId === currentUserId ? 'You' : truncateUserId(cached.senderId),
+        displayName: resolveDisplayName(cached.senderId),
         content: cached.content,
         timestamp: cached.timestamp,
         decryptionFailed: false,
@@ -47,7 +49,7 @@ async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedM
   return {
     id: m.id,
     sender: m.senderId,
-    displayName: m.senderId === currentUserId ? 'You' : truncateUserId(m.senderId),
+    displayName: resolveDisplayName(m.senderId),
     content,
     timestamp: ts,
     decryptionFailed,
@@ -219,6 +221,7 @@ export default function Chat({
   getStore,
   wsClient: wsClientProp,
   recipientUserIds = [],
+  members = [],
   onNewMessage,
 }) {
   const [messages, setMessages] = useState([]);
@@ -236,6 +239,14 @@ export default function Chat({
   wsClientRef.current = wsClientProp;
   const scrollRestoreRef = useRef(null);
 
+  const displayNameMap = useMemo(() => {
+    const map = new Map();
+    for (const m of members) {
+      if (m.userId && m.displayName) map.set(m.userId, m.displayName);
+    }
+    return map;
+  }, [members]);
+
   const { encryptForUser, decryptFromUser, getCachedMessage, setCachedMessage } = useSignal({
     getStore: getStore ?? (() => Promise.resolve(null)),
     getToken: getToken ?? (() => null),
@@ -249,6 +260,8 @@ export default function Chat({
   getCachedMessageRef.current = getCachedMessage;
   const setCachedMessageRef = useRef(setCachedMessage);
   setCachedMessageRef.current = setCachedMessage;
+  const displayNameMapRef = useRef(displayNameMap);
+  displayNameMapRef.current = displayNameMap;
 
   const wsClient = wsClientProp;
 
@@ -272,6 +285,7 @@ export default function Chat({
               decryptFromUser: decryptFromUserRef.current,
               getCachedMessage: getCachedMessageRef.current,
               setCachedMessage: setCachedMessageRef.current,
+              displayNameMap: displayNameMapRef.current,
             })
           );
           knownMessageIdsRef.current.add(m.id);
@@ -389,7 +403,7 @@ export default function Chat({
       const msg = {
         id,
         sender: senderId,
-        displayName: truncateUserId(senderId),
+        displayName: displayNameMapRef.current?.get(senderId) ?? truncateUserId(senderId),
         content,
         timestamp: ts,
         decryptionFailed,

@@ -639,6 +639,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
                   getStore={getStore}
                   wsClient={wsClient}
                   recipientUserIds={recipientUserIds}
+                  members={members}
                   onNewMessage={handleNewChatMessage}
                 />
               </div>
@@ -686,6 +687,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
                     getStore={getStore}
                     wsClient={wsClient}
                     recipientUserIds={recipientUserIds}
+                    members={members}
                     onNewMessage={handleNewChatMessage}
                   />
                 </div>

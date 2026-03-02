@@ -415,6 +415,7 @@ export default function ServerLayout() {
                   getToken={getToken}
                   wsClient={wsClient}
                   recipientUserIds={memberIds}
+                  members={members}
                   showMembers={showMembers}
                   onToggleMembers={() => togglePanel('members')}
                   sidebarSlot={!isMobile ? (

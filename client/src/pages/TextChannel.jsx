@@ -65,6 +65,7 @@ export default function TextChannel({
   getToken,
   wsClient,
   recipientUserIds = [],
+  members = [],
   showMembers = false,
   onToggleMembers,
   sidebarSlot = null,
@@ -99,6 +100,7 @@ export default function TextChannel({
             getStore={getStore}
             wsClient={wsClient}
             recipientUserIds={recipientUserIds}
+            members={members}
           />
         </div>
         {sidebarSlot}
