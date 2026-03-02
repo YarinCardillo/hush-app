@@ -7,19 +7,60 @@ const TAB_ACCOUNT = 'account';
 const TAB_APPEARANCE = 'appearance';
 const TAB_AUDIO_VIDEO = 'audio-video';
 
-const THEME_STORAGE_KEY = 'hush_theme_mode';
+const THEME_MODE_KEY = 'hush_theme_mode';
+const DARK_THEME_KEY = 'hush_dark_theme';
+const LIGHT_THEME_KEY = 'hush_light_theme';
+
+const DARK_THEMES = [
+  { key: 'og-dark', label: 'OG Dark', css: 'dark' },
+];
+
+const LIGHT_THEMES = [
+  { key: 'og-light', label: 'OG Light', css: 'light' },
+];
 
 function getStoredThemeMode() {
-  return localStorage.getItem(THEME_STORAGE_KEY) || 'system';
+  return localStorage.getItem(THEME_MODE_KEY) || 'system';
+}
+
+function getStoredDarkTheme() {
+  return localStorage.getItem(DARK_THEME_KEY) || 'og-dark';
+}
+
+function getStoredLightTheme() {
+  return localStorage.getItem(LIGHT_THEME_KEY) || 'og-light';
+}
+
+function findThemeCss(key, themes, fallback) {
+  const found = themes.find((t) => t.key === key);
+  return found ? found.css : fallback;
+}
+
+function resolveActiveThemeCss(mode) {
+  if (mode === 'light') {
+    return findThemeCss(getStoredLightTheme(), LIGHT_THEMES, 'light');
+  }
+  if (mode === 'dark') {
+    return findThemeCss(getStoredDarkTheme(), DARK_THEMES, 'dark');
+  }
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return prefersDark
+    ? findThemeCss(getStoredDarkTheme(), DARK_THEMES, 'dark')
+    : findThemeCss(getStoredLightTheme(), LIGHT_THEMES, 'light');
 }
 
 function applyThemeMode(mode) {
-  if (mode === 'system') {
-    delete document.documentElement.dataset.theme;
-  } else {
-    document.documentElement.dataset.theme = mode;
-  }
-  localStorage.setItem(THEME_STORAGE_KEY, mode);
+  localStorage.setItem(THEME_MODE_KEY, mode);
+  document.documentElement.dataset.theme = resolveActiveThemeCss(mode);
+}
+
+// Re-apply when OS preference changes while mode is 'system'
+if (typeof window !== 'undefined') {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (getStoredThemeMode() === 'system') {
+      document.documentElement.dataset.theme = resolveActiveThemeCss('system');
+    }
+  });
 }
 
 const styles = {
@@ -246,11 +287,28 @@ function AccountTab() {
 
 function AppearanceTab() {
   const [mode, setMode] = useState(getStoredThemeMode);
+  const [darkTheme, setDarkTheme] = useState(getStoredDarkTheme);
+  const [lightTheme, setLightTheme] = useState(getStoredLightTheme);
 
   const handleModeChange = (newMode) => {
     setMode(newMode);
     applyThemeMode(newMode);
   };
+
+  const handleDarkThemeChange = (key) => {
+    setDarkTheme(key);
+    localStorage.setItem(DARK_THEME_KEY, key);
+    applyThemeMode(mode);
+  };
+
+  const handleLightThemeChange = (key) => {
+    setLightTheme(key);
+    localStorage.setItem(LIGHT_THEME_KEY, key);
+    applyThemeMode(mode);
+  };
+
+  const showDarkPicker = mode === 'dark' || mode === 'system';
+  const showLightPicker = mode === 'light' || mode === 'system';
 
   return (
     <>
@@ -261,8 +319,8 @@ function AppearanceTab() {
         <div style={styles.modeGroup}>
           {[
             { key: 'system', label: 'System' },
-            { key: 'dark', label: 'OG Dark' },
-            { key: 'light', label: 'OG Light' },
+            { key: 'dark', label: 'Dark' },
+            { key: 'light', label: 'Light' },
           ].map((opt) => (
             <button
               key={opt.key}
@@ -278,10 +336,46 @@ function AppearanceTab() {
           {mode === 'system'
             ? 'Follows your operating system preference.'
             : mode === 'dark'
-              ? 'Always use the dark theme.'
-              : 'Always use the light theme.'}
+              ? 'Always use the selected dark theme.'
+              : 'Always use the selected light theme.'}
         </div>
       </div>
+
+      {showDarkPicker && (
+        <div style={styles.fieldRow}>
+          <label style={styles.fieldLabel}>Dark theme</label>
+          <div style={styles.modeGroup}>
+            {DARK_THEMES.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                style={styles.modeBtn(darkTheme === t.key)}
+                onClick={() => handleDarkThemeChange(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showLightPicker && (
+        <div style={styles.fieldRow}>
+          <label style={styles.fieldLabel}>Light theme</label>
+          <div style={styles.modeGroup}>
+            {LIGHT_THEMES.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                style={styles.modeBtn(lightTheme === t.key)}
+                onClick={() => handleLightThemeChange(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -432,4 +526,4 @@ export default function UserSettingsModal({ onClose }) {
   );
 }
 
-export { applyThemeMode, getStoredThemeMode };
+export { applyThemeMode, getStoredThemeMode, DARK_THEMES, LIGHT_THEMES };

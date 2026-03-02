@@ -25,7 +25,7 @@ function FaviconThemeSync() {
   useEffect(() => {
     const getTheme = () => {
       const dataTheme = document.documentElement.getAttribute('data-theme');
-      if (dataTheme === 'light' || dataTheme === 'dark') return dataTheme;
+      if (dataTheme) return dataTheme;
       return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     };
     const apply = () => {
