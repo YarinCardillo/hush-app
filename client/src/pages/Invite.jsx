@@ -3,8 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getInviteInfo, claimInvite } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
-const BASE_API = '';
-
 const styles = {
   page: {
     minHeight: '100%',
@@ -81,7 +79,7 @@ function inviteErrorMessage(err) {
 export default function Invite() {
   const { code } = useParams();
   const navigate = useNavigate();
-  const { token, isAuthenticated } = useAuth();
+  const { token, isAuthenticated, register: authRegister } = useAuth();
 
   const [invite, setInvite] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -141,25 +139,9 @@ export default function Invite() {
 
     setRegisterLoading(true);
     try {
-      // Register the new user
-      const regRes = await fetch(`${BASE_API}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: trimmedUsername,
-          password,
-          displayName: trimmedDisplayName || trimmedUsername,
-        }),
-      });
-      if (!regRes.ok) {
-        const regErr = await regRes.json().catch(() => ({}));
-        throw new Error(regErr.error || `Registration failed (${regRes.status})`);
-      }
-      const { token: newToken } = await regRes.json();
-
-      // Claim the invite with the new token
-      await claimInvite(newToken, code);
-      navigate('/channels', { replace: true });
+      // Register via AuthContext so token + user state are set globally
+      await authRegister(trimmedUsername, password, trimmedDisplayName || trimmedUsername);
+      // After authRegister, the token useEffect (line 124) will auto-claim the invite
     } catch (err) {
       setError(inviteErrorMessage(err));
     } finally {

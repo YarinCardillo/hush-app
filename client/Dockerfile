@@ -6,7 +6,7 @@
 # Stage 3: Serve static files with Caddy
 
 # --- Stage 1: WASM build ---
-FROM rust:1.86-slim AS wasm-builder
+FROM rust:1.88-slim AS wasm-builder
 RUN cargo install wasm-pack
 WORKDIR /build
 COPY hush-crypto/ ./hush-crypto/

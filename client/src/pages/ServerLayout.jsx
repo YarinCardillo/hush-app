@@ -213,16 +213,26 @@ export default function ServerLayout() {
     return () => wsClient.off('channel_created', handler);
   }, [wsClient]);
 
-  // channel_deleted: remove from local list
+  // channel_deleted: remove from local list, tear down voice, redirect if viewing
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
       if (!data.channel_id) return;
       setChannels((prev) => prev.filter((ch) => ch.id !== data.channel_id));
+      setActiveVoiceChannel((prev) => {
+        if (prev?.id === data.channel_id) {
+          activeVoiceMemberIdsRef.current = [];
+          return null;
+        }
+        return prev;
+      });
+      if (channelId === data.channel_id) {
+        navigate('/channels', { replace: true });
+      }
     };
     wsClient.on('channel_deleted', handler);
     return () => wsClient.off('channel_deleted', handler);
-  }, [wsClient]);
+  }, [wsClient, channelId, navigate]);
 
   // channel_moved: refetch channel list for correct ordering
   useEffect(() => {

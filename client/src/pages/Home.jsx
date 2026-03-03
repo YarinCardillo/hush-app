@@ -461,7 +461,7 @@ export default function Home() {
     if (!loginUsername.trim() || !loginPassword) return;
     try {
       await login(loginUsername.trim(), loginPassword);
-      navigate(joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/server', { replace: true });
+      navigate(joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/channels', { replace: true });
     } catch {
       // Error shown via authError toast
     }
@@ -479,7 +479,7 @@ export default function Home() {
     }
     try {
       await register(registerUsername.trim(), registerPassword, registerDisplayName.trim());
-      navigate(joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/server', { replace: true });
+      navigate(joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/channels', { replace: true });
     } catch {
       // Error shown via authError toast
     }
@@ -494,7 +494,7 @@ export default function Home() {
       await loginAsGuest();
       sessionStorage.setItem(GUEST_SESSION_KEY, '1');
       setIsGuestSession(true);
-      const target = joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/server';
+      const target = joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/channels';
       navigate(target, { replace: true });
     } catch (err) {
       setError(getFriendlyError(err));
