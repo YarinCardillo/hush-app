@@ -17,6 +17,37 @@ function uint8ArrayToBase64(u8) {
   return btoa(bin);
 }
 
+// Module-level pending send cache — survives component unmount/remount so plaintext
+// can be recovered when the user navigates back to a channel before the self-echo
+// has been processed (or in fan-out mode where no self-echo arrives).
+const _pendingSends = new Map();
+const PENDING_SEND_TTL = 60_000;
+
+function addPendingSend(channelId, content, senderId) {
+  const list = _pendingSends.get(channelId) || [];
+  list.push({ content, senderId, timestamp: Date.now() });
+  _pendingSends.set(channelId, list);
+}
+
+function consumePendingSend(channelId, senderId, serverTimestamp) {
+  const list = _pendingSends.get(channelId);
+  if (!list?.length) return null;
+  const now = Date.now();
+  const fresh = list.filter((p) => now - p.timestamp < PENDING_SEND_TTL);
+  if (!fresh.length) {
+    _pendingSends.delete(channelId);
+    return null;
+  }
+  _pendingSends.set(channelId, fresh);
+  const idx = fresh.findIndex(
+    (p) => p.senderId === senderId && Math.abs(p.timestamp - serverTimestamp) < 10_000
+  );
+  if (idx < 0) return null;
+  const [match] = fresh.splice(idx, 1);
+  if (!fresh.length) _pendingSends.delete(channelId);
+  return match.content;
+}
+
 async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedMessage, setCachedMessage }) {
   const ts = new Date(m.timestamp).getTime();
   if (typeof getCachedMessage === 'function') {
@@ -32,15 +63,16 @@ async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedM
     }
   }
   // Sender's own messages are encrypted for recipients, not for self.
-  // Without a cache hit, the sender can never decrypt them.
+  // Try the module-level pending sends cache (populated at send time).
   if (m.senderId === currentUserId) {
-    return {
-      id: m.id,
-      sender: m.senderId,
-      content: null,
-      timestamp: ts,
-      decryptionFailed: true,
-    };
+    const pendingContent = consumePendingSend(m.channelId, m.senderId, ts);
+    if (pendingContent !== null) {
+      if (typeof setCachedMessage === 'function') {
+        await setCachedMessage(m.id, { content: pendingContent, senderId: m.senderId, timestamp: ts });
+      }
+      return { id: m.id, sender: m.senderId, content: pendingContent, timestamp: ts, decryptionFailed: false };
+    }
+    return { id: m.id, sender: m.senderId, content: null, timestamp: ts, decryptionFailed: true };
   }
   let content = null;
   let decryptionFailed = false;
@@ -385,6 +417,7 @@ export default function Chat({
         });
         if (cachedContent !== null) {
           setCachedMessageRef.current?.(id, { content: cachedContent, senderId: currentUserId, timestamp: ts });
+          consumePendingSend(data.channel_id, currentUserId, ts);
         }
         return;
       }
@@ -467,6 +500,7 @@ export default function Chat({
     inputRef.current?.focus();
     lastSentTempIdRef.current = tempId;
     setIsSending(true);
+    addPendingSend(channelId, trimmed, currentUserId);
 
     try {
       await encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, trimmed, encryptForUserRef.current);

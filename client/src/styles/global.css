@@ -185,7 +185,7 @@
   --ob-to:             var(--hush-black);
   --ob-glow:           rgba(213,79,18,0);
   --ob-ring:           rgba(213,79,18,0);
-  --ob-eye:            #3a3a4e;
+  --ob-eye:            var(--hush-text-ghost);
   --ob-shadow-opacity: 0;
 }
 
@@ -195,7 +195,7 @@
   --ob-to:             var(--orb-waiting-to);
   --ob-glow:           var(--orb-waiting-glow);
   --ob-ring:           var(--orb-waiting-ring);
-  --ob-eye:            #9898b0;
+  --ob-eye:            var(--hush-text-secondary);
   --ob-shadow-opacity: 0.3;
 }
 
@@ -205,7 +205,7 @@
   --ob-to:             #a33d0e;
   --ob-glow:           rgba(213,79,18,0.14);
   --ob-ring:           rgba(213,79,18,0.28);
-  --ob-eye:            #13120a;
+  --ob-eye:            var(--hush-black);
   --ob-shadow-opacity: 1;
 }
 
