@@ -1,4 +1,4 @@
-# ARCHITECTURE.md — Hush Codebase Reference
+# ARCHITECTURE.md: Hush Codebase Reference
 
 > This file is read by orchestra agents (architect + programmer).
 > It maps the CURRENT state and the TARGET state of the codebase.
@@ -116,7 +116,7 @@ client/
 │   │   └── noiseGateWorklet.js   # AudioWorklet processor for mic noise gating
 │   │
 │   ├── pages/
-│   │   ├── Home.jsx              # Auth UI + room create/join (still uses Matrix auth as bridge)
+│   │   ├── Home.jsx              # Auth UI (login/register/guest, Go backend JWT)
 │   │   ├── Room.jsx              # Main room: stream grid, controls, chat, participants
 │   │   └── Roadmap.jsx           # Public roadmap page
 │   │
@@ -178,7 +178,7 @@ scripts/
 | Client media crypto | WebCrypto API (AES-GCM frame encryption) |
 | Desktop | Tauri + CEF (Rust shell + bundled Chromium, native `hush-crypto` via IPC) |
 | Mobile | React Native + UniFFI bindings to Rust crypto |
-| Crypto core | Rust crate (hush-crypto wrapping libsignal) — WASM for web, direct Rust for Tauri, UniFFI for mobile |
+| Crypto core | Rust crate (hush-crypto wrapping libsignal): WASM for web, direct Rust for Tauri, UniFFI for mobile |
 | Backend | Go + Chi (auth, rooms, channels, membership, WebSocket, pre-key server, LiveKit tokens) |
 | Database | PostgreSQL (new schema, owned by Go backend) |
 | Media SFU | LiveKit Server |
@@ -351,8 +351,8 @@ The WS hub broadcasts server-scoped events so all connected members see real-tim
 - Identity key pair (public + private)
 - Registration ID
 - Session states with associated data (AD = `Encode(IK_A) || Encode(IK_B)`, 66 bytes)
-- Signed pre-key (public + private + signature) — needed for X3DH responder
-- One-time pre-key private keys — consumed and deleted after first use
+- Signed pre-key (public + private + signature), needed for X3DH responder
+- One-time pre-key private keys (consumed and deleted after first use)
 
 Only public keys are uploaded to the server. Private keys never leave the client.
 
@@ -362,31 +362,31 @@ Only public keys are uploaded to the server. Private keys never leave the client
 - *Subsequent messages*: Regular envelope (`0x02` + DR payload) with stored session state and AD.
 
 **Implementation Files**:
-- `client/src/hooks/useSignal.js` — Signal session management, encrypt/decrypt, message envelope
-- `client/src/lib/signalStore.js` — IndexedDB persistence for all Signal state
-- `client/src/lib/hushCrypto.js` — WASM wrapper (X3DH, Double Ratchet, key generation)
-- `client/src/lib/uploadKeysAfterAuth.js` — Post-auth key generation and upload
-- `hush-crypto/` — Rust crate (X3DH initiator + responder, Double Ratchet, WASM bindings)
-- `server/internal/api/keys.go` — Pre-key server endpoints
+- `client/src/hooks/useSignal.js`: Signal session management, encrypt/decrypt, message envelope
+- `client/src/lib/signalStore.js`: IndexedDB persistence for all Signal state
+- `client/src/lib/hushCrypto.js`: WASM wrapper (X3DH, Double Ratchet, key generation)
+- `client/src/lib/uploadKeysAfterAuth.js`: Post-auth key generation and upload
+- `hush-crypto/`: Rust crate (X3DH initiator + responder, Double Ratchet, WASM bindings)
+- `server/internal/api/keys.go`: Pre-key server endpoints
 
 ### LiveKit E2EE for Media
 
-**Protocol**: WebRTC media streams encrypted using LiveKit's Insertable Streams with AES-256-GCM. Same mechanism as current implementation — only the key distribution changes.
+**Protocol**: WebRTC media streams encrypted using LiveKit's Insertable Streams with AES-256-GCM. Same mechanism as current implementation; only the key distribution changes.
 
-**Key Distribution** (implemented — Phase D):
+**Key Distribution** (implemented, Phase D):
 1. Room creator generates 256-bit AES-GCM key (`crypto.getRandomValues(new Uint8Array(32))`)
 2. Key encrypted via Signal session and sent to each participant over WebSocket (`media.key` message type)
 3. On participant join: leader sends frame key via Signal (encrypted once, retried on send failure)
 4. On participant leave: leader generates new key, distributes to remaining via `Promise.allSettled`
 5. Server hardening: self-relay blocked, payload capped at 4096 bytes
 
-**Leader Election**: Deterministic — lowest user ID among connected participants. On leader disconnect, next lowest takes over.
+**Leader Election**: Deterministic: lowest user ID among connected participants. On leader disconnect, next lowest takes over.
 
 **Implementation Files**:
-- `client/src/lib/e2eeKeyManager.js` — Key generation, distribution via Signal sessions over WebSocket
-- `client/src/lib/e2eeKeyManager.test.js` — 16 tests (retrySend, media.key listener, leader logic, rekey, base64)
-- `client/src/hooks/useRoom.js` — LiveKit Room with `ExternalE2EEKeyProvider`, E2EE worker
-- `server/internal/ws/client.go` — media.key relay with self-relay guard and payload cap
+- `client/src/lib/e2eeKeyManager.js`: Key generation, distribution via Signal sessions over WebSocket
+- `client/src/lib/e2eeKeyManager.test.js`: 16 tests (retrySend, media.key listener, leader logic, rekey, base64)
+- `client/src/hooks/useRoom.js`: LiveKit Room with `ExternalE2EEKeyProvider`, E2EE worker
+- `server/internal/ws/client.go`: media.key relay with self-relay guard and payload cap
 
 **No Silent Degradation**: If E2EE setup fails (worker load failure, key exchange failure), do NOT connect to LiveKit. Show error: "Media encryption unavailable."
 
@@ -394,29 +394,29 @@ Only public keys are uploaded to the server. Private keys never leave the client
 
 ## Preserve List (DO NOT delete/break these)
 
-- `client/src/styles/global.css` — design system
-- `client/src/lib/noiseGateWorklet.js` — reuse in LiveKit audio pipeline
-- `client/src/lib/bandwidthEstimator.js` — quality recommendation
-- `client/src/utils/constants.js` — quality presets (adapt to LiveKit encoding params)
-- `client/src/hooks/useBreakpoint.js` — responsive utils
-- `client/src/hooks/useDevices.js` — device enumeration
-- `client/src/components/StreamView.jsx` — video wrapper
-- `client/src/components/Controls.jsx` — media controls (adapt)
-- `client/src/components/AppBackground.jsx` — ambient background
-- `client/src/components/LogoWordmark.jsx` — brand wordmark
-- `client/src/assets/logo-wordmark.svg` — SVG wordmark asset
-- `design-system.md` — UI design language
-- `livekit/livekit.yaml` — LiveKit server config
+- `client/src/styles/global.css`: design system
+- `client/src/lib/noiseGateWorklet.js`: reuse in LiveKit audio pipeline
+- `client/src/lib/bandwidthEstimator.js`: quality recommendation
+- `client/src/utils/constants.js`: quality presets (adapt to LiveKit encoding params)
+- `client/src/hooks/useBreakpoint.js`: responsive utils
+- `client/src/hooks/useDevices.js`: device enumeration
+- `client/src/components/StreamView.jsx`: video wrapper
+- `client/src/components/Controls.jsx`: media controls (adapt)
+- `client/src/components/AppBackground.jsx`: ambient background
+- `client/src/components/LogoWordmark.jsx`: brand wordmark
+- `client/src/assets/logo-wordmark.svg`: SVG wordmark asset
+- `design-system.md`: UI design language
+- `livekit/livekit.yaml`: LiveKit server config
 
 ## Remove List (completed)
 
 All Matrix/Synapse components removed:
-- `server/src/` — entire old Node.js server (replaced by Go backend)
-- `synapse/` — Synapse config and data
-- `client/src/hooks/useMatrixAuth.js`, `client/src/lib/matrixClient.js` — Matrix client code
-- `client/src/contexts/AuthContext.jsx` — rewritten for JWT (no Matrix)
-- `scripts/test-synapse.sh`, `scripts/generate-synapse-config.sh`, `scripts/test-chat.sh` — Matrix test scripts
-- `docker-compose.yml` — Synapse service, old Node.js `hush` service, Matrix env vars
-- `Dockerfile` — old Node.js root Dockerfile (Go backend has its own)
-- `docs/reference/MATRIX_REFERENCE.md` — Matrix protocol reference
+- `server/src/`: entire old Node.js server (replaced by Go backend)
+- `synapse/`: Synapse config and data
+- `client/src/hooks/useMatrixAuth.js`, `client/src/lib/matrixClient.js`: Matrix client code
+- `client/src/contexts/AuthContext.jsx`: rewritten for JWT (no Matrix)
+- `scripts/test-synapse.sh`, `scripts/generate-synapse-config.sh`, `scripts/test-chat.sh`: Matrix test scripts
+- `docker-compose.yml`: Synapse service, old Node.js `hush` service, Matrix env vars
+- `Dockerfile`: old Node.js root Dockerfile (Go backend has its own)
+- `docs/reference/MATRIX_REFERENCE.md`: Matrix protocol reference
 - All `matrix-js-sdk` imports removed from client

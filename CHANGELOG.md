@@ -4,7 +4,44 @@ All notable changes to hush are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
-## [0.6.2-alpha] - 2026-02-23: Signal Protocol + Go Backend (current)
+## [0.7.0-alpha] - 2026-03-03: Servers & Channels (current)
+
+### Architecture
+
+- Go backend replacing Node.js/Matrix for auth, API, and WebSocket presence
+- Signal Protocol (X3DH + Double Ratchet) via hush-crypto Rust crate compiled to WASM
+- WebSocket message routing with per-recipient fan-out encryption
+- LiveKit E2EE key distribution via Signal sessions instead of Matrix
+- Encrypted message store in IndexedDB with per-session crypto keys
+- Matrix/Synapse fully removed from codebase
+
+### Features
+
+- Server and channel management with text, voice, and category types
+- Invite link generation and join flow
+- Drag-and-drop channel and category reordering with server-side persistence
+- Member list with real-time WebSocket presence
+- Server settings: rename, leave, delete with ownership transfer
+- Resizable sidebar with persistent width
+- Collapsible categories with persistent state per server
+- HushOrb ambient mascot in voice channels and empty states
+- Server-authoritative voice state via LiveKit webhooks
+
+### Infrastructure
+
+- Client Dockerfile with multi-stage WASM build pipeline
+- Real-time WebSocket broadcasts for all server mutations
+- libsignal-dezire security patches (panic DoS, zeroization) with 30 interop tests
+- Setup script and environment configuration for self-hosting
+
+### Fixes
+
+- Chat shows member display names instead of truncated UUIDs
+- WebSocket reconnection stability and React StrictMode compatibility
+- Theme mode separated from theme variant selection
+- Channel and category drag-and-drop position persistence
+
+## [0.6.2-alpha] - 2026-02-23: Signal Protocol + Go Backend
 
 ### Features
 

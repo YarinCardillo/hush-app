@@ -1,5 +1,5 @@
 /**
- * Changelog data — single source of truth for the Roadmap page and CHANGELOG.md.
+ * Changelog data: single source of truth for the Roadmap page and CHANGELOG.md.
  *
  * Milestones are ordered A-G chronologically.
  * Releases are ordered newest-first.
@@ -23,23 +23,23 @@ export const milestones = [
   {
     id: 'C',
     title: 'Signal Protocol + Go Backend',
-    status: 'active',
+    status: 'done',
     summary:
-      'Replacing the crypto and backend with battle-tested Signal Protocol and a purpose-built Go server.',
+      'Go backend with Signal Protocol (X3DH + Double Ratchet) via hush-crypto WASM. Matrix fully removed.',
   },
   {
     id: 'D',
     title: 'Servers & Channels',
-    status: 'planned',
+    status: 'active',
     summary:
-      'Discord-like community structure. Servers, text and voice channels, invites, and moderation.',
+      'Discord-like community structure. Servers, text and voice channels, categories, invites, drag-and-drop reordering.',
   },
   {
     id: 'E',
     title: 'Production & Launch',
     status: 'planned',
     summary:
-      'Self-hosting in under 10 minutes. Managed hosting for communities. Public launch.',
+      'Moderation tools, rate limiting, security hardening. Self-hosting in under 10 minutes.',
   },
   {
     id: 'F',
@@ -58,11 +58,63 @@ export const milestones = [
 
 export const releases = [
   {
+    version: '0.7.0-alpha',
+    date: '2026-03-03',
+    milestone: 'D',
+    title: 'core rewrite',
+    current: true,
+    tags: ['release', 'architecture'],
+    groups: [
+      {
+        label: 'architecture',
+        items: [
+          'Go backend replacing Node.js/Matrix for auth, API, and WebSocket presence',
+          'Signal Protocol (X3DH + Double Ratchet) via hush-crypto Rust crate compiled to WASM',
+          'WebSocket message routing with per-recipient fan-out encryption',
+          'LiveKit E2EE key distribution via Signal sessions instead of Matrix',
+          'Encrypted message store in IndexedDB with per-session crypto keys',
+          'Matrix/Synapse fully removed from codebase',
+        ],
+      },
+      {
+        label: 'features',
+        items: [
+          'Server and channel management with text, voice, and category types',
+          'Invite link generation and join flow',
+          'Drag-and-drop channel and category reordering with server-side persistence',
+          'Member list with real-time WebSocket presence',
+          'Server settings: rename, leave, delete with ownership transfer',
+          'Resizable sidebar with persistent width',
+          'Collapsible categories with persistent state per server',
+          'HushOrb ambient mascot in voice channels and empty states',
+          'Server-authoritative voice state via LiveKit webhooks',
+        ],
+      },
+      {
+        label: 'infrastructure',
+        items: [
+          'Client Dockerfile with multi-stage WASM build pipeline',
+          'Real-time WebSocket broadcasts for all server mutations',
+          'libsignal-dezire security patches (panic DoS, zeroization) with 30 interop tests',
+          'Setup script and environment configuration for self-hosting',
+        ],
+      },
+      {
+        label: 'fixes',
+        items: [
+          'Chat shows member display names instead of truncated UUIDs',
+          'WebSocket reconnection stability and React StrictMode compatibility',
+          'Theme mode separated from theme variant selection',
+          'Channel and category drag-and-drop position persistence',
+        ],
+      },
+    ],
+  },
+  {
     version: '0.6.2-alpha',
     date: '2026-02-23',
     milestone: 'C',
     title: 'polish & mobile',
-    current: true,
     tags: ['release'],
     groups: [
       {

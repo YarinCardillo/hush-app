@@ -7,8 +7,8 @@ Complete setup, architecture, environment variables, and developer workflow refe
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [Quick Start — Development](#quick-start--development)
-3. [Quick Start — Self-Hosting (Docker)](#quick-start--self-hosting-docker)
+2. [Quick Start -Development](#quick-start--development)
+3. [Quick Start -Self-Hosting (Docker)](#quick-start--self-hosting-docker)
 4. [Environment Variables Reference](#environment-variables-reference)
 5. [What to Restart When You Change X](#what-to-restart-when-you-change-x)
 6. [Detailed Architecture Diagrams](#detailed-architecture-diagrams)
@@ -44,7 +44,7 @@ Hush has three core components:
 | **Client** | React 18, Vite, hush-crypto (WASM) | UI, E2EE encryption/decryption |
 | **Go API** | Go, Chi, pgx, gorilla/websocket | Auth, servers, channels, keys, presence, LiveKit tokens |
 | **PostgreSQL** | PostgreSQL 16 | Users, servers, channels, messages (ciphertext), Signal keys |
-| **LiveKit** | LiveKit SFU (self-hosted or Cloud) | WebRTC media relay (voice, video, screen) |
+| **LiveKit** | LiveKit SFU (self-hosted) | WebRTC media relay (voice, video, screen) |
 | **Caddy** | Caddy 2 (Docker only) | Reverse proxy, TLS, CORS, security headers |
 
 ---
@@ -53,47 +53,20 @@ Hush has three core components:
 
 ### Prerequisites
 
-- Go 1.22+
-- Node.js 20+
-- PostgreSQL 16 (Docker or local)
-- (Optional) LiveKit server for voice/video
+- Docker and Docker Compose (for backend services)
+- Node.js 22+ (for frontend HMR)
+- (Optional) Go 1.25+ if you need to modify and test the Go API outside Docker
 
-### 1. Start PostgreSQL
-
-Easiest via Docker (runs only Postgres, not the full stack):
+### 1. Start all backend services
 
 ```bash
-docker run -d --name hush-pg \
-  -e POSTGRES_USER=hush \
-  -e POSTGRES_PASSWORD=hush \
-  -e POSTGRES_DB=hush \
-  -p 5432:5432 \
-  postgres:16-alpine
+cp .env.example .env          # default dev values work as-is
+docker-compose up -d
 ```
 
-Or use an existing PostgreSQL instance. Create the database manually:
+This starts Postgres, Redis, LiveKit, Go API, and Caddy. The Go API auto-runs migrations on startup.
 
-```sql
-CREATE USER hush WITH PASSWORD 'hush';
-CREATE DATABASE hush OWNER hush;
-```
-
-### 2. Start the Go API
-
-```bash
-cd server
-cp .env.example .env          # edit JWT_SECRET if you want
-export DATABASE_URL="postgres://hush:hush@localhost:5432/hush?sslmode=disable"
-export JWT_SECRET="dev-secret-change-me"
-go run ./cmd/hush
-```
-
-The Go server:
-- Runs on port **8080**
-- Auto-runs migrations from `server/migrations/` on startup
-- Serves `/api/*` and `/ws`
-
-### 3. Start the Vite dev server
+### 2. Start the Vite dev server
 
 ```bash
 cd client
@@ -101,31 +74,34 @@ npm install
 npm run dev
 ```
 
-Vite runs on port **5173** and proxies:
+Vite runs on port **5173** and proxies all backend routes to Caddy on `:8081`:
 
 | Path | Target | Purpose |
 |-|-|-|
-| `/api/*` | `localhost:8080` | Go API |
-| `/livekit/*` | `localhost:8081` | LiveKit via Caddy |
+| `/api/*` | `localhost:8081` | Go API (via Caddy) |
+| `/ws` | `localhost:8081` | WebSocket (via Caddy) |
+| `/livekit/*` | `localhost:8081` | LiveKit signaling (via Caddy) |
+
+This means all Docker services must be running (including Caddy on `:8081`) for local frontend development.
 
 Open `http://localhost:5173` in a Chromium-based browser.
 
-### 4. (Optional) Start LiveKit for voice/video
+### 3. (Optional) Run Go API outside Docker
+
+If you're actively modifying Go code and want faster iteration without rebuilding the Docker image:
 
 ```bash
-docker run -d --name hush-livekit \
-  -p 7880:7880 -p 7881:7881 \
-  -v $(pwd)/livekit/livekit.yaml:/etc/livekit.yaml:ro \
-  livekit/livekit-server:latest --config /etc/livekit.yaml
-```
-
-Set in Go API environment:
-
-```bash
+docker-compose up -d postgres redis livekit    # data + media services only
+cd server
+export DATABASE_URL="postgres://hush:hush@localhost:5432/hush?sslmode=disable"
+export JWT_SECRET="dev-jwt-secret-change-in-production"
 export LIVEKIT_API_KEY=devkey
 export LIVEKIT_API_SECRET=devsecret
 export LIVEKIT_URL=ws://localhost:7880
+go run ./cmd/hush
 ```
+
+Note: in this mode Caddy is not running, so the Vite proxy (which targets `:8081`) will not reach the Go API. Either also start Caddy, or temporarily change the Vite proxy target in `client/vite.config.js` to `http://localhost:8080`.
 
 ---
 
@@ -173,7 +149,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 Production differences:
 - Caddy uses `Caddyfile.prod` with HTTPS and HSTS
-- LiveKit and Redis are disabled (use LiveKit Cloud instead)
+- LiveKit and Redis are self-hosted (same as base compose, included by default)
 - Set `CORS_ORIGIN` in `.env` to your domain (e.g. `https://gethush.live`)
 
 ### 4. Verify
@@ -196,9 +172,9 @@ docker-compose logs -f hush-api           # Watch Go API logs
 | `JWT_SECRET` | **Yes** | -- | Any string | `openssl rand -hex 32` | Signing key for JWT tokens |
 | `JWT_EXPIRY_HOURS` | No | `168` (7d) | `168` | `168` | Token lifetime in hours |
 | `CORS_ORIGIN` | No | `*` | `*` | `https://your-domain.com` | Allowed CORS origin |
-| `LIVEKIT_API_KEY` | For voice | -- | `devkey` | From LiveKit Cloud dashboard | LiveKit API key |
-| `LIVEKIT_API_SECRET` | For voice | -- | `devsecret` | From LiveKit Cloud dashboard | LiveKit API secret |
-| `LIVEKIT_URL` | For voice | -- | `ws://localhost:7880` | `wss://<project>.livekit.cloud` | LiveKit server URL |
+| `LIVEKIT_API_KEY` | For voice | -- | `devkey` | From self-hosted LiveKit config | LiveKit API key |
+| `LIVEKIT_API_SECRET` | For voice | -- | `devsecret` | From self-hosted LiveKit config | LiveKit API secret |
+| `LIVEKIT_URL` | For voice | -- | `ws://localhost:7880` | `wss://livekit.your-domain.com` | LiveKit server URL |
 
 ### Docker Compose (root `.env`)
 
@@ -218,7 +194,7 @@ openssl rand -hex 32
 # Postgres password
 openssl rand -hex 16
 
-# LiveKit (self-hosted only; for LiveKit Cloud, get from dashboard)
+# LiveKit (self-hosted; must match keys in livekit.yaml)
 openssl rand -hex 16   # LIVEKIT_API_KEY
 openssl rand -hex 32   # LIVEKIT_API_SECRET
 ```
@@ -258,7 +234,7 @@ go run ./cmd/hush
 docker-compose up -d --build hush-api
 ```
 
-No client restart needed. The Vite proxy forwards `/api/*` to the Go server.
+No client restart needed. The Vite proxy forwards `/api/*` to Caddy, which routes to the Go API.
 
 #### "I changed a React component"
 
@@ -267,7 +243,7 @@ Nothing. Vite hot-reloads automatically. If you see stale state (e.g. after chan
 #### "I added a new database migration"
 
 ```bash
-# Local dev: just restart the Go API — it runs migrate.Up() on startup
+# Local dev: just restart the Go API -it runs migrate.Up() on startup
 cd server && go run ./cmd/hush
 
 # Docker:
@@ -308,7 +284,7 @@ docker-compose restart caddy
 
 ## Detailed Architecture Diagrams
 
-### Level 1 — High-Level System
+### Level 1 -High-Level System
 
 ```mermaid
 graph TB
@@ -335,7 +311,7 @@ graph TB
   LKClient -.->|"frame encryption<br/>AES-256-GCM"| Browser
 ```
 
-### Level 2 — Request Flow Detail
+### Level 2 -Request Flow Detail
 
 ```mermaid
 graph LR
@@ -380,7 +356,7 @@ graph LR
   LKTokens -.->|"generates JWT"| LiveKit["LiveKit"]
 ```
 
-### Level 3 — E2EE Data Flow
+### Level 3 -E2EE Data Flow
 
 ```mermaid
 sequenceDiagram
@@ -417,7 +393,7 @@ sequenceDiagram
   B->>WASM: Decrypt frames with AES-256-GCM
 ```
 
-### Level 4 — WebSocket Presence Flow
+### Level 4 -WebSocket Presence Flow
 
 ```mermaid
 sequenceDiagram
@@ -439,7 +415,7 @@ sequenceDiagram
   WS-->>Others: presence.update {user_ids: [...without C...]}
 ```
 
-### Level 5 — Docker Network Topology
+### Level 5 -Docker Network Topology
 
 ```mermaid
 graph TB
@@ -479,8 +455,9 @@ The Go API auto-applies migrations on startup from `server/migrations/`.
 ```
 server/migrations/
   000001_init_schema.up.sql       # Core tables
-  000002_messages_recipient_id    # DM support
+  000002_messages_recipient_id    # DM support (recipient_id column)
   000003_voice_mode_low_latency   # Voice mode rename
+  000004_add_category_type        # Category channel type
 ```
 
 ### Core Tables
@@ -490,7 +467,8 @@ server/migrations/
 | `users` | username, password_hash, display_name |
 | `sessions` | JWT token hashes, expiry |
 | `servers` | Server name, owner, icon |
-| `channels` | Type (text/voice), voice_mode, position, parent |
+| `channels` | Type (text/voice/category), voice_mode, position, parent |
+| `channel_config` | Per-channel settings: retention, max media size |
 | `server_members` | User-server membership with role (member/mod/admin) |
 | `messages` | ciphertext (BYTEA), sender, channel, timestamp |
 | `signal_identity_keys` | Per-device identity key, signed pre-key, registration ID |
@@ -554,7 +532,7 @@ The Go binary must be restarted. Unlike Vite, Go does not hot-reload. Kill the p
 | JWT_SECRET | Any string | `openssl rand -hex 32` |
 | CORS_ORIGIN | `*` | `https://your-domain.com` |
 | DATABASE_URL | `hush:hush@localhost` | Strong password, `sslmode=require` |
-| LiveKit | Self-hosted with `devkey/devsecret` | LiveKit Cloud or self-hosted with random keys |
+| LiveKit | Self-hosted with `devkey/devsecret` | Self-hosted with random keys (must match livekit.yaml) |
 | TLS | None (HTTP) | Caddy auto-TLS or your own cert |
 | Postgres password | `hush` | `openssl rand -hex 16` |
 | COOP/COEP headers | Vite dev server | Caddy (Caddyfile.prod) |

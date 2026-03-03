@@ -46,11 +46,13 @@ Open `https://your-domain` (Caddy handles TLS and proxies the Go backend + LiveK
 Prerequisites: [Node.js 22+](https://nodejs.org/), [Rust](https://rustup.rs/), [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/).
 
 ```bash
-docker-compose up -d postgres redis livekit   # backend services
+docker-compose up -d                           # starts all backend services
 cd client
 npm install
 npm run dev                                    # builds WASM automatically on first run
 ```
+
+Vite runs on `:5173` and proxies `/api`, `/ws`, `/livekit` to Caddy on `:8081`.
 
 The `dev` and `build` scripts detect if `hush-crypto` WASM output is missing and build it via `wasm-pack`. Use `npm run build:wasm:force` to rebuild manually.
 
@@ -64,7 +66,7 @@ Main environment variables (see [.env.example](.env.example)):
 | `JWT_SECRET` | Secret for signing auth tokens |
 | `LIVEKIT_API_KEY` | LiveKit API key (dev: `devkey`) |
 | `LIVEKIT_API_SECRET` | LiveKit API secret (dev: `devsecret`) |
-| `LIVEKIT_URL` | LiveKit WebSocket URL (dev: `ws://localhost:7880`; prod: `wss://<project>.livekit.cloud`) |
+| `LIVEKIT_URL` | LiveKit WebSocket URL (dev: `ws://localhost:7880`; prod: `wss://livekit.your-domain.com`) |
 
 ---
 
@@ -75,8 +77,8 @@ Main environment variables (see [.env.example](.env.example)):
 - **Database:** PostgreSQL. Messages stored as ciphertext.
 - **LiveKit:** SFU for WebRTC media. Frame-level E2EE via Insertable Streams.
 - **Caddy:** Reverse proxy and TLS.
-- **Desktop:** Tauri + CEF (Rust shell + bundled Chromium, native crypto via IPC).
-- **Mobile:** React Native with `hush-crypto` Rust crate via UniFFI.
+- **Desktop (planned):** Tauri + CEF (Rust shell + bundled Chromium, native crypto via IPC).
+- **Mobile (planned):** React Native with `hush-crypto` Rust crate via UniFFI.
 
 ---
 
@@ -89,8 +91,8 @@ Main environment variables (see [.env.example](.env.example)):
 | Backend | Go, Chi |
 | Database | PostgreSQL |
 | Media SFU | LiveKit |
-| Desktop | Tauri + CEF |
-| Mobile | React Native |
+| Desktop (planned) | Tauri + CEF |
+| Mobile (planned) | React Native |
 | Proxy | Caddy |
 | Containers | Docker, docker-compose |
 
