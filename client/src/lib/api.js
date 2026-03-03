@@ -96,78 +96,62 @@ export async function getChannelMessages(token, channelId, opts = {}) {
 }
 
 /**
- * List servers the current user is a member of.
+ * Get current instance metadata.
  * @param {string} token - JWT
- * @returns {Promise<Array<{ id: string, name: string, iconUrl?: string, ownerId: string, createdAt: string, role: string }>>}
+ * @returns {Promise<{ id: string, name: string, iconUrl?: string, ownerId: string, registrationMode: string, createdAt: string, bootstrapped: boolean }>}
  */
-export async function listServers(token) {
-  const res = await fetchWithAuth(token, '/api/servers');
+export async function getInstance(token) {
+  const res = await fetchWithAuth(token, '/api/instance');
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `list servers ${res.status}`);
+    throw new Error(err.error || `get instance ${res.status}`);
   }
   return res.json();
 }
 
 /**
- * Get server details with channels and current user's role.
+ * Update instance metadata (owner-only).
  * @param {string} token - JWT
- * @param {string} serverId - Server UUID
- * @returns {Promise<{ server: object, channels: Array<object>, myRole: string }>}
+ * @param {{ name?: string, iconUrl?: string, registrationMode?: string }} body
+ * @returns {Promise<void>}
  */
-export async function getServer(token, serverId) {
-  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `get server ${res.status}`);
-  }
-  return res.json();
-}
-
-/**
- * Get server members (with display name and role). Caller must be a member.
- * @param {string} token - JWT
- * @param {string} serverId - Server UUID
- * @returns {Promise<Array<{ userId: string, displayName: string, role: string, joinedAt: string }>>}
- */
-export async function getServerMembers(token, serverId) {
-  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/members`);
-  if (!res.ok) throw new Error(`Failed to fetch members: ${res.status}`);
-  const data = await res.json();
-  return data.members;
-}
-
-/**
- * Create a new server.
- * @param {string} token - JWT
- * @param {{ name: string, iconUrl?: string }} body
- * @returns {Promise<object>} Created server
- */
-export async function createServer(token, body) {
-  const res = await fetchWithAuth(token, '/api/servers', {
-    method: 'POST',
+export async function updateInstance(token, body) {
+  const res = await fetchWithAuth(token, '/api/instance', {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `create server ${res.status}`);
+    throw new Error(err.error || `update instance ${res.status}`);
+  }
+}
+
+/**
+ * Get all instance members with roles.
+ * @param {string} token - JWT
+ * @returns {Promise<Array<{ id: string, username: string, displayName: string, role: string, createdAt: string }>>}
+ */
+export async function getMembers(token) {
+  const res = await fetchWithAuth(token, '/api/instance/members');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `get members ${res.status}`);
   }
   return res.json();
 }
 
 /**
- * Create an invite code for a server.
+ * Create an invite code for the instance.
  * @param {string} token - JWT
- * @param {string} serverId - Server UUID
- * @param {{ maxUses?: number, expiresIn?: number }} [options]
- * @returns {Promise<{ code: string, serverId: string, createdBy: string, maxUses: number, expiresAt: string }>}
+ * @param {{ maxUses?: number, expiresInHours?: number }} [opts]
+ * @returns {Promise<{ code: string, createdBy: string, maxUses: number, expiresAt: string }>}
  */
-export async function createInvite(token, serverId, options = {}) {
-  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/invites`, {
+export async function createInvite(token, opts = {}) {
+  const res = await fetchWithAuth(token, '/api/invites', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(options),
+    body: JSON.stringify(opts),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -177,11 +161,11 @@ export async function createInvite(token, serverId, options = {}) {
 }
 
 /**
- * Resolve an invite code to server info (for join flow). No auth required.
- * @param {string} code - Invite code (from link or user input)
- * @returns {Promise<{ serverId: string, serverName: string }>}
+ * Resolve an invite code to instance info (public — no auth required).
+ * @param {string} code - Invite code
+ * @returns {Promise<{ code: string, instanceName: string, expiresAt: string }>}
  */
-export async function getInviteByCode(code) {
+export async function getInviteInfo(code) {
   const res = await fetch(`${defaultBase}/api/invites/${encodeURIComponent(code)}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -191,34 +175,31 @@ export async function getInviteByCode(code) {
 }
 
 /**
- * Join a server with an invite code.
+ * Claim an invite code (adds the authenticated user to the instance).
  * @param {string} token - JWT
- * @param {string} serverId - Server UUID
- * @param {{ inviteCode: string }} body
- * @returns {Promise<object>} Server
+ * @param {string} code - Invite code
+ * @returns {Promise<void>}
  */
-export async function joinServer(token, serverId, body) {
-  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/join`, {
+export async function claimInvite(token, code) {
+  const res = await fetchWithAuth(token, '/api/invites/claim', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ code }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `join server ${res.status}`);
+    throw new Error(err.error || `claim invite ${res.status}`);
   }
-  return res.json();
 }
 
 /**
- * Create a channel in a server.
+ * Create a channel (admin+).
  * @param {string} token - JWT
- * @param {string} serverId - Server UUID
  * @param {{ name: string, type: 'text'|'voice', voiceMode?: 'low-latency'|'quality', parentId?: string, position?: number }} body
  * @returns {Promise<object>} Created channel
  */
-export async function createChannel(token, serverId, body) {
-  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/channels`, {
+export async function createChannel(token, body) {
+  const res = await fetchWithAuth(token, '/api/channels', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -226,6 +207,20 @@ export async function createChannel(token, serverId, body) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `create channel ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * List all channels in the instance.
+ * @param {string} token - JWT
+ * @returns {Promise<Array<{ id: string, name: string, type: string, voiceMode?: string, parentId?: string, position: number, createdAt: string }>>}
+ */
+export async function getChannels(token) {
+  const res = await fetchWithAuth(token, '/api/channels');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `get channels ${res.status}`);
   }
   return res.json();
 }
@@ -265,57 +260,6 @@ export async function deleteChannel(token, channelId) {
   }
 }
 
-/**
- * Update server name and/or icon (admin only).
- * @param {string} token - JWT
- * @param {string} serverId - Server UUID
- * @param {{ name?: string, iconUrl?: string }} body
- * @returns {Promise<void>}
- */
-export async function updateServer(token, serverId, body) {
-  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `update server ${res.status}`);
-  }
-}
-
-/**
- * Delete a server (admin only).
- * @param {string} token - JWT
- * @param {string} serverId - Server UUID
- * @returns {Promise<void>}
- */
-export async function deleteServer(token, serverId) {
-  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`, {
-    method: 'DELETE',
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `delete server ${res.status}`);
-  }
-}
-
-/**
- * Leave a server. Admins auto-transfer ownership to the next member.
- * Returns 409 if user is the sole member — they must delete instead.
- * @param {string} token - JWT
- * @param {string} serverId - Server UUID
- * @returns {Promise<void>}
- */
-export async function leaveServer(token, serverId) {
-  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/leave`, {
-    method: 'POST',
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `leave server ${res.status}`);
-  }
-}
 
 /**
  * Call after Go backend register/login. Ensures identity exists in IndexedDB and uploads keys.
