@@ -1,5 +1,24 @@
+import { useState } from 'react';
+import MemberProfileCard from './MemberProfileCard';
+import MemberContextMenu from './MemberContextMenu';
+import ModerationModal from './ModerationModal';
+import { kickUser, banUser, muteUser, changeUserRole } from '../lib/api';
+import { JWT_KEY } from '../hooks/useAuth';
+
 const ROLE_ORDER = ['owner', 'admin', 'mod', 'member'];
 const ROLE_LABELS = { owner: 'OWNER', admin: 'ADMIN', mod: 'MODS', member: 'MEMBERS' };
+
+const ROLE_RANK = { owner: 3, admin: 2, mod: 1, member: 0 };
+
+function roleAtLeast(role, required) {
+  return (ROLE_RANK[role] ?? 0) >= (ROLE_RANK[required] ?? 0);
+}
+
+function getToken() {
+  return typeof window !== 'undefined'
+    ? (sessionStorage.getItem(JWT_KEY) ?? sessionStorage.getItem('hush_token'))
+    : null;
+}
 
 /** Returns the stable member ID, supporting both legacy userId and new id fields. */
 function getMemberId(m) {
@@ -55,7 +74,8 @@ const styles = {
     padding: '6px 12px',
     fontSize: '0.85rem',
     color: 'var(--hush-text)',
-    cursor: 'default',
+    cursor: 'pointer',
+    userSelect: 'none',
   },
   dot: (online) => ({
     width: 8,
@@ -91,8 +111,70 @@ const styles = {
   },
 };
 
-export default function MemberList({ members = [], onlineUserIds = new Set(), currentUserId = '' }) {
+const ACTION_SUCCESS_MESSAGES = {
+  kick: (name) => `${name} was kicked.`,
+  ban: (name) => `${name} was banned.`,
+  mute: (name) => `${name} was muted.`,
+  changeRole: (name) => `${name}'s role was updated.`,
+};
+
+/**
+ * @param {{
+ *   members: Array<object>,
+ *   onlineUserIds: Set<string>,
+ *   currentUserId: string,
+ *   myRole: string,
+ *   showToast: (message: string, type: string) => void,
+ *   onMemberUpdate: () => void,
+ * }} props
+ */
+export default function MemberList({
+  members = [],
+  onlineUserIds = new Set(),
+  currentUserId = '',
+  myRole = 'member',
+  showToast,
+  onMemberUpdate,
+}) {
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [profilePosition, setProfilePosition] = useState({ x: 0, y: 0 });
+  const [contextMenu, setContextMenu] = useState(null); // { member, x, y } | null
+  const [modalAction, setModalAction] = useState(null); // { action, member } | null
+
   const byRole = groupByRole(members);
+
+  /**
+   * Dispatches the moderation API call for the given action.
+   * Clears the modal and shows a toast on completion.
+   */
+  const handleModAction = async (action, member, data) => {
+    const token = getToken();
+    if (!token) throw new Error('Not authenticated');
+
+    const memberId = getMemberId(member);
+    const displayName = member.displayName || member.username || 'User';
+
+    switch (action) {
+      case 'kick':
+        await kickUser(token, memberId, data.reason);
+        break;
+      case 'ban':
+        await banUser(token, memberId, data.reason, data.expiresIn);
+        break;
+      case 'mute':
+        await muteUser(token, memberId, data.reason, data.expiresIn);
+        break;
+      case 'changeRole':
+        await changeUserRole(token, memberId, data.newRole, data.reason);
+        break;
+      default:
+        throw new Error(`Unknown action: ${action}`);
+    }
+
+    const message = ACTION_SUCCESS_MESSAGES[action]?.(displayName) ?? 'Action completed.';
+    showToast?.(message, 'success');
+    onMemberUpdate?.();
+  };
 
   return (
     <div style={styles.panel}>
@@ -114,6 +196,19 @@ export default function MemberList({ members = [], onlineUserIds = new Set(), cu
                     key={memberId}
                     style={styles.row}
                     className="member-list-row"
+                    onClick={(e) => {
+                      setSelectedMember(m);
+                      setProfilePosition({ x: e.clientX, y: e.clientY });
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      // Context menu only visible to mod+ and not on self
+                      if (!isYou && roleAtLeast(myRole, 'mod')) {
+                        setContextMenu({ member: m, x: e.clientX, y: e.clientY });
+                      }
+                    }}
+                    onMouseEnter={(el) => { el.currentTarget.style.background = 'var(--hush-elevated)'; }}
+                    onMouseLeave={(el) => { el.currentTarget.style.background = 'none'; }}
                   >
                     <div style={styles.dot(isOnline)} aria-hidden />
                     <span style={styles.name}>
@@ -130,6 +225,40 @@ export default function MemberList({ members = [], onlineUserIds = new Set(), cu
           );
         })}
       </div>
+
+      {selectedMember && (
+        <MemberProfileCard
+          member={selectedMember}
+          position={profilePosition}
+          onClose={() => setSelectedMember(null)}
+        />
+      )}
+
+      {contextMenu && (
+        <MemberContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          member={contextMenu.member}
+          myRole={myRole}
+          onAction={(action) => {
+            setModalAction({ action, member: contextMenu.member });
+            setContextMenu(null);
+          }}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {modalAction && (
+        <ModerationModal
+          action={modalAction.action}
+          member={modalAction.member}
+          onConfirm={async (data) => {
+            await handleModAction(modalAction.action, modalAction.member, data);
+            setModalAction(null);
+          }}
+          onClose={() => setModalAction(null)}
+        />
+      )}
     </div>
   );
 }

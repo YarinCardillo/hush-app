@@ -261,6 +261,105 @@ export async function deleteChannel(token, channelId) {
 }
 
 
+// ── Moderation API ───────────────────────────────────────────────────────────
+
+/**
+ * Kick a user from the instance.
+ * @param {string} token - JWT
+ * @param {string} userId - Target user UUID
+ * @param {string} reason - Required reason string
+ * @returns {Promise<void>}
+ */
+export async function kickUser(token, userId, reason) {
+  const res = await fetchWithAuth(token, '/api/moderation/kick', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, reason }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `kick ${res.status}`);
+  }
+}
+
+/**
+ * Ban a user from the instance.
+ * @param {string} token - JWT
+ * @param {string} userId - Target user UUID
+ * @param {string} reason - Required reason string
+ * @param {number|null} [expiresIn] - Duration in seconds; null = permanent
+ * @returns {Promise<void>}
+ */
+export async function banUser(token, userId, reason, expiresIn) {
+  const res = await fetchWithAuth(token, '/api/moderation/ban', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, reason, expiresIn: expiresIn ?? null }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `ban ${res.status}`);
+  }
+}
+
+/**
+ * Mute a user in the instance.
+ * @param {string} token - JWT
+ * @param {string} userId - Target user UUID
+ * @param {string} reason - Required reason string
+ * @param {number|null} [expiresIn] - Duration in seconds; null = permanent
+ * @returns {Promise<void>}
+ */
+export async function muteUser(token, userId, reason, expiresIn) {
+  const res = await fetchWithAuth(token, '/api/moderation/mute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, reason, expiresIn: expiresIn ?? null }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `mute ${res.status}`);
+  }
+}
+
+/**
+ * Change a user's role in the instance.
+ * @param {string} token - JWT
+ * @param {string} userId - Target user UUID
+ * @param {string} newRole - 'member' | 'mod' | 'admin'
+ * @param {string} reason - Required reason string
+ * @returns {Promise<void>}
+ */
+export async function changeUserRole(token, userId, newRole, reason) {
+  const res = await fetchWithAuth(token, '/api/moderation/role', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, newRole, reason }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `change role ${res.status}`);
+  }
+}
+
+/**
+ * Delete a message (mod action).
+ * @param {string} token - JWT
+ * @param {string} messageId - Message UUID
+ * @returns {Promise<void>}
+ */
+export async function deleteMessage(token, messageId) {
+  const res = await fetchWithAuth(token, `/api/moderation/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `delete message ${res.status}`);
+  }
+}
+
+// ── Call after Go backend register/login ──────────────────────────────────────
+
 /**
  * Call after Go backend register/login. Ensures identity exists in IndexedDB and uploads keys.
  * When using Go auth (Phase E), call this after successful login/register with token, userId, and a stable deviceId (e.g. from localStorage).

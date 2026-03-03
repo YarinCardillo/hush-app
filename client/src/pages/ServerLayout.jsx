@@ -13,6 +13,8 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useSidebarResize } from '../hooks/useSidebarResize';
 import ConfirmModal from '../components/ConfirmModal';
 import HushOrb from '../components/HushOrb';
+import { useToast } from '../hooks/useToast';
+import Toast from '../components/Toast';
 
 const layoutStyles = {
   root: {
@@ -103,7 +105,7 @@ function getToken() {
 export default function ServerLayout() {
   const { channelId } = useParams();
   const navigate = useNavigate();
-  const { token: authToken, user } = useAuth();
+  const { token: authToken, user, logout } = useAuth();
   const breakpoint = useBreakpoint();
   const [instanceData, setInstanceData] = useState(null);
   const [channels, setChannels] = useState([]);
@@ -133,6 +135,7 @@ export default function ServerLayout() {
 
   const currentUserId = user?.id ?? '';
   const isMobile = breakpoint === 'mobile';
+  const { toasts, show: showToast } = useToast();
 
   const isViewingVoice = activeVoiceChannel != null && channelId === activeVoiceChannel.id;
 
@@ -262,12 +265,66 @@ export default function ServerLayout() {
     return () => wsClient.off('instance_updated', handler);
   }, [wsClient]);
 
+  // member_kicked: remove from list; redirect self if kicked
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      if (!data.user_id) return;
+      if (data.user_id === currentUserId) {
+        logout();
+        return;
+      }
+      setMembers((prev) => prev.filter((m) => (m.id ?? m.userId) !== data.user_id));
+    };
+    wsClient.on('member_kicked', handler);
+    return () => wsClient.off('member_kicked', handler);
+  }, [wsClient, currentUserId, logout]);
+
+  // member_banned: remove from list; redirect self if banned
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      if (!data.user_id) return;
+      if (data.user_id === currentUserId) {
+        logout();
+        return;
+      }
+      setMembers((prev) => prev.filter((m) => (m.id ?? m.userId) !== data.user_id));
+    };
+    wsClient.on('member_banned', handler);
+    return () => wsClient.off('member_banned', handler);
+  }, [wsClient, currentUserId, logout]);
+
+  // role_changed: update member's role in the list
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      if (!data.user_id || !data.new_role) return;
+      setMembers((prev) =>
+        prev.map((m) =>
+          (m.id ?? m.userId) === data.user_id ? { ...m, role: data.new_role } : m
+        )
+      );
+    };
+    wsClient.on('role_changed', handler);
+    return () => wsClient.off('role_changed', handler);
+  }, [wsClient]);
+
+  // message_deleted: handled inside Chat component which owns the messages list.
+  // ServerLayout only needs to propagate the WS client; Chat subscribes directly.
+
   // Fetch members when token is available
   useEffect(() => {
     if (!authToken) return;
     const token = getToken();
     if (token) getMembers(token).then(setMembers).catch(() => setMembers([]));
   }, [authToken]);
+
+  /** Refresh member list after a mod action completes. */
+  const handleMemberUpdate = useCallback(() => {
+    const token = getToken();
+    if (token) getMembers(token).then(setMembers).catch(() => {});
+  }, []);
 
   // Fetch instance data and channels on mount
   useEffect(() => {
@@ -408,6 +465,9 @@ export default function ServerLayout() {
                           members={members}
                           onlineUserIds={onlineUserIds}
                           currentUserId={currentUserId}
+                          myRole={instanceData?.myRole ?? 'member'}
+                          showToast={showToast}
+                          onMemberUpdate={handleMemberUpdate}
                         />
                       </div>
                     </div>
@@ -439,6 +499,9 @@ export default function ServerLayout() {
                             members={members}
                             onlineUserIds={onlineUserIds}
                             currentUserId={currentUserId}
+                            myRole={instanceData?.myRole ?? 'member'}
+                            showToast={showToast}
+                            onMemberUpdate={handleMemberUpdate}
                           />
                         </div>
                       </div>
@@ -487,6 +550,9 @@ export default function ServerLayout() {
                   members={members}
                   onlineUserIds={onlineUserIds}
                   currentUserId={currentUserId}
+                  myRole={instanceData?.myRole ?? 'member'}
+                  showToast={showToast}
+                  onMemberUpdate={handleMemberUpdate}
                 />
               </div>
             </>
@@ -502,6 +568,7 @@ export default function ServerLayout() {
           onCancel={() => setPendingVoiceSwitch(null)}
         />
       )}
+      <Toast toasts={toasts} />
     </div>
   );
 }
