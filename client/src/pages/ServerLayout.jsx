@@ -295,7 +295,7 @@ export default function ServerLayout() {
     return () => wsClient.off('member_banned', handler);
   }, [wsClient, currentUserId, logout]);
 
-  // role_changed: update member's role in the list
+  // role_changed: update member's role in the list (and own myRole if target is self)
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
@@ -305,10 +305,13 @@ export default function ServerLayout() {
           (m.id ?? m.userId) === data.user_id ? { ...m, role: data.new_role } : m
         )
       );
+      if (data.user_id === currentUserId) {
+        setInstanceData((prev) => prev ? { ...prev, myRole: data.new_role } : prev);
+      }
     };
     wsClient.on('role_changed', handler);
     return () => wsClient.off('role_changed', handler);
-  }, [wsClient]);
+  }, [wsClient, currentUserId]);
 
   // message_deleted: handled inside Chat component which owns the messages list.
   // ServerLayout only needs to propagate the WS client; Chat subscribes directly.
@@ -434,6 +437,9 @@ export default function ServerLayout() {
                   recipientUserIds={activeVoiceMemberIdsRef.current}
                   members={members}
                   onlineUserIds={onlineUserIds}
+                  myRole={instanceData?.myRole ?? 'member'}
+                  showToast={showToast}
+                  onMemberUpdate={handleMemberUpdate}
                   showMembers={showMembers}
                   showChatPanel={showChatPanel}
                   showParticipantsPanel={showParticipantsPanel}

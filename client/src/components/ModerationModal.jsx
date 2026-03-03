@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import modalStyles from './modalStyles';
 
 /** Duration presets shared by ban and mute actions. `value` is seconds; null = permanent. */
@@ -101,7 +102,7 @@ export default function ModerationModal({ action, member, onConfirm, onClose }) 
     }
   };
 
-  return (
+  return createPortal(
     <div
       className={`modal-backdrop ${isOpen ? 'modal-backdrop-open' : ''}`}
       onClick={onClose}
@@ -199,6 +200,7 @@ export default function ModerationModal({ action, member, onConfirm, onClose }) 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

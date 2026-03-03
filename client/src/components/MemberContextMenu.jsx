@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 const MENU_WIDTH = 160;
 const MENU_ITEM_HEIGHT = 32;
@@ -105,7 +106,7 @@ export default function MemberContextMenu({ x, y, member, myRole, onAction, onCl
 
   if (actions.length === 0) return null;
 
-  return (
+  return createPortal(
     <div ref={menuRef} style={styles.menu(pos)} role="menu" aria-label="Member actions">
       {actions.map((a) => (
         <button
@@ -123,6 +124,7 @@ export default function MemberContextMenu({ x, y, member, myRole, onAction, onCl
           {a.label}
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }

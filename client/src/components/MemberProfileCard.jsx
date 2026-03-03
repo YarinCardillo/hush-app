@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 /** Badge styles per role, following the design-system amber/muted palette. */
 const ROLE_BADGE_STYLES = {
@@ -121,7 +122,7 @@ export default function MemberProfileCard({ member, position, onClose }) {
   const role = member.role ?? 'member';
   const joinDate = formatJoinDate(member.createdAt ?? member.joinedAt);
 
-  return (
+  return createPortal(
     <div ref={cardRef} style={styles.card(pos)} role="dialog" aria-label="Member profile">
       <div style={styles.displayName}>{member.displayName || member.username || 'Unknown'}</div>
       {member.username && (
@@ -129,6 +130,7 @@ export default function MemberProfileCard({ member, position, onClose }) {
       )}
       <span style={styles.badge(role)}>{role}</span>
       {joinDate && <div style={styles.joinDate}>{joinDate}</div>}
-    </div>
+    </div>,
+    document.body,
   );
 }
