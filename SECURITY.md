@@ -2,8 +2,6 @@
 
 This document describes Hush's end-to-end encryption (E2EE) implementation, trust model, HTTP security posture, and known limitations.
 
-**External audit:** A third-party scan (SafeToShip) was run against gethush.live; findings are addressed in this doc and in the Caddy/Env configuration. See [Production checklist](#production-checklist) and [HTTP security headers](#http-security-headers).
-
 ## Encryption algorithms
 
 | Layer | Algorithm | Purpose |
@@ -82,36 +80,17 @@ Full media E2EE requires Insertable Streams and the LiveKit E2EE worker. If the 
 
 ## HTTP security headers
 
-Security headers can be set either at the **Caddy reverse proxy** (origin) or at **Cloudflare** (edge), if the site is behind Cloudflare. Prefer one place to avoid duplication.
+Caddy sets the following headers on all responses. These are required for the app to function correctly (especially COOP/COEP for LiveKit E2EE).
 
-### Option A: Caddy (origin)
-
-The app’s Caddy config sets the following headers on all site responses. This is the **default**: even when using Cloudflare, Caddy sends these so scanners and clients always see them (Cloudflare may also set them; duplicate is harmless).
-
-| Header | Purpose | Where |
-|-|-|-|
-| `X-Content-Type-Options: nosniff` | Disable MIME sniffing | Caddy (all site responses) |
-| `X-Frame-Options: DENY` | Mitigate clickjacking | Caddy |
-| `Cross-Origin-Opener-Policy: same-origin` | Required for LiveKit E2EE worker (`SharedArrayBuffer`) | Caddy |
-| `Cross-Origin-Embedder-Policy: require-corp` | Required for LiveKit E2EE worker | Caddy |
-| `Strict-Transport-Security` | HSTS (HTTPS only) | Caddy **production** only; see `caddy/Caddyfile.prod` |
-
-- **Local dev** (`caddy/Caddyfile`): `http://localhost` with the above headers; no HSTS (HTTP only).
-- **Production** (`caddy/Caddyfile.prod`): HTTPS site block with HSTS. Use when deploying without Cloudflare or when you want headers at origin.
-
-### Option B: Cloudflare (edge)
-
-If the site is **behind Cloudflare**, you can configure the same headers at the edge. Then you can rely on Caddy only for routing; headers are added by Cloudflare before the response reaches the browser.
-
-| Item | Where in Cloudflare |
+| Header | Purpose |
 |-|-|
-| **X-Content-Type-Options**, **X-Frame-Options**, **COOP**, **COEP** | **Rules** → **Transform Rules** → **Modify response header**: add each header. **Exclude the LiveKit path** so the WebSocket upgrade is not modified: expression `(http.host eq "gethush.live" and not starts_with(http.request.uri.path, "/livekit"))`. Otherwise the room connection can drop right after join. |
-| **HSTS** | **SSL/TLS** → **Edge Certificates** → **HTTP Strict Transport Security (HSTS)** → Enable, set max-age (e.g. 12 months), enable “Include subdomains” and “No-Sniff” if offered; add to preload list if desired. |
+| `X-Content-Type-Options: nosniff` | Disable MIME sniffing |
+| `X-Frame-Options: DENY` | Mitigate clickjacking |
+| `Cross-Origin-Opener-Policy: same-origin` | Required for LiveKit E2EE worker (`SharedArrayBuffer`) |
+| `Cross-Origin-Embedder-Policy: require-corp` | Required for LiveKit E2EE worker |
+| `Strict-Transport-Security` | HSTS (production only; see `caddy/Caddyfile.prod`) |
 
-- **CORS:** Cloudflare does not provide a simple UI to set a fixed `Access-Control-Allow-Origin` per path. To restrict CORS at the edge you’d use a **Worker** that checks the request `Origin` against an allowlist and sets the response header. Otherwise, keep CORS at the origin (Caddy + Express with `CORS_ORIGIN`).
-- **SPF:** If DNS is on Cloudflare, add the SPF TXT record under **DNS** → **Records** for your domain (not “in Cloudflare” as proxy, it’s DNS).
-
-Using Cloudflare for headers: Caddy already sends X-Content-Type-Options, X-Frame-Options, COOP, and COEP at origin, so the scanner and clients always receive them. You can keep or remove the same headers from Cloudflare Transform Rules (same value in both is fine). Ensure COOP/COEP remain sent for the app’s hostname so the LiveKit E2EE worker and `SharedArrayBuffer` keep working.
+If deploying behind an edge proxy (Cloudflare, etc.), ensure these headers are still sent. COOP/COEP are mandatory — without them, the E2EE worker cannot use `SharedArrayBuffer` and media encryption will fail.
 
 ## Input validation
 
@@ -128,44 +107,27 @@ Chat messages are stored as ciphertext blobs; the server never processes plainte
 
 ## CORS
 
-- **Development:** Default `CORS_ORIGIN` is `*` so the API can be used from any origin.
-- **Production:** Set `CORS_ORIGIN` to the exact frontend origin (e.g. `https://gethush.live`) in your environment. Both the Go backend and Caddy use this value. See `.env.example` and `docker-compose.prod.yml`.
+- **Development:** Default `CORS_ORIGIN` is `*`.
+- **Production:** Set `CORS_ORIGIN` to your frontend origin in `.env`. Both the Go backend and Caddy use this value.
 
 ## Production checklist
 
-Before going live (e.g. gethush.live), complete the following. None are in-repo; they are deployment and DNS steps.
-
 | Item | Action |
 |-|-|
-| **CORS** | Set `CORS_ORIGIN` to your frontend origin (e.g. `https://gethush.live`) in the hosting env. Do not use `*` in production. (Optional: enforce at edge with a Cloudflare Worker.) |
-| **HSTS** | Either use `caddy/Caddyfile.prod` so Caddy sends `Strict-Transport-Security`, or enable HSTS in **Cloudflare** → SSL/TLS → Edge Certificates → HSTS. |
-| **Security headers** | Either set at origin (Caddy; see [HTTP security headers](#http-security-headers)) or at edge: **Cloudflare** → Rules → Transform Rules → Modify response header (X-Content-Type-Options, X-Frame-Options, COOP, COEP). |
-| **SPF (DNS)** | Add a TXT SPF record for the domain you send email from. If DNS is on Cloudflare: **DNS** → Records → add TXT (e.g. `v=spf1 include:_spf.example.com -all`). |
-| **Secrets** | Do not use default or example secrets. Set strong `LIVEKIT_API_SECRET`, `JWT_SECRET`, and `POSTGRES_PASSWORD` from the hosting platform. |
-| **COOP/COEP** | Required for LiveKit E2EE worker (`SharedArrayBuffer`). Either in Caddy (Caddyfile.prod) or in Cloudflare Transform Rules. Ensure they are sent for your app hostname. |
-| **Dependencies** | Run `npm audit` in `client/` and `cargo audit` in `hush-crypto/` before production. Address high/critical; document or fix moderate/low. See [Dependencies](#dependencies). |
+| **CORS** | Set `CORS_ORIGIN` to your frontend origin. Do not use `*` in production. |
+| **HSTS** | Use `caddy/Caddyfile.prod` for `Strict-Transport-Security`. |
+| **COOP/COEP** | Required for LiveKit E2EE. Verify headers are present on your domain. |
+| **Secrets** | Do not use default values. Generate strong `JWT_SECRET`, `LIVEKIT_API_SECRET`, `POSTGRES_PASSWORD`. See `docs/SETUP.md`. |
+| **Dependencies** | Run `npm audit` in `client/` and `cargo audit` in `hush-crypto/` before production. |
 
-## Dependencies
+## Rate limiting
 
-- **npm:** Run `npm audit` in `client/`. Before production, resolve or document high/critical vulnerabilities; moderate/low should be fixed when a non-breaking fix is available. Dev-only tools (e.g. Vite dev server) may have advisories that do not affect production builds; document exceptions.
-- **Rust (if present):** If the repo includes Rust crates (e.g. `hush-crypto`), run `cargo audit` and apply the same policy (high/critical before production).
-- **Secrets:** Do not use `.env.example` or default values (e.g. `devsecret`, `changeme`) in production. Set all secrets from the hosting platform or a secure secret store. See [Production checklist](#production-checklist).
+Rate limiting is planned for Phase F. Target limits:
+- Auth endpoints (`/api/auth/*`): 5 req/min per IP
+- Message send: 30 msg/min per user
+- Key upload: 10 req/min per user
+- General API: 100 req/min per IP
 
-## Rate limiting (recommended before production)
+## Content-Security-Policy
 
-Sensitive endpoints are not rate-limited by default. Before production go-live, consider adding rate limiting (e.g. `express-rate-limit` or equivalent at the reverse proxy) for:
-
-- `POST /api/livekit/token`: limit per IP (and optionally per authenticated user) to prevent token abuse.
-- `POST /api/rooms/created` and `GET /api/rooms/can-create`: limit per IP to prevent room-creation abuse.
-
-Policy: e.g. a few hundred requests per minute per IP for token, and a lower cap for room creation. Document the chosen limits in this section or in deployment runbooks.
-
-## Content-Security-Policy (optional)
-
-A `Content-Security-Policy` (CSP) header can reduce XSS impact. It is not required by SafeToShip but is recommended as a follow-up. If you add CSP:
-
-1. Start with `Content-Security-Policy-Report-Only` and a report URI to avoid breaking the app.
-2. Allow script sources for the app, Vite HMR (if used in dev), LiveKit, and any E2EE worker origins.
-3. Switch to enforcing CSP once the policy is validated.
-
-Caddy can set CSP in the same site block as the other security headers. Document the final directive in this section.
+CSP is planned for Phase F. Will be configured in Caddy.
