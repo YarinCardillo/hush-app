@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getInviteByCode, joinServer } from '../lib/api';
+import { getInviteInfo, claimInvite } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+
+const BASE_API = '';
 
 const styles = {
   page: {
@@ -23,7 +25,7 @@ const styles = {
     color: 'var(--hush-text-secondary)',
     marginBottom: '8px',
   },
-  serverName: {
+  instanceName: {
     fontSize: '1.4rem',
     fontWeight: 300,
     color: 'var(--hush-text)',
@@ -37,6 +39,19 @@ const styles = {
     fontSize: '0.85rem',
     marginBottom: '16px',
     overflowWrap: 'break-word',
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    marginBottom: '16px',
+  },
+  fieldLabel: {
+    display: 'block',
+    fontSize: '0.8rem',
+    fontWeight: 500,
+    color: 'var(--hush-text-secondary)',
+    marginBottom: '6px',
   },
   actions: {
     display: 'flex',
@@ -53,20 +68,32 @@ const styles = {
 function inviteErrorMessage(err) {
   const msg = err?.message || '';
   if (/not found|expired|no longer valid/i.test(msg)) return 'Invite not found or expired.';
-  if (/already a member|409/i.test(msg)) return "You're already in this server.";
+  if (/already.*member|409/i.test(msg)) return 'You are already a member.';
   if (/invalid|expired|400/i.test(msg)) return 'Invite is invalid or expired.';
   return msg || 'Something went wrong.';
 }
 
+/**
+ * Two-phase invite page:
+ * - Unauthenticated: shows register form, then claims invite after registration.
+ * - Authenticated: auto-claims the invite and redirects to /channels.
+ */
 export default function Invite() {
   const { code } = useParams();
   const navigate = useNavigate();
   const { token, isAuthenticated } = useAuth();
+
   const [invite, setInvite] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [joinLoading, setJoinLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Registration form state (unauthenticated flow)
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [registerLoading, setRegisterLoading] = useState(false);
+
+  // Fetch invite info on mount (public endpoint)
   useEffect(() => {
     if (!code) {
       setLoading(false);
@@ -74,7 +101,7 @@ export default function Invite() {
       return;
     }
     let cancelled = false;
-    getInviteByCode(code)
+    getInviteInfo(code)
       .then((data) => {
         if (!cancelled) {
           setInvite(data);
@@ -93,23 +120,52 @@ export default function Invite() {
     return () => { cancelled = true; };
   }, [code]);
 
-  const handleJoin = useCallback(async () => {
-    if (!invite || !token || !code) return;
+  // Authenticated flow: auto-claim invite
+  useEffect(() => {
+    if (!isAuthenticated || !token || !invite || !code) return;
+    claimInvite(token, code)
+      .then(() => navigate('/channels', { replace: true }))
+      .catch((err) => setError(inviteErrorMessage(err)));
+  }, [isAuthenticated, token, invite, code, navigate]);
+
+  const handleRegisterAndClaim = useCallback(async (e) => {
+    e.preventDefault();
     setError(null);
-    setJoinLoading(true);
+
+    const trimmedUsername = username.trim();
+    const trimmedDisplayName = displayName.trim();
+    if (!trimmedUsername || !password) {
+      setError('Username and password are required.');
+      return;
+    }
+
+    setRegisterLoading(true);
     try {
-      await joinServer(token, invite.serverId, { inviteCode: code });
-      navigate(`/server/${invite.serverId}`, { replace: true });
+      // Register the new user
+      const regRes = await fetch(`${BASE_API}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: trimmedUsername,
+          password,
+          displayName: trimmedDisplayName || trimmedUsername,
+        }),
+      });
+      if (!regRes.ok) {
+        const regErr = await regRes.json().catch(() => ({}));
+        throw new Error(regErr.error || `Registration failed (${regRes.status})`);
+      }
+      const { token: newToken } = await regRes.json();
+
+      // Claim the invite with the new token
+      await claimInvite(newToken, code);
+      navigate('/channels', { replace: true });
     } catch (err) {
       setError(inviteErrorMessage(err));
     } finally {
-      setJoinLoading(false);
+      setRegisterLoading(false);
     }
-  }, [invite, token, code, navigate]);
-
-  const handleSignInToJoin = useCallback(() => {
-    navigate(`/?join=${encodeURIComponent(code)}`, { replace: true });
-  }, [navigate, code]);
+  }, [username, password, displayName, code, navigate]);
 
   if (loading) {
     return (
@@ -132,39 +188,90 @@ export default function Invite() {
     );
   }
 
-  if (!invite) {
-    return null;
+  if (!invite) return null;
+
+  // Authenticated: show redirecting state while auto-claim runs
+  if (isAuthenticated) {
+    return (
+      <div style={styles.page}>
+        <div className="glass" style={styles.card}>
+          <p style={styles.title}>You're invited to join</p>
+          <p style={styles.instanceName}>{invite.instanceName}</p>
+          {error && <p style={styles.error}>{error}</p>}
+          {!error && (
+            <p style={{ color: 'var(--hush-text-muted)', fontSize: '0.9rem' }}>Joining…</p>
+          )}
+          {error && (
+            <div style={styles.actions}>
+              <a href="/" style={styles.link}>Return to home</a>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
+  // Unauthenticated: show registration form
   return (
     <div style={styles.page}>
       <div className="glass" style={styles.card}>
-        <p style={styles.title}>You’re invited to join</p>
-        <p style={styles.serverName}>{invite.serverName}</p>
+        <p style={styles.title}>You're invited to join</p>
+        <p style={styles.instanceName}>{invite.instanceName}</p>
         {error && <p style={styles.error}>{error}</p>}
-        <div style={styles.actions}>
-          {isAuthenticated ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleJoin}
-              disabled={joinLoading}
-              style={{ width: '100%', padding: '12px' }}
-            >
-              {joinLoading ? 'Joining…' : 'Join'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleSignInToJoin}
-              style={{ width: '100%', padding: '12px' }}
-            >
-              Sign in to join
-            </button>
-          )}
-          <a href="/" style={styles.link}>Return to home</a>
-        </div>
+        <form style={styles.form} onSubmit={handleRegisterAndClaim}>
+          <div>
+            <label htmlFor="invite-username" style={styles.fieldLabel}>Username</label>
+            <input
+              id="invite-username"
+              name="username"
+              className="input"
+              type="text"
+              placeholder="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              maxLength={32}
+              autoComplete="username"
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="invite-display-name" style={styles.fieldLabel}>Display name (optional)</label>
+            <input
+              id="invite-display-name"
+              name="displayName"
+              className="input"
+              type="text"
+              placeholder="Display name"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              maxLength={64}
+              autoComplete="name"
+            />
+          </div>
+          <div>
+            <label htmlFor="invite-password" style={styles.fieldLabel}>Password</label>
+            <input
+              id="invite-password"
+              name="password"
+              className="input"
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={registerLoading}
+            style={{ width: '100%', padding: '12px' }}
+          >
+            {registerLoading ? 'Creating account…' : 'Create account and join'}
+          </button>
+        </form>
+        <a href="/" style={styles.link}>Return to home</a>
       </div>
     </div>
   );

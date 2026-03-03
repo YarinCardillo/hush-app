@@ -17,7 +17,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { getServer, createChannel, createInvite, moveChannel, deleteChannel, leaveServer } from '../lib/api';
+import { getChannels, createChannel, createInvite, moveChannel, deleteChannel } from '../lib/api';
 import modalStyles from './modalStyles';
 import ConfirmModal from './ConfirmModal';
 import ServerSettingsModal from './ServerSettingsModal';
@@ -26,18 +26,18 @@ const CHANNEL_TYPE_TEXT = 'text';
 const CHANNEL_TYPE_VOICE = 'voice';
 const CHANNEL_TYPE_CATEGORY = 'category';
 
-function loadCollapsedMap(serverId) {
+function loadCollapsedMap(storageKey) {
   try {
-    const raw = localStorage.getItem(`hush:categories-collapsed:${serverId}`);
+    const raw = localStorage.getItem(`hush:categories-collapsed:${storageKey}`);
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
 }
 
-function saveCollapsedMap(serverId, map) {
+function saveCollapsedMap(storageKey, map) {
   try {
-    localStorage.setItem(`hush:categories-collapsed:${serverId}`, JSON.stringify(map));
+    localStorage.setItem(`hush:categories-collapsed:${storageKey}`, JSON.stringify(map));
   } catch {
     // localStorage not available — silently ignore
   }
@@ -235,7 +235,7 @@ function groupChannelsByParent(channels) {
   return ordered;
 }
 
-function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
+function CreateChannelModal({ getToken, onClose, onCreated }) {
   const [name, setName] = useState('');
   const [type, setType] = useState(CHANNEL_TYPE_TEXT);
   const [voiceMode, setVoiceMode] = useState('quality');
@@ -273,7 +273,7 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
     try {
       const body = { name: trimmed, type };
       if (type === CHANNEL_TYPE_VOICE) body.voiceMode = voiceMode;
-      const channel = await createChannel(token, serverId, body);
+      const channel = await createChannel(token, body);
       onCreated(channel);
       onClose();
     } catch (err) {
@@ -349,7 +349,7 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
   );
 }
 
-function CreateCategoryModal({ getToken, serverId, onClose, onCreated }) {
+function CreateCategoryModal({ getToken, onClose, onCreated }) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -383,7 +383,7 @@ function CreateCategoryModal({ getToken, serverId, onClose, onCreated }) {
     }
     setLoading(true);
     try {
-      const category = await createChannel(token, serverId, { name: trimmed, type: CHANNEL_TYPE_CATEGORY });
+      const category = await createChannel(token, { name: trimmed, type: CHANNEL_TYPE_CATEGORY });
       onCreated(category);
       onClose();
     } catch (err) {
@@ -433,7 +433,7 @@ function CreateCategoryModal({ getToken, serverId, onClose, onCreated }) {
   );
 }
 
-function InviteModal({ getToken, serverId, onClose }) {
+function InviteModal({ getToken, onClose }) {
   const [isOpen, setIsOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
@@ -459,14 +459,14 @@ function InviteModal({ getToken, serverId, onClose }) {
       const token = getToken();
       if (!token) { setError('Not authenticated'); setLoading(false); return; }
       try {
-        const inv = await createInvite(token, serverId);
+        const inv = await createInvite(token);
         if (!cancelled) { setInviteCode(inv.code); setLoading(false); }
       } catch (err) {
         if (!cancelled) { setError(err.message || 'Failed to create invite'); setLoading(false); }
       }
     })();
     return () => { cancelled = true; };
-  }, [getToken, serverId]);
+  }, [getToken]);
 
   const inviteLink = inviteCode ? `${window.location.origin}/invite/${inviteCode}` : '';
 
@@ -816,43 +816,36 @@ function UncategorizeZone({ position, visible }) {
 
 export default function ChannelList({
   getToken,
-  serverId,
-  serverName,
+  instanceName,
+  instanceData,
   channels,
   myRole,
   activeChannelId,
   onChannelSelect,
   onChannelsUpdated,
   voiceParticipants,
-  onLeaveServer,
-  onDeleteServer,
 }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showServerMenu, setShowServerMenu] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [confirmLeave, setConfirmLeave] = useState(false);
-  const [leaveError, setLeaveError] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null); // { id, name, isCategory }
   const [activeId, setActiveId] = useState(null);
   const [localChannels, setLocalChannels] = useState(channels ?? []);
-  const isAdmin = myRole === 'admin';
+  const isAdmin = myRole === 'admin' || myRole === 'owner';
   const serverMenuRef = useRef(null);
 
-  const [collapsedMap, setCollapsedMap] = useState(() => loadCollapsedMap(serverId));
-
-  useEffect(() => {
-    setCollapsedMap(loadCollapsedMap(serverId));
-  }, [serverId]);
+  const INSTANCE_COLLAPSED_KEY = 'hush:categories-collapsed:instance';
+  const [collapsedMap, setCollapsedMap] = useState(() => loadCollapsedMap(INSTANCE_COLLAPSED_KEY));
 
   const handleToggleCollapsed = useCallback((categoryKey) => {
     setCollapsedMap((prev) => {
       const next = { ...prev, [categoryKey]: !prev[categoryKey] };
-      saveCollapsedMap(serverId, next);
+      saveCollapsedMap(INSTANCE_COLLAPSED_KEY, next);
       return next;
     });
-  }, [serverId]);
+  }, []);
 
   // Keep local list in sync with server-sourced prop (after API refresh or initial load)
   useEffect(() => { setLocalChannels(channels ?? []); }, [channels]);
@@ -873,45 +866,31 @@ export default function ChannelList({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
-  const handleLeaveConfirmed = useCallback(async () => {
-    setConfirmLeave(false);
-    setLeaveError(null);
-    const token = getToken();
-    if (token) {
-      try {
-        await leaveServer(token, serverId);
-        onLeaveServer?.();
-      } catch (err) {
-        setLeaveError(err.message || 'Failed to leave server');
-      }
-    }
-  }, [getToken, serverId, onLeaveServer]);
-
   const handleDeleteConfirmed = useCallback(async () => {
     if (!confirmDelete) return;
     const token = getToken();
     if (token) {
       try {
         await deleteChannel(token, confirmDelete.id);
-        const data = await getServer(token, serverId);
-        onChannelsUpdated?.(data);
+        const updated = await getChannels(token);
+        onChannelsUpdated?.(updated);
       } catch {
-        // Delete failed — server state unchanged
+        // Delete failed — channel state unchanged
       }
     }
     setConfirmDelete(null);
-  }, [confirmDelete, getToken, serverId, onChannelsUpdated]);
+  }, [confirmDelete, getToken, onChannelsUpdated]);
 
   const handleCreated = useCallback(async () => {
     const token = getToken();
-    if (!serverId || !token) return;
+    if (!token) return;
     try {
-      const data = await getServer(token, serverId);
-      onChannelsUpdated?.(data);
+      const updated = await getChannels(token);
+      onChannelsUpdated?.(updated);
     } catch {
       // Parent already holds channel state; silent refresh failure is acceptable
     }
-  }, [serverId, getToken, onChannelsUpdated]);
+  }, [getToken, onChannelsUpdated]);
 
   const groups = groupChannelsByParent(localChannels);
   const channelMap = useMemo(() => {
@@ -1003,8 +982,8 @@ export default function ChannelList({
 
       try {
         await moveChannel(token, active.id, { parentId: null, position: overIdx });
-        const data = await getServer(token, serverId);
-        onChannelsUpdated?.(data);
+        const updated = await getChannels(token);
+        onChannelsUpdated?.(updated);
       } catch {
         setLocalChannels(snapshot); // revert on error
       }
@@ -1064,12 +1043,12 @@ export default function ChannelList({
 
     try {
       await moveChannel(token, active.id, { parentId: targetParentId, position: targetPosition });
-      const data = await getServer(token, serverId);
-      onChannelsUpdated?.(data);
+      const updated = await getChannels(token);
+      onChannelsUpdated?.(updated);
     } catch {
       setLocalChannels(snapshot); // revert on error
     }
-  }, [getToken, serverId, groups, localChannels, categoryIdSet, onChannelsUpdated]);
+  }, [getToken, groups, localChannels, categoryIdSet, onChannelsUpdated]);
 
   const draggedChannel = activeId && !categoryIdSet.has(activeId) ? channelMap.get(activeId) : null;
   const draggedCategoryGroup = activeId && categoryIdSet.has(activeId)
@@ -1085,7 +1064,7 @@ export default function ChannelList({
           onClick={() => setShowServerMenu((v) => !v)}
           title="Server menu"
         >
-          <span style={styles.serverName}>{serverName ?? 'Server'}</span>
+          <span style={styles.serverName}>{instanceName ?? 'instance'}</span>
           <svg
             width="12"
             height="12"
@@ -1160,22 +1139,7 @@ export default function ChannelList({
                 <circle cx="12" cy="12" r="3" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
-              Server Settings
-            </button>
-            <div style={{ height: '1px', background: 'var(--hush-border)', margin: '4px 0' }} />
-            <button
-              type="button"
-              style={styles.serverMenuItem(true)}
-              onClick={() => { setShowServerMenu(false); setConfirmLeave(true); }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--hush-danger) 12%, transparent)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-              Leave Server
+              Instance Settings
             </button>
           </div>
         )}
@@ -1237,7 +1201,6 @@ export default function ChannelList({
       {showCreateModal && (
         <CreateChannelModal
           getToken={getToken}
-          serverId={serverId}
           onClose={() => setShowCreateModal(false)}
           onCreated={handleCreated}
         />
@@ -1245,7 +1208,6 @@ export default function ChannelList({
       {showCreateCategoryModal && (
         <CreateCategoryModal
           getToken={getToken}
-          serverId={serverId}
           onClose={() => setShowCreateCategoryModal(false)}
           onCreated={handleCreated}
         />
@@ -1253,7 +1215,6 @@ export default function ChannelList({
       {showInviteModal && (
         <InviteModal
           getToken={getToken}
-          serverId={serverId}
           onClose={() => setShowInviteModal(false)}
         />
       )}
@@ -1266,32 +1227,13 @@ export default function ChannelList({
           onCancel={() => setConfirmDelete(null)}
         />
       )}
-      {confirmLeave && (
-        <ConfirmModal
-          title="Leave server"
-          message={`Leave "${serverName}"? You'll need an invite to rejoin.`}
-          confirmLabel="Leave"
-          onConfirm={handleLeaveConfirmed}
-          onCancel={() => setConfirmLeave(false)}
-        />
-      )}
-      {leaveError && (
-        <ConfirmModal
-          title="Cannot leave server"
-          message={leaveError}
-          confirmLabel="OK"
-          onConfirm={() => setLeaveError(null)}
-          onCancel={() => setLeaveError(null)}
-        />
-      )}
       {showSettings && (
         <ServerSettingsModal
           getToken={getToken}
-          serverId={serverId}
-          serverName={serverName}
+          instanceName={instanceName}
+          instanceData={instanceData}
           isAdmin={isAdmin}
           onClose={() => setShowSettings(false)}
-          onDeleteServer={onDeleteServer}
         />
       )}
     </div>

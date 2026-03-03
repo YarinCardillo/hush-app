@@ -1,8 +1,13 @@
-const ROLE_ORDER = ['admin', 'mod', 'member'];
-const ROLE_LABELS = { admin: 'ADMIN', mod: 'MODS', member: 'MEMBERS' };
+const ROLE_ORDER = ['owner', 'admin', 'mod', 'member'];
+const ROLE_LABELS = { owner: 'OWNER', admin: 'ADMIN', mod: 'MODS', member: 'MEMBERS' };
+
+/** Returns the stable member ID, supporting both legacy userId and new id fields. */
+function getMemberId(m) {
+  return m.id ?? m.userId ?? '';
+}
 
 function groupByRole(members) {
-  const byRole = { admin: [], mod: [], member: [] };
+  const byRole = { owner: [], admin: [], mod: [], member: [] };
   for (const m of members) {
     const role = ROLE_ORDER.includes(m.role) ? m.role : 'member';
     byRole[role].push(m);
@@ -12,8 +17,8 @@ function groupByRole(members) {
 
 function sortWithinSection(members, onlineUserIds) {
   return [...members].sort((a, b) => {
-    const aOnline = onlineUserIds.has(a.userId);
-    const bOnline = onlineUserIds.has(b.userId);
+    const aOnline = onlineUserIds.has(getMemberId(a));
+    const bOnline = onlineUserIds.has(getMemberId(b));
     if (aOnline !== bOnline) return aOnline ? -1 : 1;
     return (a.displayName || '').localeCompare(b.displayName || '');
   });
@@ -101,11 +106,12 @@ export default function MemberList({ members = [], onlineUserIds = new Set(), cu
             <div key={role}>
               <div style={styles.sectionHeader}>{label} — {sorted.length}</div>
               {sorted.map((m) => {
-                const isOnline = onlineUserIds.has(m.userId);
-                const isYou = m.userId === currentUserId;
+                const memberId = getMemberId(m);
+                const isOnline = onlineUserIds.has(memberId);
+                const isYou = memberId === currentUserId;
                 return (
                   <div
-                    key={m.userId}
+                    key={memberId}
                     style={styles.row}
                     className="member-list-row"
                   >
@@ -114,6 +120,7 @@ export default function MemberList({ members = [], onlineUserIds = new Set(), cu
                       {m.displayName || 'Unknown'}
                       {isYou && ' (You)'}
                     </span>
+                    {m.role === 'owner' && <span style={styles.badgeAdmin}>Owner</span>}
                     {m.role === 'admin' && <span style={styles.badgeAdmin}>Admin</span>}
                     {m.role === 'mod' && <span style={styles.badgeMod}>Mod</span>}
                   </div>

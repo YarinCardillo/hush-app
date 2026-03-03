@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { updateServer, deleteServer, getServerMembers } from '../lib/api';
+import { updateInstance, getMembers } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
 
 const TAB_OVERVIEW = 'overview';
@@ -197,23 +197,35 @@ const styles = {
   },
 };
 
-function OverviewTab({ getToken, serverId, serverName, isAdmin, onDeleteServer }) {
-  const [name, setName] = useState(serverName ?? '');
+/**
+ * Overview tab: edit instance name, icon URL, and registration mode.
+ * Only the owner can access this.
+ */
+function OverviewTab({ getToken, instanceName, instanceData }) {
+  const [name, setName] = useState(instanceName ?? '');
+  const [iconUrl, setIconUrl] = useState(instanceData?.iconUrl ?? '');
+  const [registrationMode, setRegistrationMode] = useState(instanceData?.registrationMode ?? 'invite_only');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [confirmAction, setConfirmAction] = useState(null); // 'delete' | 'leave'
 
-  const isDirty = name.trim() !== (serverName ?? '');
+  const isDirty =
+    name.trim() !== (instanceName ?? '') ||
+    iconUrl.trim() !== (instanceData?.iconUrl ?? '') ||
+    registrationMode !== (instanceData?.registrationMode ?? 'invite_only');
 
   const handleSave = async () => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
     setSaving(true);
     setSaveError('');
     setSaveSuccess(false);
     try {
-      await updateServer(getToken(), serverId, { name: trimmed });
+      await updateInstance(getToken(), {
+        name: trimmedName,
+        iconUrl: iconUrl.trim() || undefined,
+        registrationMode,
+      });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
@@ -224,89 +236,82 @@ function OverviewTab({ getToken, serverId, serverName, isAdmin, onDeleteServer }
   };
 
   const handleReset = () => {
-    setName(serverName ?? '');
+    setName(instanceName ?? '');
+    setIconUrl(instanceData?.iconUrl ?? '');
+    setRegistrationMode(instanceData?.registrationMode ?? 'invite_only');
     setSaveError('');
     setSaveSuccess(false);
-  };
-
-  const handleDeleteConfirmed = async () => {
-    setConfirmAction(null);
-    try {
-      await deleteServer(getToken(), serverId);
-      onDeleteServer?.();
-    } catch (err) {
-      setSaveError(err.message || 'Failed to delete server');
-    }
   };
 
   return (
     <>
       <div style={styles.sectionTitle}>Overview</div>
 
-      {isAdmin && (
-        <div style={styles.fieldRow}>
-          <label htmlFor="settings-server-name" style={styles.fieldLabel}>Server name</label>
-          <input
-            id="settings-server-name"
-            className="input"
-            type="text"
-            value={name}
-            onChange={(e) => { setName(e.target.value); setSaveError(''); setSaveSuccess(false); }}
-            maxLength={100}
-            autoComplete="off"
-          />
-          {saveError && <div style={styles.errorMsg}>{saveError}</div>}
-          {saveSuccess && <div style={styles.successMsg}>Saved.</div>}
-          {isDirty && (
-            <div style={styles.saveRow}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleSave}
-                disabled={saving || !name.trim()}
-              >
-                {saving ? 'Saving…' : 'Save Changes'}
-              </button>
-              <button type="button" className="btn btn-secondary" onClick={handleReset}>
-                Reset
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {isAdmin && (
-        <div style={styles.dangerZone}>
-          <div style={styles.dangerTitle}>Danger zone</div>
-          <div style={styles.dangerAction}>
-            <span style={styles.dangerActionText}>
-              Permanently delete this server and all its channels. This cannot be undone.
-            </span>
-            <button
-              type="button"
-              className="btn btn-danger"
-              onClick={() => setConfirmAction('delete')}
-            >
-              Delete Server
-            </button>
-          </div>
-        </div>
-      )}
-
-      {confirmAction === 'delete' && (
-        <ConfirmModal
-          title="Delete server"
-          message={`Permanently delete "${serverName}"? All channels and messages will be lost. This cannot be undone.`}
-          confirmLabel="Delete"
-          onConfirm={handleDeleteConfirmed}
-          onCancel={() => setConfirmAction(null)}
+      <div style={styles.fieldRow}>
+        <label htmlFor="settings-instance-name" style={styles.fieldLabel}>Instance name</label>
+        <input
+          id="settings-instance-name"
+          className="input"
+          type="text"
+          value={name}
+          onChange={(e) => { setName(e.target.value); setSaveError(''); setSaveSuccess(false); }}
+          maxLength={100}
+          autoComplete="off"
         />
+      </div>
+
+      <div style={styles.fieldRow}>
+        <label htmlFor="settings-icon-url" style={styles.fieldLabel}>Icon URL (optional)</label>
+        <input
+          id="settings-icon-url"
+          className="input"
+          type="url"
+          placeholder="https://..."
+          value={iconUrl}
+          onChange={(e) => { setIconUrl(e.target.value); setSaveError(''); setSaveSuccess(false); }}
+          autoComplete="off"
+        />
+      </div>
+
+      <div style={styles.fieldRow}>
+        <label htmlFor="settings-registration-mode" style={styles.fieldLabel}>Registration mode</label>
+        <select
+          id="settings-registration-mode"
+          className="input"
+          value={registrationMode}
+          onChange={(e) => { setRegistrationMode(e.target.value); setSaveError(''); setSaveSuccess(false); }}
+        >
+          <option value="open">Open (anyone can register)</option>
+          <option value="invite_only">Invite only</option>
+        </select>
+        <div style={styles.fieldNote}>
+          Invite-only mode requires users to have an invite link to register.
+        </div>
+      </div>
+
+      {saveError && <div style={styles.errorMsg}>{saveError}</div>}
+      {saveSuccess && <div style={styles.successMsg}>Saved.</div>}
+
+      {isDirty && (
+        <div style={styles.saveRow}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={saving || !name.trim()}
+          >
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={handleReset}>
+            Reset
+          </button>
+        </div>
       )}
     </>
   );
 }
 
-function MembersTab({ getToken, serverId }) {
+function MembersTab({ getToken }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -314,11 +319,11 @@ function MembersTab({ getToken, serverId }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getServerMembers(getToken(), serverId)
+    getMembers(getToken())
       .then((list) => { if (!cancelled) { setMembers(list); setLoading(false); } })
       .catch((err) => { if (!cancelled) { setError(err.message || 'Failed to load members'); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [getToken, serverId]);
+  }, [getToken]);
 
   return (
     <>
@@ -334,14 +339,15 @@ function MembersTab({ getToken, serverId }) {
       {!loading && !error && (
         <div style={styles.memberList}>
           {members.map((m) => {
-            const isAdmin = m.role === 'admin';
-            const initial = (m.displayName || m.userId || '?')[0];
+            const memberId = m.id ?? m.userId ?? '';
+            const isPrivileged = m.role === 'owner' || m.role === 'admin';
+            const initial = (m.displayName || m.username || '?')[0].toUpperCase();
             return (
-              <div key={m.userId} style={styles.memberRow}>
+              <div key={memberId} style={styles.memberRow}>
                 <div style={styles.memberAvatar}>{initial}</div>
-                <span style={styles.memberName}>{m.displayName || m.userId}</span>
-                <span style={styles.memberRoleBadge(isAdmin)}>
-                  {isAdmin ? 'Admin' : 'Member'}
+                <span style={styles.memberName}>{m.displayName || m.username}</span>
+                <span style={styles.memberRoleBadge(isPrivileged)}>
+                  {m.role ?? 'member'}
                 </span>
               </div>
             );
@@ -353,16 +359,15 @@ function MembersTab({ getToken, serverId }) {
 }
 
 /**
- * Discord-style full-screen server settings modal.
- * Sidebar navigation + Overview and Members tabs.
+ * Full-screen instance settings modal.
+ * Sidebar navigation: Overview (owner-only) and Members tabs.
  */
 export default function ServerSettingsModal({
   getToken,
-  serverId,
-  serverName,
+  instanceName,
+  instanceData,
   isAdmin,
   onClose,
-  onDeleteServer,
 }) {
   const [tab, setTab] = useState(TAB_OVERVIEW);
   const [isOpen, setIsOpen] = useState(false);
@@ -389,14 +394,16 @@ export default function ServerSettingsModal({
     >
       <div style={styles.sidebar}>
         <div style={styles.sidebarGroup}>
-          <div style={styles.sidebarGroupLabel}>{serverName ?? 'Server'}</div>
-          <button
-            type="button"
-            style={styles.sidebarItem(tab === TAB_OVERVIEW)}
-            onClick={() => setTab(TAB_OVERVIEW)}
-          >
-            Overview
-          </button>
+          <div style={styles.sidebarGroupLabel}>{instanceName ?? 'instance'}</div>
+          {isAdmin && (
+            <button
+              type="button"
+              style={styles.sidebarItem(tab === TAB_OVERVIEW)}
+              onClick={() => setTab(TAB_OVERVIEW)}
+            >
+              Overview
+            </button>
+          )}
           <button
             type="button"
             style={styles.sidebarItem(tab === TAB_MEMBERS)}
@@ -408,19 +415,16 @@ export default function ServerSettingsModal({
       </div>
 
       <div style={styles.content}>
-        {tab === TAB_OVERVIEW && (
+        {tab === TAB_OVERVIEW && isAdmin && (
           <OverviewTab
             getToken={getToken}
-            serverId={serverId}
-            serverName={serverName}
-            isAdmin={isAdmin}
-            onDeleteServer={onDeleteServer}
+            instanceName={instanceName}
+            instanceData={instanceData}
           />
         )}
         {tab === TAB_MEMBERS && (
           <MembersTab
             getToken={getToken}
-            serverId={serverId}
           />
         )}
       </div>

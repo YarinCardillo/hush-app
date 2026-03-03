@@ -58,9 +58,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/invite/:code" element={<Invite />} />
-          <Route path="/server" element={<ServerLayout />} />
-          <Route path="/server/:serverId" element={<ServerLayout />} />
-          <Route path="/server/:serverId/channel/:channelId" element={<ServerLayout />} />
+          <Route path="/channels" element={<ServerLayout />} />
+          <Route path="/channels/:channelId" element={<ServerLayout />} />
           <Route path="/room/:roomName" element={<Room />} />
           <Route path="/roadmap" element={<Roadmap />} />
         </Routes>

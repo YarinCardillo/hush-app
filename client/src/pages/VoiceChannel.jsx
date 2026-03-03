@@ -196,7 +196,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   const showParticipantsPanelRef = useRef(false);
   const seenParticipantIdsRef = useRef(null);
 
-  const roomName = `server-${serverId}-channel-${channel.id}`;
+  const roomName = `channel-${channel.id}`;
   const isLowLatency = channel.voiceMode === 'low-latency';
 
   const getStore = useCallback(
@@ -261,7 +261,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   } = useDevices();
 
   useEffect(() => {
-    if (!wsClient || !channel?.id || !serverId) return;
+    if (!wsClient || !channel?.id) return;
     connectRoomRef.current(roomName, displayName, channel.id).catch(() => {
       // Connection errors are surfaced via useRoom's `error` state
     });
@@ -285,7 +285,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     return () => {
       disconnectRoomRef.current();
     };
-  }, [wsClient, channel?.id, serverId, roomName, displayName]);
+  }, [wsClient, channel?.id, roomName, displayName]);
 
   useEffect(() => {
     const videoEntries = Array.from(localTracks.entries()).filter(
@@ -438,7 +438,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     if (onLeave) {
       onLeave();
     } else {
-      navigate(`/server/${serverId}`);
+      navigate('/channels');
     }
   };
 

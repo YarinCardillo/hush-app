@@ -5,7 +5,7 @@ import ChannelList from '../components/ChannelList';
 import MemberList from '../components/MemberList';
 import TextChannel from './TextChannel';
 import VoiceChannel from './VoiceChannel';
-import { getServer, getServerMembers } from '../lib/api';
+import { getInstance, getMembers, getChannels } from '../lib/api';
 import { createWsClient } from '../lib/ws';
 import { useAuth } from '../contexts/AuthContext';
 import { JWT_KEY } from '../hooks/useAuth';
@@ -42,7 +42,7 @@ const layoutStyles = {
     flexDirection: 'column',
     minWidth: 0,
     overflow: 'hidden',
-    position: 'relative', // needed for the persistent HushOrb overlay
+    position: 'relative',
   },
   voiceWrapper: (visible) => ({
     display: visible ? 'flex' : 'none',
@@ -51,7 +51,7 @@ const layoutStyles = {
     minHeight: 0,
     overflow: 'hidden',
     position: 'relative',
-    zIndex: 1, // sits above the absolute HushOrb overlay; video tiles cover the orb naturally
+    zIndex: 1,
   }),
   placeholder: {
     flex: 1,
@@ -101,11 +101,12 @@ function getToken() {
 }
 
 export default function ServerLayout() {
-  const { serverId, channelId } = useParams();
+  const { channelId } = useParams();
   const navigate = useNavigate();
   const { token: authToken, user } = useAuth();
   const breakpoint = useBreakpoint();
-  const [serverData, setServerData] = useState(null);
+  const [instanceData, setInstanceData] = useState(null);
+  const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [wsClient, setWsClient] = useState(null);
   const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
@@ -116,26 +117,16 @@ export default function ServerLayout() {
   const showChatPanel = openPanel === 'chat';
   const showParticipantsPanel = openPanel === 'participants';
 
-  // Persistent voice session — survives channel/server navigation until Leave is clicked.
+  // Persistent voice session — survives channel navigation until Leave is clicked.
   const [activeVoiceChannel, setActiveVoiceChannel] = useState(null);
-  const [activeVoiceServerId, setActiveVoiceServerId] = useState(null);
-  // Increment on each voice join so VoiceChannel remounts and effect (connectRoom) runs on re-entry.
   const [voiceMountKey, setVoiceMountKey] = useState(0);
-  const [pendingVoiceSwitch, setPendingVoiceSwitch] = useState(null); // channel to switch to after confirmation
-  // Member IDs captured at join time for the voice channel's server.
-  // When on a different server we can't derive them from current `members`.
+  const [pendingVoiceSwitch, setPendingVoiceSwitch] = useState(null);
   const activeVoiceMemberIdsRef = useRef([]);
-  // Set in handleVoiceLeave so the next onOrbPhaseChange('idle') from unmounting VoiceChannel
-  // is accepted (isViewingVoice is still true until state commits).
   const leavingVoiceRef = useRef(false);
 
-  // Orb phase is lifted here so a single persistent <HushOrb> element can smoothly
-  // transition between voice states (idle/waiting/activating) and the idle placeholder
-  // without unmounting and remounting across navigation.
   const [orbPhase, setOrbPhase] = useState('idle');
 
   // Voice participants per channel (server-authoritative via LiveKit webhooks).
-  // Map<channelId, Array<{ userId, displayName }>>
   const [voiceParticipants, setVoiceParticipants] = useState(() => new Map());
 
   const { width: sidebarWidth, handleMouseDown: handleSidebarResize } = useSidebarResize();
@@ -143,43 +134,30 @@ export default function ServerLayout() {
   const currentUserId = user?.id ?? '';
   const isMobile = breakpoint === 'mobile';
 
-  // Whether the user is currently viewing the active voice channel.
   const isViewingVoice = activeVoiceChannel != null && channelId === activeVoiceChannel.id;
 
-  // When not viewing voice or when leaving: always show idle. Prevents hidden VoiceChannel
-  // from overwriting with waiting/activating, and ensures orb resets on leave.
   const handleOrbPhaseChange = useCallback((phase) => {
     setOrbPhase((prev) => {
       if (!isViewingVoice) return 'idle';
       if (leavingVoiceRef.current) return 'idle';
       const guard = phase === 'idle' && (prev === 'waiting' || prev === 'activating');
-      const next = guard ? prev : phase;
       if (guard) return prev;
       if (phase === 'idle') leavingVoiceRef.current = false;
       return phase;
     });
   }, [isViewingVoice]);
 
-  // When not viewing the voice channel (navigated away or left), show placeholder orb.
   useEffect(() => {
-    if (!isViewingVoice) {
-      setOrbPhase('idle');
-    }
+    if (!isViewingVoice) setOrbPhase('idle');
   }, [isViewingVoice]);
 
-  // Reset the leaving-voice guard only after the URL has actually changed.
-  // navigate() updates channelId asynchronously; if we reset earlier (e.g. when
-  // isViewingVoice flips), the stale channelId still points to the voice channel
-  // and the render-time auto-join would re-activate it.
   useEffect(() => {
     leavingVoiceRef.current = false;
   }, [channelId]);
 
-  // Member IDs to pass to VoiceChannel: live when on same server, captured otherwise.
-  const memberIds = members.map((m) => m.userId);
-  const voiceRecipientIds =
-    serverId === activeVoiceServerId ? memberIds : activeVoiceMemberIdsRef.current;
+  const memberIds = members.map((m) => m.id ?? m.userId);
 
+  // WS client lifecycle
   useEffect(() => {
     if (!authToken) return;
     const base = typeof location !== 'undefined' ? location.origin.replace(/^http/, 'ws') : '';
@@ -201,21 +179,7 @@ export default function ServerLayout() {
     return () => wsClient.off('presence.update', handler);
   }, [wsClient]);
 
-  // Subscribe to server-level WS events for voice state updates.
-  useEffect(() => {
-    if (!wsClient || !serverId) return;
-    const subscribe = () => {
-      try { wsClient.send('subscribe.server', { server_id: serverId }); } catch { /* not connected yet */ }
-    };
-    subscribe();
-    wsClient.on('open', subscribe);
-    return () => {
-      wsClient.off('open', subscribe);
-      try { wsClient.send('unsubscribe.server', { server_id: serverId }); } catch { /* disconnected */ }
-    };
-  }, [wsClient, serverId]);
-
-  // Listen for voice_state_update events from backend (LiveKit webhook-driven).
+  // Voice state updates from LiveKit webhooks
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
@@ -235,159 +199,106 @@ export default function ServerLayout() {
     return () => wsClient.off('voice_state_update', handler);
   }, [wsClient]);
 
-  // Listen for channel_created events so other members see new channels instantly.
+  // channel_created: append to local channel list
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
       if (!data.channel) return;
-      setServerData((prev) => {
-        if (!prev) return prev;
-        if (prev.channels.some((ch) => ch.id === data.channel.id)) return prev;
-        return { ...prev, channels: [...prev.channels, data.channel] };
+      setChannels((prev) => {
+        if (prev.some((ch) => ch.id === data.channel.id)) return prev;
+        return [...prev, data.channel];
       });
     };
     wsClient.on('channel_created', handler);
     return () => wsClient.off('channel_created', handler);
   }, [wsClient]);
 
-  // Refresh full member list when someone joins, leaves, or changes role.
-  useEffect(() => {
-    if (!wsClient) return;
-    const handler = () => {
-      const token = getToken();
-      if (serverId && token) {
-        getServerMembers(token, serverId).then(setMembers).catch(() => {});
-      }
-    };
-    wsClient.on('member_joined', handler);
-    wsClient.on('member_left', handler);
-    wsClient.on('member_role_changed', handler);
-    return () => {
-      wsClient.off('member_joined', handler);
-      wsClient.off('member_left', handler);
-      wsClient.off('member_role_changed', handler);
-    };
-  }, [wsClient, serverId]);
-
-  // Remove channel from local state when it's deleted by an admin.
+  // channel_deleted: remove from local list
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
       if (!data.channel_id) return;
-      setServerData((prev) => {
-        if (!prev) return prev;
-        return { ...prev, channels: prev.channels.filter((ch) => ch.id !== data.channel_id) };
-      });
+      setChannels((prev) => prev.filter((ch) => ch.id !== data.channel_id));
     };
     wsClient.on('channel_deleted', handler);
     return () => wsClient.off('channel_deleted', handler);
   }, [wsClient]);
 
-  // Update server metadata (name, icon) when changed by an admin.
-  useEffect(() => {
-    if (!wsClient) return;
-    const handler = (data) => {
-      if (!data.server_id) return;
-      setServerData((prev) => {
-        if (!prev) return prev;
-        const updated = { ...prev, server: { ...prev.server } };
-        if (data.name !== undefined) updated.server.name = data.name;
-        if (data.icon_url !== undefined) updated.server.iconUrl = data.icon_url;
-        return updated;
-      });
-    };
-    wsClient.on('server_updated', handler);
-    return () => wsClient.off('server_updated', handler);
-  }, [wsClient]);
-
-  // Navigate away when the current server is deleted.
-  useEffect(() => {
-    if (!wsClient) return;
-    const handler = (data) => {
-      if (data.server_id === serverId) {
-        navigate('/');
-      }
-    };
-    wsClient.on('server_deleted', handler);
-    return () => wsClient.off('server_deleted', handler);
-  }, [wsClient, serverId, navigate]);
-
-  useEffect(() => {
-    if (!serverId || !authToken) return;
-    const token = getToken();
-    getServerMembers(token, serverId).then(setMembers).catch(() => setMembers([]));
-  }, [serverId, authToken]);
-
-  const fetchServerData = useCallback(async (sid) => {
-    const token = getToken();
-    if (!sid || !token) return;
-    setLoading(true);
-    try {
-      const data = await getServer(token, sid);
-      setServerData(data);
-    } catch {
-      setServerData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Re-fetch channel list when a channel is moved (reordered).
+  // channel_moved: refetch channel list for correct ordering
   useEffect(() => {
     if (!wsClient) return;
     const handler = () => {
-      if (serverId) fetchServerData(serverId);
+      const token = getToken();
+      if (token) getChannels(token).then(setChannels).catch(() => {});
     };
     wsClient.on('channel_moved', handler);
     return () => wsClient.off('channel_moved', handler);
-  }, [wsClient, serverId, fetchServerData]);
+  }, [wsClient]);
 
+  // instance_updated: refresh instance metadata
   useEffect(() => {
-    if (serverId) {
-      fetchServerData(serverId);
-    } else {
-      setServerData(null);
-    }
-  }, [serverId, fetchServerData]);
+    if (!wsClient) return;
+    const handler = (data) => {
+      setInstanceData((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev };
+        if (data.name !== undefined) updated.name = data.name;
+        if (data.icon_url !== undefined) updated.iconUrl = data.icon_url;
+        if (data.registration_mode !== undefined) updated.registrationMode = data.registration_mode;
+        return updated;
+      });
+    };
+    wsClient.on('instance_updated', handler);
+    return () => wsClient.off('instance_updated', handler);
+  }, [wsClient]);
 
-  const currentChannel = serverData?.channels?.find((c) => c.id === channelId);
+  // Fetch members when token is available
+  useEffect(() => {
+    if (!authToken) return;
+    const token = getToken();
+    if (token) getMembers(token).then(setMembers).catch(() => setMembers([]));
+  }, [authToken]);
 
-  // True when a 48px header is visible at the top of channelArea:
-  // VoiceChannel always renders its own 48px header; the non-voice, non-text state
-  // renders channelAreaHeader (48px) only when a server is selected but no channel.
-  const hasOrbTopHeader = isViewingVoice || (!isViewingVoice && !!serverId && !currentChannel);
+  // Fetch instance data and channels on mount
+  useEffect(() => {
+    if (!authToken) return;
+    const token = getToken();
+    if (!token) return;
+    setLoading(true);
+    Promise.all([getInstance(token), getChannels(token)])
+      .then(([inst, chans]) => {
+        setInstanceData(inst);
+        setChannels(Array.isArray(chans) ? chans : []);
+      })
+      .catch(() => {
+        setInstanceData(null);
+        setChannels([]);
+      })
+      .finally(() => setLoading(false));
+  }, [authToken]);
+
+  const currentChannel = channels.find((c) => c.id === channelId);
+
+  const hasOrbTopHeader = isViewingVoice || (!isViewingVoice && !currentChannel);
 
   // Auto-join when navigating directly to a voice channel URL.
-  // Synchronous state update during render avoids a one-frame flash where
-  // channelAreaHeader shows before VoiceChannel's header takes over.
-  // Guard: skip when the user is actively leaving voice — otherwise the stale
-  // channelId in the URL (not yet updated by navigate()) would re-activate the channel.
   if (currentChannel?.type === 'voice' && currentChannel.id !== activeVoiceChannel?.id && !leavingVoiceRef.current) {
     activeVoiceMemberIdsRef.current = memberIds;
     setVoiceMountKey((k) => k + 1);
     setActiveVoiceChannel(currentChannel);
-    setActiveVoiceServerId(serverId);
   }
 
-  const handleServerSelect = (server) => {
-    if (server?.id) {
-      navigate(`/server/${server.id}`, { replace: true });
-    }
-  };
-
   const handleChannelSelect = (channel) => {
-    if (!channel?.id || !serverId) return;
-    // Switching to a different voice channel while already in one → ask first.
+    if (!channel?.id) return;
     if (channel.type === 'voice' && activeVoiceChannel && channel.id !== activeVoiceChannel.id) {
       setPendingVoiceSwitch(channel);
       return;
     }
-    navigate(`/server/${serverId}/channel/${channel.id}`);
+    navigate(`/channels/${channel.id}`);
     if (channel.type === 'voice') {
       activeVoiceMemberIdsRef.current = memberIds;
       setVoiceMountKey((k) => k + 1);
       setActiveVoiceChannel(channel);
-      setActiveVoiceServerId(serverId);
     }
   };
 
@@ -395,88 +306,65 @@ export default function ServerLayout() {
     const channel = pendingVoiceSwitch;
     setPendingVoiceSwitch(null);
     if (!channel) return;
-    navigate(`/server/${serverId}/channel/${channel.id}`);
+    navigate(`/channels/${channel.id}`);
     activeVoiceMemberIdsRef.current = memberIds;
     setVoiceMountKey((k) => k + 1);
     setActiveVoiceChannel(channel);
-    setActiveVoiceServerId(serverId);
-  }, [pendingVoiceSwitch, serverId, memberIds, navigate]);
+  }, [pendingVoiceSwitch, memberIds, navigate]);
 
-  const handleChannelsUpdated = (data) => {
-    setServerData(data);
-  };
+  const handleChannelsUpdated = useCallback((updatedChannels) => {
+    setChannels(Array.isArray(updatedChannels) ? updatedChannels : []);
+  }, []);
 
   const handleVoiceLeave = useCallback(() => {
-    // Voice participant state is now server-authoritative (LiveKit webhook).
-    // No client-side count manipulation needed.
-    // So the next onOrbPhaseChange('idle') from unmounting VoiceChannel is accepted.
     leavingVoiceRef.current = true;
-    // Reset orbPhase before unmounting VoiceChannel so the persistent HushOrb
-    // can transition smoothly from the current phase (e.g. waiting) to idle.
     setOrbPhase('idle');
     setActiveVoiceChannel(null);
-    setActiveVoiceServerId(null);
     activeVoiceMemberIdsRef.current = [];
-    navigate(`/server/${serverId}`);
-  }, [navigate, serverId]);
-
-  // Called after the user successfully leaves or deletes the server.
-  const handleServerLeft = useCallback(() => {
-    setOrbPhase('idle');
-    setActiveVoiceChannel(null);
-    setActiveVoiceServerId(null);
-    activeVoiceMemberIdsRef.current = [];
-    navigate('/');
+    navigate('/channels');
   }, [navigate]);
 
   return (
     <div style={layoutStyles.root}>
       <ServerList
         getToken={getToken}
-        selectedServerId={serverId}
-        onServerSelect={handleServerSelect}
+        instanceData={instanceData}
       />
-      {serverId && (
-        <>
-          <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
-            <ChannelList
-              getToken={getToken}
-              serverId={serverId}
-              serverName={serverData?.server?.name}
-              channels={serverData?.channels}
-              myRole={serverData?.myRole}
-              activeChannelId={channelId}
-              onChannelSelect={handleChannelSelect}
-              onChannelsUpdated={handleChannelsUpdated}
-              voiceParticipants={voiceParticipants}
-              onLeaveServer={handleServerLeft}
-              onDeleteServer={handleServerLeft}
-            />
-          </div>
-          <div
-            style={layoutStyles.resizeHandle}
-            onMouseDown={handleSidebarResize}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-border)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize channel list"
+      <>
+        <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
+          <ChannelList
+            getToken={getToken}
+            instanceName={instanceData?.name}
+            instanceData={instanceData}
+            channels={channels}
+            myRole={instanceData?.myRole}
+            activeChannelId={channelId}
+            onChannelSelect={handleChannelSelect}
+            onChannelsUpdated={handleChannelsUpdated}
+            voiceParticipants={voiceParticipants}
           />
-        </>
-      )}
+        </div>
+        <div
+          style={layoutStyles.resizeHandle}
+          onMouseDown={handleSidebarResize}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-border)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize channel list"
+        />
+      </>
       <div style={layoutStyles.main}>
         <div style={layoutStyles.contentRow}>
           <div style={layoutStyles.channelArea}>
-            {/* Persistent voice session: always mounted while active, hidden when not viewing. */}
             {activeVoiceChannel && (
               <div style={layoutStyles.voiceWrapper(isViewingVoice)}>
                 <VoiceChannel
                   key={`${activeVoiceChannel.id}-${voiceMountKey}`}
                   channel={activeVoiceChannel}
-                  serverId={activeVoiceServerId}
                   getToken={getToken}
                   wsClient={wsClient}
-                  recipientUserIds={voiceRecipientIds}
+                  recipientUserIds={activeVoiceMemberIdsRef.current}
                   members={members}
                   onlineUserIds={onlineUserIds}
                   showMembers={showMembers}
@@ -497,7 +385,6 @@ export default function ServerLayout() {
                 <TextChannel
                   key={currentChannel.id}
                   channel={currentChannel}
-                  serverId={serverId}
                   getToken={getToken}
                   wsClient={wsClient}
                   recipientUserIds={memberIds}
@@ -520,8 +407,7 @@ export default function ServerLayout() {
                 <div style={{ ...layoutStyles.placeholder, position: 'relative', zIndex: 1 }}>Unknown channel type</div>
               ) : (
                 <>
-                  {/* Header with Members toggle for non-text, non-voice states */}
-                  {serverId && !currentChannel && (
+                  {!currentChannel && (
                     <header style={layoutStyles.channelAreaHeader}>
                       <div />
                       <button
@@ -534,7 +420,6 @@ export default function ServerLayout() {
                       </button>
                     </header>
                   )}
-                  {/* Spacer that lets the desktop sidebar take in-flow width on the right */}
                   <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
                     <div style={{ flex: 1 }} />
                     {!isMobile && (
@@ -553,13 +438,6 @@ export default function ServerLayout() {
               )
             )}
 
-            {/*
-              Persistent HushOrb overlay — single DOM instance that survives navigation.
-              VoiceChannel reports its phase via onOrbPhaseChange; handleVoiceLeave resets
-              to 'idle' before unmounting, giving the CSS @property tokens time to transition.
-              z-index: 0 keeps it below voiceWrapper (z-index: 1), so video tiles cover it
-              naturally while the transparent VideoGrid empty state lets it show through.
-            */}
             {!loading && (!currentChannel || currentChannel.type === 'voice') && (
               <div style={{
                 position: 'absolute',
@@ -580,15 +458,14 @@ export default function ServerLayout() {
                 <div style={{ pointerEvents: 'auto' }}>
                   <HushOrb
                     phase={orbPhase}
-                    label={isViewingVoice ? undefined : (serverId ? 'select a channel' : 'select a server')}
+                    label={isViewingVoice ? undefined : 'select a channel'}
                   />
                 </div>
               </div>
             )}
           </div>
 
-          {/* Mobile overlay — fixed position, doesn't affect layout */}
-          {serverId && !isViewingVoice && isMobile && (
+          {!isViewingVoice && isMobile && (
             <>
               <div
                 className={`sidebar-overlay ${showMembers ? 'sidebar-overlay-open' : ''}`}
