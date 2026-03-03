@@ -511,13 +511,9 @@ Check `DATABASE_URL`. The Go server needs a reachable PostgreSQL with the `hush`
 
 LiveKit has `auto_create: true` in `livekit.yaml`. If you get room errors, check that `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` match between the Go API and the LiveKit server config.
 
-### COOP/COEP errors (SharedArrayBuffer)
+### COOP header
 
-E2EE requires `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. These are set by:
-- **Vite dev server** (in `vite.config.js` server headers)
-- **Caddy** (in Caddyfile for `/api/*` and `/ws` routes)
-
-If loading third-party resources fails, they need `crossorigin` attributes or CORS headers.
+`Cross-Origin-Opener-Policy: same-origin` is set by Caddy and the Vite dev server. This is required for window isolation. COEP (`Cross-Origin-Embedder-Policy`) is intentionally NOT set — LiveKit E2EE does not require `SharedArrayBuffer`, and COEP breaks browser extensions and cross-origin resources.
 
 ### "I changed Go code but the API still returns old responses"
 
@@ -535,5 +531,5 @@ The Go binary must be restarted. Unlike Vite, Go does not hot-reload. Kill the p
 | LiveKit | Self-hosted with `devkey/devsecret` | Self-hosted with random keys (must match livekit.yaml) |
 | TLS | None (HTTP) | Caddy auto-TLS or your own cert |
 | Postgres password | `hush` | `openssl rand -hex 16` |
-| COOP/COEP headers | Vite dev server | Caddy (Caddyfile.prod) |
+| COOP header | Vite dev server | Caddy (Caddyfile.prod) |
 | Ports exposed | 5173 (Vite), 8080 (Go) | 80, 443 (Caddy only) |

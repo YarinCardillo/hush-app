@@ -80,17 +80,16 @@ Full media E2EE requires Insertable Streams and the LiveKit E2EE worker. If the 
 
 ## HTTP security headers
 
-Caddy sets the following headers on all responses. These are required for the app to function correctly (especially COOP/COEP for LiveKit E2EE).
+Caddy sets the following headers on all responses:
 
 | Header | Purpose |
 |-|-|
 | `X-Content-Type-Options: nosniff` | Disable MIME sniffing |
 | `X-Frame-Options: DENY` | Mitigate clickjacking |
-| `Cross-Origin-Opener-Policy: same-origin` | Required for LiveKit E2EE worker (`SharedArrayBuffer`) |
-| `Cross-Origin-Embedder-Policy: require-corp` | Required for LiveKit E2EE worker |
+| `Cross-Origin-Opener-Policy: same-origin` | Window isolation (prevents cross-origin popup access) |
 | `Strict-Transport-Security` | HSTS (production only; see `caddy/Caddyfile.prod`) |
 
-If deploying behind an edge proxy (Cloudflare, etc.), ensure these headers are still sent. COOP/COEP are mandatory — without them, the E2EE worker cannot use `SharedArrayBuffer` and media encryption will fail.
+**Note on COEP:** `Cross-Origin-Embedder-Policy: require-corp` is NOT used. LiveKit E2EE uses Insertable Streams with a Web Worker and `Transferable` objects, not `SharedArrayBuffer`. Enabling COEP would break browser extensions and cross-origin resources without benefit.
 
 ## Input validation
 
@@ -116,7 +115,7 @@ Chat messages are stored as ciphertext blobs; the server never processes plainte
 |-|-|
 | **CORS** | Set `CORS_ORIGIN` to your frontend origin. Do not use `*` in production. |
 | **HSTS** | Use `caddy/Caddyfile.prod` for `Strict-Transport-Security`. |
-| **COOP/COEP** | Required for LiveKit E2EE. Verify headers are present on your domain. |
+| **COOP** | `Cross-Origin-Opener-Policy: same-origin` must be sent. COEP is not required. |
 | **Secrets** | Do not use default values. Generate strong `JWT_SECRET`, `LIVEKIT_API_SECRET`, `POSTGRES_PASSWORD`. See `docs/SETUP.md`. |
 | **Dependencies** | Run `npm audit` in `client/` and `cargo audit` in `hush-crypto/` before production. |
 
