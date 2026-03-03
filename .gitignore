@@ -37,6 +37,7 @@ scripts/*checkpoint*.md
 
 # Private business docs (not for open source repo)
 .private/
+going_forward.md
 
 # Rust build artifacts
 hush-crypto/target/
