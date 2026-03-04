@@ -426,15 +426,18 @@ export async function changeUserRole(token, serverId, userId, newRole, reason) {
 }
 
 /**
- * Delete a message (mod action).
+ * Delete a message within a guild (mod action or self-delete).
  * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
  * @param {string} messageId - Message UUID
  * @returns {Promise<void>}
  */
-export async function deleteMessage(token, messageId) {
-  const res = await fetchWithAuth(token, `/api/moderation/messages/${encodeURIComponent(messageId)}`, {
-    method: 'DELETE',
-  });
+export async function deleteMessage(token, serverId, messageId) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/moderation/messages/${encodeURIComponent(messageId)}`,
+    { method: 'DELETE' },
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `delete message ${res.status}`);

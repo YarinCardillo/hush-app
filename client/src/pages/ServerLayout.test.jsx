@@ -118,7 +118,7 @@ describe('ServerLayout', () => {
   it('shows welcome message when no guild is selected (/guilds route)', async () => {
     renderAtRoute('/guilds');
     await waitFor(() => {
-      expect(screen.getByText('Create a guild or join one with an invite link.')).toBeInTheDocument();
+      expect(screen.getByText('Create a server or join one with an invite link.')).toBeInTheDocument();
     });
   });
 

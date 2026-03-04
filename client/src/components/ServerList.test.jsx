@@ -110,7 +110,7 @@ describe('ServerList', () => {
         userRole="member"
       />,
     );
-    expect(screen.getByTitle('Create a guild')).toBeInTheDocument();
+    expect(screen.getByTitle('Create a server')).toBeInTheDocument();
   });
 
   it('hides + button when policy is admin_only and user is member', () => {
@@ -125,7 +125,7 @@ describe('ServerList', () => {
         userRole="member"
       />,
     );
-    expect(screen.queryByTitle('Create a guild')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Create a server')).not.toBeInTheDocument();
   });
 
   it('shows + button when policy is admin_only and user is admin', () => {
@@ -140,6 +140,6 @@ describe('ServerList', () => {
         userRole="admin"
       />,
     );
-    expect(screen.getByTitle('Create a guild')).toBeInTheDocument();
+    expect(screen.getByTitle('Create a server')).toBeInTheDocument();
   });
 });
