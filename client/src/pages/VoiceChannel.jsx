@@ -438,7 +438,8 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     if (onLeave) {
       onLeave();
     } else {
-      navigate('/channels');
+      const fallbackPath = serverId ? `/servers/${serverId}/channels` : '/';
+      navigate(fallbackPath);
     }
   };
 

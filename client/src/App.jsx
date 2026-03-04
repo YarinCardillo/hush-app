@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppBackground from './components/AppBackground';
 import { applyThemeMode, getStoredThemeMode } from './components/UserSettingsModal';
 
@@ -58,10 +58,12 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/invite/:code" element={<Invite />} />
-          <Route path="/channels" element={<ServerLayout />} />
-          <Route path="/channels/:channelId" element={<ServerLayout />} />
+          <Route path="/servers/:serverId/*" element={<ServerLayout />} />
           <Route path="/room/:roomName" element={<Room />} />
           <Route path="/roadmap" element={<Roadmap />} />
+          {/* Legacy redirect: single-tenant paths redirect to guild-scoped landing */}
+          <Route path="/channels" element={<Navigate to="/" replace />} />
+          <Route path="/channels/:channelId" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
     </AuthProvider>

@@ -5,7 +5,7 @@ import ChannelList from '../components/ChannelList';
 import MemberList from '../components/MemberList';
 import TextChannel from './TextChannel';
 import VoiceChannel from './VoiceChannel';
-import { getInstance, getMembers, getChannels } from '../lib/api';
+import { getInstance, getMyGuilds, getGuildChannels, getGuildMembers } from '../lib/api';
 import { createWsClient } from '../lib/ws';
 import { useAuth } from '../contexts/AuthContext';
 import { JWT_KEY } from '../hooks/useAuth';
@@ -103,11 +103,15 @@ function getToken() {
 }
 
 export default function ServerLayout() {
-  const { channelId } = useParams();
+  const { serverId, '*': splat } = useParams();
+  // Extract channelId from the splat: "channels/uuid" → "uuid"
+  const channelId = splat?.startsWith('channels/') ? splat.slice('channels/'.length) : undefined;
   const navigate = useNavigate();
   const { token: authToken, user, logout } = useAuth();
   const breakpoint = useBreakpoint();
   const [instanceData, setInstanceData] = useState(null);
+  const [guilds, setGuilds] = useState([]);
+  const [activeGuild, setActiveGuild] = useState(null);
   const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [wsClient, setWsClient] = useState(null);
@@ -175,6 +179,18 @@ export default function ServerLayout() {
     };
   }, [authToken]);
 
+  // Subscribe to the active guild's WS channel when wsClient or serverId changes
+  const prevServerIdRef = useRef(null);
+  useEffect(() => {
+    if (!wsClient || !serverId) return;
+    const prev = prevServerIdRef.current;
+    if (prev && prev !== serverId) {
+      wsClient.send?.({ type: 'unsubscribe.server', serverId: prev });
+    }
+    wsClient.send?.({ type: 'subscribe.server', serverId });
+    prevServerIdRef.current = serverId;
+  }, [wsClient, serverId]);
+
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => setOnlineUserIds(new Set(data.user_ids ?? []));
@@ -202,11 +218,12 @@ export default function ServerLayout() {
     return () => wsClient.off('voice_state_update', handler);
   }, [wsClient]);
 
-  // channel_created: append to local channel list
+  // channel_created: append to local channel list (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
       if (!data.channel) return;
+      if (data.server_id && data.server_id !== serverId) return;
       setChannels((prev) => {
         if (prev.some((ch) => ch.id === data.channel.id)) return prev;
         return [...prev, data.channel];
@@ -214,13 +231,14 @@ export default function ServerLayout() {
     };
     wsClient.on('channel_created', handler);
     return () => wsClient.off('channel_created', handler);
-  }, [wsClient]);
+  }, [wsClient, serverId]);
 
-  // channel_deleted: remove from local list, tear down voice, redirect if viewing
+  // channel_deleted: remove from local list, tear down voice, redirect if viewing (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
       if (!data.channel_id) return;
+      if (data.server_id && data.server_id !== serverId) return;
       setChannels((prev) => prev.filter((ch) => ch.id !== data.channel_id));
       setActiveVoiceChannel((prev) => {
         if (prev?.id === data.channel_id) {
@@ -230,23 +248,24 @@ export default function ServerLayout() {
         return prev;
       });
       if (channelId === data.channel_id) {
-        navigate('/channels', { replace: true });
+        navigate(`/servers/${serverId}/channels`, { replace: true });
       }
     };
     wsClient.on('channel_deleted', handler);
     return () => wsClient.off('channel_deleted', handler);
-  }, [wsClient, channelId, navigate]);
+  }, [wsClient, channelId, serverId, navigate]);
 
-  // channel_moved: refetch channel list for correct ordering
+  // channel_moved: refetch channel list for correct ordering (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
-    const handler = () => {
+    const handler = (data) => {
+      if (data.server_id && data.server_id !== serverId) return;
       const token = getToken();
-      if (token) getChannels(token).then(setChannels).catch(() => {});
+      if (token && serverId) getGuildChannels(token, serverId).then(setChannels).catch(() => {});
     };
     wsClient.on('channel_moved', handler);
     return () => wsClient.off('channel_moved', handler);
-  }, [wsClient]);
+  }, [wsClient, serverId]);
 
   // instance_updated: refresh instance metadata
   useEffect(() => {
@@ -265,11 +284,12 @@ export default function ServerLayout() {
     return () => wsClient.off('instance_updated', handler);
   }, [wsClient]);
 
-  // member_kicked: remove from list; redirect self if kicked
+  // member_kicked: remove from list; redirect self if kicked (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
       if (!data.user_id) return;
+      if (data.server_id && data.server_id !== serverId) return;
       if (data.user_id === currentUserId) {
         logout();
         return;
@@ -278,13 +298,14 @@ export default function ServerLayout() {
     };
     wsClient.on('member_kicked', handler);
     return () => wsClient.off('member_kicked', handler);
-  }, [wsClient, currentUserId, logout]);
+  }, [wsClient, currentUserId, serverId, logout]);
 
-  // member_banned: remove from list; redirect self if banned
+  // member_banned: remove from list; redirect self if banned (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
       if (!data.user_id) return;
+      if (data.server_id && data.server_id !== serverId) return;
       if (data.user_id === currentUserId) {
         logout();
         return;
@@ -293,59 +314,135 @@ export default function ServerLayout() {
     };
     wsClient.on('member_banned', handler);
     return () => wsClient.off('member_banned', handler);
-  }, [wsClient, currentUserId, logout]);
+  }, [wsClient, currentUserId, serverId, logout]);
 
-  // role_changed: update member's role in the list (and own myRole if target is self)
+  // member_joined: append new member to the list (guild-scoped)
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      if (!data.member) return;
+      if (data.server_id && data.server_id !== serverId) return;
+      setMembers((prev) => {
+        const memberId = data.member.id ?? data.member.userId;
+        if (prev.some((m) => (m.id ?? m.userId) === memberId)) return prev;
+        return [...prev, data.member];
+      });
+    };
+    wsClient.on('member_joined', handler);
+    return () => wsClient.off('member_joined', handler);
+  }, [wsClient, serverId]);
+
+  // member_left: remove from list (guild-scoped)
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      if (!data.user_id) return;
+      if (data.server_id && data.server_id !== serverId) return;
+      setMembers((prev) => prev.filter((m) => (m.id ?? m.userId) !== data.user_id));
+    };
+    wsClient.on('member_left', handler);
+    return () => wsClient.off('member_left', handler);
+  }, [wsClient, serverId]);
+
+  // role_changed / member_role_changed: update member's role (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
       if (!data.user_id || !data.new_role) return;
+      if (data.server_id && data.server_id !== serverId) return;
       setMembers((prev) =>
         prev.map((m) =>
           (m.id ?? m.userId) === data.user_id ? { ...m, role: data.new_role } : m
         )
       );
       if (data.user_id === currentUserId) {
-        setInstanceData((prev) => prev ? { ...prev, myRole: data.new_role } : prev);
+        setActiveGuild((prev) => prev ? { ...prev, myRole: data.new_role } : prev);
       }
     };
     wsClient.on('role_changed', handler);
-    return () => wsClient.off('role_changed', handler);
-  }, [wsClient, currentUserId]);
+    wsClient.on('member_role_changed', handler);
+    return () => {
+      wsClient.off('role_changed', handler);
+      wsClient.off('member_role_changed', handler);
+    };
+  }, [wsClient, currentUserId, serverId]);
 
-  // message_deleted: handled inside Chat component which owns the messages list.
-  // ServerLayout only needs to propagate the WS client; Chat subscribes directly.
-
-  // Fetch members when token is available
-  useEffect(() => {
-    if (!authToken) return;
-    const token = getToken();
-    if (token) getMembers(token).then(setMembers).catch(() => setMembers([]));
-  }, [authToken]);
-
-  /** Refresh member list after a mod action completes. */
-  const handleMemberUpdate = useCallback(() => {
-    const token = getToken();
-    if (token) getMembers(token).then(setMembers).catch(() => {});
-  }, []);
-
-  // Fetch instance data and channels on mount
+  // Fetch guilds + instance data on auth
   useEffect(() => {
     if (!authToken) return;
     const token = getToken();
     if (!token) return;
-    setLoading(true);
-    Promise.all([getInstance(token), getChannels(token)])
-      .then(([inst, chans]) => {
+    Promise.all([getMyGuilds(token), getInstance(token)])
+      .then(([guildList, inst]) => {
+        setGuilds(Array.isArray(guildList) ? guildList : []);
         setInstanceData(inst);
-        setChannels(Array.isArray(chans) ? chans : []);
       })
       .catch(() => {
+        setGuilds([]);
         setInstanceData(null);
+      });
+  }, [authToken]);
+
+  // Keep activeGuild in sync with serverId param and guilds list
+  useEffect(() => {
+    if (!serverId || guilds.length === 0) {
+      setActiveGuild(null);
+      return;
+    }
+    const found = guilds.find((g) => g.id === serverId) ?? null;
+    setActiveGuild(found);
+  }, [serverId, guilds]);
+
+  // Fetch channels + members when serverId changes (guild switch)
+  useEffect(() => {
+    if (!authToken || !serverId) return;
+    const token = getToken();
+    if (!token) return;
+
+    // Clear stale state immediately to prevent channel lookup across guilds
+    setChannels([]);
+    setActiveVoiceChannel(null);
+    activeVoiceMemberIdsRef.current = [];
+    setMembers([]);
+    setLoading(true);
+
+    Promise.all([getGuildChannels(token, serverId), getGuildMembers(token, serverId)])
+      .then(([chans, mems]) => {
+        setChannels(Array.isArray(chans) ? chans : []);
+        setMembers(Array.isArray(mems) ? mems : []);
+      })
+      .catch(() => {
         setChannels([]);
+        setMembers([]);
       })
       .finally(() => setLoading(false));
-  }, [authToken]);
+  }, [authToken, serverId]);
+
+  /** Refresh member list after a mod action completes. */
+  const handleMemberUpdate = useCallback(() => {
+    const token = getToken();
+    if (token && serverId) {
+      getGuildMembers(token, serverId).then(setMembers).catch(() => {});
+    }
+  }, [serverId]);
+
+  /** Called by ServerList when user selects a different guild. */
+  const handleGuildSelect = useCallback((guild) => {
+    navigate(`/servers/${guild.id}/channels`);
+  }, [navigate]);
+
+  /** Called by GuildCreateModal on success — refetch guilds and navigate to new guild. */
+  const handleGuildCreated = useCallback((newGuild) => {
+    const token = getToken();
+    if (token) {
+      getMyGuilds(token).then((list) => {
+        setGuilds(Array.isArray(list) ? list : []);
+      }).catch(() => {});
+    }
+    if (newGuild?.id) {
+      navigate(`/servers/${newGuild.id}/channels`);
+    }
+  }, [navigate]);
 
   const currentChannel = channels.find((c) => c.id === channelId);
 
@@ -364,7 +461,7 @@ export default function ServerLayout() {
       setPendingVoiceSwitch(channel);
       return;
     }
-    navigate(`/channels/${channel.id}`);
+    navigate(`/servers/${serverId}/channels/${channel.id}`);
     if (channel.type === 'voice') {
       activeVoiceMemberIdsRef.current = memberIds;
       setVoiceMountKey((k) => k + 1);
@@ -376,11 +473,11 @@ export default function ServerLayout() {
     const channel = pendingVoiceSwitch;
     setPendingVoiceSwitch(null);
     if (!channel) return;
-    navigate(`/channels/${channel.id}`);
+    navigate(`/servers/${serverId}/channels/${channel.id}`);
     activeVoiceMemberIdsRef.current = memberIds;
     setVoiceMountKey((k) => k + 1);
     setActiveVoiceChannel(channel);
-  }, [pendingVoiceSwitch, memberIds, navigate]);
+  }, [pendingVoiceSwitch, memberIds, serverId, navigate]);
 
   const handleChannelsUpdated = useCallback((updatedChannels) => {
     setChannels(Array.isArray(updatedChannels) ? updatedChannels : []);
@@ -391,23 +488,34 @@ export default function ServerLayout() {
     setOrbPhase('idle');
     setActiveVoiceChannel(null);
     activeVoiceMemberIdsRef.current = [];
-    navigate('/channels');
-  }, [navigate]);
+    navigate(`/servers/${serverId}/channels`);
+  }, [navigate, serverId]);
+
+  // Derive myRole from activeGuild or guild membership in members list
+  const myRole = activeGuild?.myRole
+    ?? members.find((m) => (m.id ?? m.userId) === currentUserId)?.role
+    ?? 'member';
 
   return (
     <div style={layoutStyles.root}>
       <ServerList
         getToken={getToken}
+        guilds={guilds}
+        activeGuild={activeGuild}
+        onGuildSelect={handleGuildSelect}
+        onGuildCreated={handleGuildCreated}
         instanceData={instanceData}
+        userRole={myRole}
       />
       <>
         <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
           <ChannelList
             getToken={getToken}
-            instanceName={instanceData?.name}
+            serverId={serverId}
+            guildName={activeGuild?.name}
             instanceData={instanceData}
             channels={channels}
-            myRole={instanceData?.myRole}
+            myRole={myRole}
             activeChannelId={channelId}
             onChannelSelect={handleChannelSelect}
             onChannelsUpdated={handleChannelsUpdated}
@@ -432,12 +540,13 @@ export default function ServerLayout() {
                 <VoiceChannel
                   key={`${activeVoiceChannel.id}-${voiceMountKey}`}
                   channel={activeVoiceChannel}
+                  serverId={serverId}
                   getToken={getToken}
                   wsClient={wsClient}
                   recipientUserIds={activeVoiceMemberIdsRef.current}
                   members={members}
                   onlineUserIds={onlineUserIds}
-                  myRole={instanceData?.myRole ?? 'member'}
+                  myRole={myRole}
                   showToast={showToast}
                   onMemberUpdate={handleMemberUpdate}
                   showMembers={showMembers}
@@ -458,6 +567,7 @@ export default function ServerLayout() {
                 <TextChannel
                   key={currentChannel.id}
                   channel={currentChannel}
+                  serverId={serverId}
                   getToken={getToken}
                   wsClient={wsClient}
                   recipientUserIds={memberIds}
@@ -471,7 +581,7 @@ export default function ServerLayout() {
                           members={members}
                           onlineUserIds={onlineUserIds}
                           currentUserId={currentUserId}
-                          myRole={instanceData?.myRole ?? 'member'}
+                          myRole={myRole}
                           showToast={showToast}
                           onMemberUpdate={handleMemberUpdate}
                         />
@@ -505,7 +615,7 @@ export default function ServerLayout() {
                             members={members}
                             onlineUserIds={onlineUserIds}
                             currentUserId={currentUserId}
-                            myRole={instanceData?.myRole ?? 'member'}
+                            myRole={myRole}
                             showToast={showToast}
                             onMemberUpdate={handleMemberUpdate}
                           />
@@ -556,7 +666,7 @@ export default function ServerLayout() {
                   members={members}
                   onlineUserIds={onlineUserIds}
                   currentUserId={currentUserId}
-                  myRole={instanceData?.myRole ?? 'member'}
+                  myRole={myRole}
                   showToast={showToast}
                   onMemberUpdate={handleMemberUpdate}
                 />

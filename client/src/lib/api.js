@@ -98,7 +98,7 @@ export async function getChannelMessages(token, channelId, opts = {}) {
 /**
  * Get current instance metadata.
  * @param {string} token - JWT
- * @returns {Promise<{ id: string, name: string, iconUrl?: string, ownerId: string, registrationMode: string, createdAt: string, bootstrapped: boolean }>}
+ * @returns {Promise<{ id: string, name: string, iconUrl?: string, ownerId: string, registrationMode: string, serverCreationPolicy: string, createdAt: string, bootstrapped: boolean }>}
  */
 export async function getInstance(token) {
   const res = await fetchWithAuth(token, '/api/instance');
@@ -127,79 +127,81 @@ export async function updateInstance(token, body) {
   }
 }
 
+// ── Guild API ─────────────────────────────────────────────────────────────────
+
 /**
- * Get all instance members with roles.
+ * List all guilds the authenticated user belongs to.
  * @param {string} token - JWT
- * @returns {Promise<Array<{ id: string, username: string, displayName: string, role: string, createdAt: string }>>}
+ * @returns {Promise<Array<{ id: string, name: string, ownerId: string, createdAt: string }>>}
  */
-export async function getMembers(token) {
-  const res = await fetchWithAuth(token, '/api/instance/members');
+export async function getMyGuilds(token) {
+  const res = await fetchWithAuth(token, '/api/servers');
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `get members ${res.status}`);
+    throw new Error(err.error || `get guilds ${res.status}`);
   }
   return res.json();
 }
 
 /**
- * Create an invite code for the instance.
+ * Create a new guild.
  * @param {string} token - JWT
- * @param {{ maxUses?: number, expiresInHours?: number }} [opts]
- * @returns {Promise<{ code: string, createdBy: string, maxUses: number, expiresAt: string }>}
+ * @param {string} name - Guild name
+ * @returns {Promise<{ id: string, name: string, ownerId: string, createdAt: string }>}
  */
-export async function createInvite(token, opts = {}) {
-  const res = await fetchWithAuth(token, '/api/invites', {
+export async function createGuild(token, name) {
+  const res = await fetchWithAuth(token, '/api/servers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(opts),
+    body: JSON.stringify({ name }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `create invite ${res.status}`);
+    throw new Error(err.error || `create guild ${res.status}`);
   }
   return res.json();
 }
 
 /**
- * Resolve an invite code to instance info (public — no auth required).
- * @param {string} code - Invite code
- * @returns {Promise<{ code: string, instanceName: string, expiresAt: string }>}
- */
-export async function getInviteInfo(code) {
-  const res = await fetch(`${defaultBase}/api/invites/${encodeURIComponent(code)}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `invite lookup ${res.status}`);
-  }
-  return res.json();
-}
-
-/**
- * Claim an invite code (adds the authenticated user to the instance).
+ * Delete a guild (owner only).
  * @param {string} token - JWT
- * @param {string} code - Invite code
+ * @param {string} serverId - Guild UUID
  * @returns {Promise<void>}
  */
-export async function claimInvite(token, code) {
-  const res = await fetchWithAuth(token, '/api/invites/claim', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
+export async function deleteGuild(token, serverId) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`, {
+    method: 'DELETE',
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `claim invite ${res.status}`);
+    throw new Error(err.error || `delete guild ${res.status}`);
   }
 }
 
 /**
- * Create a channel (admin+).
+ * List all channels in a guild.
  * @param {string} token - JWT
- * @param {{ name: string, type: 'text'|'voice', voiceMode?: 'low-latency'|'quality', parentId?: string, position?: number }} body
+ * @param {string} serverId - Guild UUID
+ * @returns {Promise<Array<{ id: string, name: string, type: string, voiceMode?: string, parentId?: string, position: number, createdAt: string }>>}
+ */
+export async function getGuildChannels(token, serverId) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/channels`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `get channels ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Create a channel in a guild (admin+).
+ * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
+ * @param {{ name: string, type: 'text'|'voice', voiceMode?: string, parentId?: string, position?: number }} body
  * @returns {Promise<object>} Created channel
  */
-export async function createChannel(token, body) {
-  const res = await fetchWithAuth(token, '/api/channels', {
+export async function createGuildChannel(token, serverId, body) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/channels`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -212,17 +214,22 @@ export async function createChannel(token, body) {
 }
 
 /**
- * List all channels in the instance.
+ * Delete a channel in a guild (admin only).
  * @param {string} token - JWT
- * @returns {Promise<Array<{ id: string, name: string, type: string, voiceMode?: string, parentId?: string, position: number, createdAt: string }>>}
+ * @param {string} serverId - Guild UUID
+ * @param {string} channelId - Channel UUID
+ * @returns {Promise<void>}
  */
-export async function getChannels(token) {
-  const res = await fetchWithAuth(token, '/api/channels');
+export async function deleteGuildChannel(token, serverId, channelId) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/channels/${encodeURIComponent(channelId)}`,
+    { method: 'DELETE' },
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `get channels ${res.status}`);
+    throw new Error(err.error || `delete channel ${res.status}`);
   }
-  return res.json();
 }
 
 /**
@@ -245,21 +252,72 @@ export async function moveChannel(token, channelId, body) {
 }
 
 /**
- * Delete a channel (admin only).
+ * List all members of a guild.
  * @param {string} token - JWT
- * @param {string} channelId - Channel UUID
- * @returns {Promise<void>}
+ * @param {string} serverId - Guild UUID
+ * @returns {Promise<Array<{ id: string, username: string, displayName: string, role: string, createdAt: string }>>}
  */
-export async function deleteChannel(token, channelId) {
-  const res = await fetchWithAuth(token, `/api/channels/${encodeURIComponent(channelId)}`, {
-    method: 'DELETE',
+export async function getGuildMembers(token, serverId) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/members`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `get members ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Create an invite code for a guild.
+ * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
+ * @param {{ maxUses?: number, expiresInHours?: number }} [opts]
+ * @returns {Promise<{ code: string, createdBy: string, maxUses: number, expiresAt: string }>}
+ */
+export async function createGuildInvite(token, serverId, opts = {}) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/invites`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `delete channel ${res.status}`);
+    throw new Error(err.error || `create invite ${res.status}`);
   }
+  return res.json();
 }
 
+/**
+ * Resolve an invite code to guild info (public — no auth required).
+ * @param {string} code - Invite code
+ * @returns {Promise<{ code: string, guildName: string, expiresAt: string, serverId: string }>}
+ */
+export async function getInviteInfo(code) {
+  const res = await fetch(`${defaultBase}/api/invites/${encodeURIComponent(code)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `invite lookup ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Claim an invite code (adds the authenticated user to the guild).
+ * @param {string} token - JWT
+ * @param {string} code - Invite code
+ * @returns {Promise<{ serverId: string, guildName: string }>}
+ */
+export async function claimInvite(token, code) {
+  const res = await fetchWithAuth(token, '/api/invites/claim', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `claim invite ${res.status}`);
+  }
+  return res.json();
+}
 
 // ── Moderation API ───────────────────────────────────────────────────────────
 
