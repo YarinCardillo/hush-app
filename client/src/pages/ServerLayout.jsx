@@ -185,12 +185,18 @@ export default function ServerLayout() {
   const prevServerIdRef = useRef(null);
   useEffect(() => {
     if (!wsClient || !serverId) return;
-    const prev = prevServerIdRef.current;
-    if (prev && prev !== serverId) {
-      wsClient.send?.({ type: 'unsubscribe.server', serverId: prev });
-    }
-    wsClient.send?.({ type: 'subscribe.server', serverId });
-    prevServerIdRef.current = serverId;
+    const subscribe = () => {
+      const prev = prevServerIdRef.current;
+      if (prev && prev !== serverId) {
+        wsClient.send('unsubscribe.server', { serverId: prev });
+      }
+      wsClient.send('subscribe.server', { serverId });
+      prevServerIdRef.current = serverId;
+    };
+    // Send immediately (no-ops if not connected yet) and also on open
+    subscribe();
+    wsClient.on('open', subscribe);
+    return () => wsClient.off('open', subscribe);
   }, [wsClient, serverId]);
 
   useEffect(() => {

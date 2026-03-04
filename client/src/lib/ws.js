@@ -133,9 +133,7 @@ export function createWsClient(opts) {
   }
 
   function send(type, payload = {}) {
-    if (!isConnected()) {
-      throw new Error('WebSocket not connected');
-    }
+    if (!isConnected()) return;
     socket.send(JSON.stringify({ type, ...payload }));
   }
 
