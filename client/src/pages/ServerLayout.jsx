@@ -292,37 +292,55 @@ export default function ServerLayout() {
     return () => wsClient.off('instance_updated', handler);
   }, [wsClient]);
 
-  // member_kicked: remove from list; redirect self if kicked (guild-scoped)
+  // member_kicked: remove from list; toast + navigate self if kicked (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
       if (!data.user_id) return;
       if (data.server_id && data.server_id !== serverId) return;
       if (data.user_id === currentUserId) {
-        logout();
+        const serverName = activeGuild?.name || 'the server';
+        showToast({ message: `You were removed from ${serverName}`, variant: 'error' });
+        setTimeout(() => {
+          const nextGuild = guilds.find((g) => g.id !== serverId);
+          if (nextGuild) {
+            navigate(`/servers/${nextGuild.id}/channels`);
+          } else {
+            navigate('/guilds');
+          }
+        }, 2500);
         return;
       }
       setMembers((prev) => prev.filter((m) => (m.id ?? m.userId) !== data.user_id));
     };
     wsClient.on('member_kicked', handler);
     return () => wsClient.off('member_kicked', handler);
-  }, [wsClient, currentUserId, serverId, logout]);
+  }, [wsClient, currentUserId, serverId, navigate, guilds, activeGuild, showToast]);
 
-  // member_banned: remove from list; redirect self if banned (guild-scoped)
+  // member_banned: remove from list; toast + navigate self if banned (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
       if (!data.user_id) return;
       if (data.server_id && data.server_id !== serverId) return;
       if (data.user_id === currentUserId) {
-        logout();
+        const serverName = activeGuild?.name || 'the server';
+        showToast({ message: `You were banned from ${serverName}`, variant: 'error' });
+        setTimeout(() => {
+          const nextGuild = guilds.find((g) => g.id !== serverId);
+          if (nextGuild) {
+            navigate(`/servers/${nextGuild.id}/channels`);
+          } else {
+            navigate('/guilds');
+          }
+        }, 2500);
         return;
       }
       setMembers((prev) => prev.filter((m) => (m.id ?? m.userId) !== data.user_id));
     };
     wsClient.on('member_banned', handler);
     return () => wsClient.off('member_banned', handler);
-  }, [wsClient, currentUserId, serverId, logout]);
+  }, [wsClient, currentUserId, serverId, navigate, guilds, activeGuild, showToast]);
 
   // member_joined: append new member to the list (guild-scoped)
   useEffect(() => {
