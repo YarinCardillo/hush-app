@@ -130,11 +130,10 @@ const styles = {
  * @returns {boolean}
  */
 function canCreateGuild(policy, userRole) {
-  if (!policy || policy === 'open') return true;
+  if (!policy || policy === 'any_member' || policy === 'open') return true;
   if (policy === 'admin_only') {
     return userRole === 'admin' || userRole === 'owner';
   }
-  // 'paid_only' or unknown — hide for now (no payment system yet)
   return false;
 }
 

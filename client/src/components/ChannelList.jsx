@@ -1239,6 +1239,7 @@ export default function ChannelList({
       {showSettings && (
         <ServerSettingsModal
           getToken={getToken}
+          serverId={serverId}
           instanceName={guildName}
           instanceData={instanceData}
           isAdmin={isAdmin}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { updateInstance, getMembers } from '../lib/api';
+import { updateInstance, getGuildMembers } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
 
 const TAB_OVERVIEW = 'overview';
@@ -311,19 +311,20 @@ function OverviewTab({ getToken, instanceName, instanceData }) {
   );
 }
 
-function MembersTab({ getToken }) {
+function MembersTab({ getToken, serverId }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    if (!serverId) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
-    getMembers(getToken())
+    getGuildMembers(getToken(), serverId)
       .then((list) => { if (!cancelled) { setMembers(list); setLoading(false); } })
       .catch((err) => { if (!cancelled) { setError(err.message || 'Failed to load members'); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [getToken]);
+  }, [getToken, serverId]);
 
   return (
     <>
@@ -364,6 +365,7 @@ function MembersTab({ getToken }) {
  */
 export default function ServerSettingsModal({
   getToken,
+  serverId,
   instanceName,
   instanceData,
   isAdmin,
@@ -425,6 +427,7 @@ export default function ServerSettingsModal({
         {tab === TAB_MEMBERS && (
           <MembersTab
             getToken={getToken}
+            serverId={serverId}
           />
         )}
       </div>
