@@ -3,11 +3,11 @@ import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/re
 import ChannelList from './ChannelList';
 
 vi.mock('../lib/api', () => ({
-  getServer: vi.fn(),
-  createChannel: vi.fn(),
-  createInvite: vi.fn(),
+  getGuildChannels: vi.fn(() => Promise.resolve([])),
+  createGuildChannel: vi.fn(),
+  createGuildInvite: vi.fn(),
   moveChannel: vi.fn(),
-  deleteChannel: vi.fn(),
+  deleteGuildChannel: vi.fn(),
 }));
 
 const getToken = () => 'test-token';
@@ -127,9 +127,9 @@ describe('ChannelList', () => {
   });
 
   it('admin sees delete button on category header and can delete it', async () => {
-    const { deleteChannel, getServer } = await import('../lib/api');
-    deleteChannel.mockResolvedValueOnce({});
-    getServer.mockResolvedValueOnce({ channels: [] });
+    const { deleteGuildChannel, getGuildChannels } = await import('../lib/api');
+    deleteGuildChannel.mockResolvedValueOnce({});
+    getGuildChannels.mockResolvedValueOnce([]);
 
     render(
       <ChannelList
@@ -151,7 +151,7 @@ describe('ChannelList', () => {
     });
     screen.getByRole('button', { name: 'Delete' }).click();
     await waitFor(() => {
-      expect(deleteChannel).toHaveBeenCalledWith('test-token', categoryChannel.id);
+      expect(deleteGuildChannel).toHaveBeenCalledWith('test-token', 's1', categoryChannel.id);
     });
   });
 
@@ -193,9 +193,9 @@ describe('ChannelList', () => {
   });
 
   it('Create category modal has only a name field and calls API with type:category', async () => {
-    const { createChannel, getServer } = await import('../lib/api');
-    createChannel.mockResolvedValueOnce({ id: 'cat-new', name: 'My Category', type: 'category', position: 0, serverId: 's1', parentId: null });
-    getServer.mockResolvedValueOnce({ channels: [] });
+    const { createGuildChannel, getGuildChannels } = await import('../lib/api');
+    createGuildChannel.mockResolvedValueOnce({ id: 'cat-new', name: 'My Category', type: 'category', position: 0, serverId: 's1', parentId: null });
+    getGuildChannels.mockResolvedValueOnce([]);
 
     render(
       <ChannelList
@@ -219,7 +219,7 @@ describe('ChannelList', () => {
     screen.getByRole('button', { name: 'Create' }).click();
 
     await waitFor(() => {
-      expect(createChannel).toHaveBeenCalledWith('test-token', 's1', { name: 'My Category', type: 'category' });
+      expect(createGuildChannel).toHaveBeenCalledWith('test-token', 's1', { name: 'My Category', type: 'category' });
     });
   });
 

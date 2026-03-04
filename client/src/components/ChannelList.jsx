@@ -17,7 +17,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { getChannels, createChannel, createInvite, moveChannel, deleteChannel } from '../lib/api';
+import { getGuildChannels, createGuildChannel, createGuildInvite, moveChannel, deleteGuildChannel } from '../lib/api';
 import modalStyles from './modalStyles';
 import ConfirmModal from './ConfirmModal';
 import ServerSettingsModal from './ServerSettingsModal';
@@ -235,7 +235,7 @@ function groupChannelsByParent(channels) {
   return ordered;
 }
 
-function CreateChannelModal({ getToken, onClose, onCreated }) {
+function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
   const [name, setName] = useState('');
   const [type, setType] = useState(CHANNEL_TYPE_TEXT);
   const [voiceMode, setVoiceMode] = useState('quality');
@@ -273,7 +273,7 @@ function CreateChannelModal({ getToken, onClose, onCreated }) {
     try {
       const body = { name: trimmed, type };
       if (type === CHANNEL_TYPE_VOICE) body.voiceMode = voiceMode;
-      const channel = await createChannel(token, body);
+      const channel = await createGuildChannel(token, serverId, body);
       onCreated(channel);
       onClose();
     } catch (err) {
@@ -349,7 +349,7 @@ function CreateChannelModal({ getToken, onClose, onCreated }) {
   );
 }
 
-function CreateCategoryModal({ getToken, onClose, onCreated }) {
+function CreateCategoryModal({ getToken, serverId, onClose, onCreated }) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -383,7 +383,7 @@ function CreateCategoryModal({ getToken, onClose, onCreated }) {
     }
     setLoading(true);
     try {
-      const category = await createChannel(token, { name: trimmed, type: CHANNEL_TYPE_CATEGORY });
+      const category = await createGuildChannel(token, serverId, { name: trimmed, type: CHANNEL_TYPE_CATEGORY });
       onCreated(category);
       onClose();
     } catch (err) {
@@ -433,7 +433,7 @@ function CreateCategoryModal({ getToken, onClose, onCreated }) {
   );
 }
 
-function InviteModal({ getToken, onClose }) {
+function InviteModal({ getToken, serverId, onClose }) {
   const [isOpen, setIsOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
@@ -459,7 +459,7 @@ function InviteModal({ getToken, onClose }) {
       const token = getToken();
       if (!token) { setError('Not authenticated'); setLoading(false); return; }
       try {
-        const inv = await createInvite(token);
+        const inv = await createGuildInvite(token, serverId);
         if (!cancelled) { setInviteCode(inv.code); setLoading(false); }
       } catch (err) {
         if (!cancelled) { setError(err.message || 'Failed to create invite'); setLoading(false); }
@@ -816,7 +816,8 @@ function UncategorizeZone({ position, visible }) {
 
 export default function ChannelList({
   getToken,
-  instanceName,
+  serverId,
+  guildName,
   instanceData,
   channels,
   myRole,
@@ -836,16 +837,21 @@ export default function ChannelList({
   const isAdmin = myRole === 'admin' || myRole === 'owner';
   const serverMenuRef = useRef(null);
 
-  const INSTANCE_COLLAPSED_KEY = 'hush:categories-collapsed:instance';
-  const [collapsedMap, setCollapsedMap] = useState(() => loadCollapsedMap(INSTANCE_COLLAPSED_KEY));
+  const GUILD_COLLAPSED_KEY = serverId ? `collapsed_${serverId}` : 'collapsed_default';
+  const [collapsedMap, setCollapsedMap] = useState(() => loadCollapsedMap(GUILD_COLLAPSED_KEY));
+
+  // Reset collapsed map when guild changes
+  useEffect(() => {
+    setCollapsedMap(loadCollapsedMap(GUILD_COLLAPSED_KEY));
+  }, [GUILD_COLLAPSED_KEY]);
 
   const handleToggleCollapsed = useCallback((categoryKey) => {
     setCollapsedMap((prev) => {
       const next = { ...prev, [categoryKey]: !prev[categoryKey] };
-      saveCollapsedMap(INSTANCE_COLLAPSED_KEY, next);
+      saveCollapsedMap(GUILD_COLLAPSED_KEY, next);
       return next;
     });
-  }, []);
+  }, [GUILD_COLLAPSED_KEY]);
 
   // Keep local list in sync with server-sourced prop (after API refresh or initial load)
   useEffect(() => { setLocalChannels(channels ?? []); }, [channels]);
@@ -869,28 +875,28 @@ export default function ChannelList({
   const handleDeleteConfirmed = useCallback(async () => {
     if (!confirmDelete) return;
     const token = getToken();
-    if (token) {
+    if (token && serverId) {
       try {
-        await deleteChannel(token, confirmDelete.id);
-        const updated = await getChannels(token);
+        await deleteGuildChannel(token, serverId, confirmDelete.id);
+        const updated = await getGuildChannels(token, serverId);
         onChannelsUpdated?.(updated);
       } catch {
         // Delete failed — channel state unchanged
       }
     }
     setConfirmDelete(null);
-  }, [confirmDelete, getToken, onChannelsUpdated]);
+  }, [confirmDelete, getToken, serverId, onChannelsUpdated]);
 
   const handleCreated = useCallback(async () => {
     const token = getToken();
-    if (!token) return;
+    if (!token || !serverId) return;
     try {
-      const updated = await getChannels(token);
+      const updated = await getGuildChannels(token, serverId);
       onChannelsUpdated?.(updated);
     } catch {
       // Parent already holds channel state; silent refresh failure is acceptable
     }
-  }, [getToken, onChannelsUpdated]);
+  }, [getToken, serverId, onChannelsUpdated]);
 
   const groups = groupChannelsByParent(localChannels);
   const channelMap = useMemo(() => {
@@ -982,7 +988,7 @@ export default function ChannelList({
 
       try {
         await moveChannel(token, active.id, { parentId: null, position: overIdx });
-        const updated = await getChannels(token);
+        const updated = await getGuildChannels(token, serverId);
         onChannelsUpdated?.(updated);
       } catch {
         setLocalChannels(snapshot); // revert on error
@@ -1043,12 +1049,12 @@ export default function ChannelList({
 
     try {
       await moveChannel(token, active.id, { parentId: targetParentId, position: targetPosition });
-      const updated = await getChannels(token);
+      const updated = await getGuildChannels(token, serverId);
       onChannelsUpdated?.(updated);
     } catch {
       setLocalChannels(snapshot); // revert on error
     }
-  }, [getToken, groups, localChannels, categoryIdSet, onChannelsUpdated]);
+  }, [getToken, serverId, groups, localChannels, categoryIdSet, onChannelsUpdated]);
 
   const draggedChannel = activeId && !categoryIdSet.has(activeId) ? channelMap.get(activeId) : null;
   const draggedCategoryGroup = activeId && categoryIdSet.has(activeId)
@@ -1064,7 +1070,7 @@ export default function ChannelList({
           onClick={() => setShowServerMenu((v) => !v)}
           title="Server menu"
         >
-          <span style={styles.serverName}>{instanceName ?? 'instance'}</span>
+          <span style={styles.serverName}>{guildName ?? 'guild'}</span>
           <svg
             width="12"
             height="12"
@@ -1201,6 +1207,7 @@ export default function ChannelList({
       {showCreateModal && (
         <CreateChannelModal
           getToken={getToken}
+          serverId={serverId}
           onClose={() => setShowCreateModal(false)}
           onCreated={handleCreated}
         />
@@ -1208,6 +1215,7 @@ export default function ChannelList({
       {showCreateCategoryModal && (
         <CreateCategoryModal
           getToken={getToken}
+          serverId={serverId}
           onClose={() => setShowCreateCategoryModal(false)}
           onCreated={handleCreated}
         />
@@ -1215,6 +1223,7 @@ export default function ChannelList({
       {showInviteModal && (
         <InviteModal
           getToken={getToken}
+          serverId={serverId}
           onClose={() => setShowInviteModal(false)}
         />
       )}
@@ -1230,7 +1239,7 @@ export default function ChannelList({
       {showSettings && (
         <ServerSettingsModal
           getToken={getToken}
-          instanceName={instanceName}
+          instanceName={guildName}
           instanceData={instanceData}
           isAdmin={isAdmin}
           onClose={() => setShowSettings(false)}

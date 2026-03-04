@@ -103,9 +103,11 @@ function getToken() {
 }
 
 export default function ServerLayout() {
-  const { serverId, '*': splat } = useParams();
+  const params = useParams();
+  const serverId = params.serverId ?? null;
   // Extract channelId from the splat: "channels/uuid" → "uuid"
-  const channelId = splat?.startsWith('channels/') ? splat.slice('channels/'.length) : undefined;
+  const splat = params['*'] ?? '';
+  const channelId = splat.startsWith('channels/') ? splat.slice('channels/'.length) : undefined;
   const navigate = useNavigate();
   const { token: authToken, user, logout } = useAuth();
   const breakpoint = useBreakpoint();
@@ -495,6 +497,37 @@ export default function ServerLayout() {
   const myRole = activeGuild?.myRole
     ?? members.find((m) => (m.id ?? m.userId) === currentUserId)?.role
     ?? 'member';
+
+  // No guild selected — show empty state with guild strip and welcome message
+  if (!serverId) {
+    return (
+      <div style={layoutStyles.root}>
+        <ServerList
+          getToken={getToken}
+          guilds={guilds}
+          activeGuild={null}
+          onGuildSelect={handleGuildSelect}
+          onGuildCreated={handleGuildCreated}
+          instanceData={instanceData}
+          userRole={myRole}
+        />
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--hush-text-muted)',
+          fontSize: '0.9rem',
+          textAlign: 'center',
+          padding: '24px',
+          background: 'var(--hush-black)',
+        }}>
+          Create a guild or join one with an invite link.
+        </div>
+        <Toast toasts={toasts} />
+      </div>
+    );
+  }
 
   return (
     <div style={layoutStyles.root}>

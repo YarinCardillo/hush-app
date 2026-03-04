@@ -1,57 +1,145 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, userEvent, waitFor, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import ServerList from './ServerList';
 
+// GuildCreateModal calls createGuild — mock it so the modal renders without real API calls
 vi.mock('../lib/api', () => ({
-  listServers: vi.fn(),
-  createServer: vi.fn(),
-  joinServer: vi.fn(),
-  getInviteByCode: vi.fn(),
+  createGuild: vi.fn(() => Promise.resolve({ id: 'g-new', name: 'New Guild' })),
 }));
 
-import { listServers, createServer } from '../lib/api';
+// UserSettingsModal requires matchMedia — mock the whole component
+vi.mock('./UserSettingsModal', () => ({
+  default: function MockUserSettingsModal({ onClose }) {
+    return <div data-testid="user-settings"><button onClick={onClose}>Close</button></div>;
+  },
+  applyThemeMode: vi.fn(),
+  getStoredThemeMode: vi.fn(() => 'dark'),
+}));
+
+// GuildCreateModal references createGuild — mock it
+vi.mock('./GuildCreateModal', () => ({
+  default: function MockGuildCreateModal({ onClose, onCreated }) {
+    return (
+      <div data-testid="guild-create-modal">
+        <button onClick={() => onCreated({ id: 'g-new', name: 'New Guild' })}>Create</button>
+        <button onClick={onClose}>Cancel</button>
+      </div>
+    );
+  },
+}));
+
+// AuthContext
+vi.mock('../contexts/AuthContext', () => ({
+  useAuth: vi.fn(() => ({ user: { id: 'u1', displayName: 'Test User' } })),
+  AuthProvider: ({ children }) => children,
+}));
 
 const getToken = () => 'test-token';
+
+const guilds = [
+  { id: 'g1', name: 'Alpha Guild', ownerId: 'u1' },
+  { id: 'g2', name: 'Beta', ownerId: 'u2' },
+];
 
 describe('ServerList', () => {
   beforeEach(() => {
     cleanup();
-    vi.mocked(listServers).mockResolvedValue([]);
-    vi.mocked(createServer).mockClear();
   });
 
-  it('renders servers from API', async () => {
-    vi.mocked(listServers).mockResolvedValue([
-      { id: 's1', name: 'Server One', role: 'admin' },
-      { id: 's2', name: 'Server Two', role: 'member' },
-    ]);
-    render(<ServerList getToken={getToken} selectedServerId={null} onServerSelect={() => {}} />);
-    await screen.findByTitle('Server One');
-    expect(screen.getByTitle('Server One')).toBeInTheDocument();
-    expect(screen.getByTitle('Server Two')).toBeInTheDocument();
+  it('renders guild initials for each guild', () => {
+    render(
+      <ServerList
+        getToken={getToken}
+        guilds={guilds}
+        activeGuild={null}
+        onGuildSelect={() => {}}
+        onGuildCreated={() => {}}
+        instanceData={null}
+        userRole="member"
+      />,
+    );
+    expect(screen.getByTitle('Alpha Guild')).toBeInTheDocument();
+    expect(screen.getByTitle('Beta')).toBeInTheDocument();
+    expect(screen.getByText('AG')).toBeInTheDocument();
+    expect(screen.getByText('BE')).toBeInTheDocument();
   });
 
-  it('shows empty state when list is empty', async () => {
-    vi.mocked(listServers).mockResolvedValue([]);
-    render(<ServerList getToken={getToken} selectedServerId={null} onServerSelect={() => {}} />);
-    await screen.findByText('…');
-    await waitFor(() => {
-      expect(screen.queryByText('…')).not.toBeInTheDocument();
-    });
-    expect(screen.queryByTitle('Server One')).not.toBeInTheDocument();
+  it('active guild has aria-pressed=true', () => {
+    render(
+      <ServerList
+        getToken={getToken}
+        guilds={guilds}
+        activeGuild={guilds[0]}
+        onGuildSelect={() => {}}
+        onGuildCreated={() => {}}
+        instanceData={null}
+        userRole="member"
+      />,
+    );
+    const btn = screen.getByTitle('Alpha Guild');
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTitle('Beta').getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('create server modal validates input', async () => {
-    vi.mocked(listServers).mockResolvedValue([]);
-    render(<ServerList getToken={getToken} selectedServerId={null} onServerSelect={() => {}} />);
-    await screen.findByTitle('Join server', {}, { timeout: 2000 });
-    const createBtn = screen.queryByRole('button', { name: 'Create server' }) ?? screen.queryByTitle('Create server');
-    expect(createBtn).toBeTruthy();
-    fireEvent.click(createBtn);
-    expect(screen.getByPlaceholderText('My server')).toBeInTheDocument();
-    const submit = screen.getByRole('button', { name: 'Create' });
-    fireEvent.click(submit);
-    expect(createServer).not.toHaveBeenCalled();
-    expect(screen.getByText('Name is required')).toBeInTheDocument();
+  it('calls onGuildSelect when a guild button is clicked', () => {
+    const onSelect = vi.fn();
+    render(
+      <ServerList
+        getToken={getToken}
+        guilds={guilds}
+        activeGuild={null}
+        onGuildSelect={onSelect}
+        onGuildCreated={() => {}}
+        instanceData={null}
+        userRole="member"
+      />,
+    );
+    fireEvent.click(screen.getByTitle('Alpha Guild'));
+    expect(onSelect).toHaveBeenCalledWith(guilds[0]);
+  });
+
+  it('shows + button when policy is open', () => {
+    render(
+      <ServerList
+        getToken={getToken}
+        guilds={[]}
+        activeGuild={null}
+        onGuildSelect={() => {}}
+        onGuildCreated={() => {}}
+        instanceData={{ serverCreationPolicy: 'open' }}
+        userRole="member"
+      />,
+    );
+    expect(screen.getByTitle('Create a guild')).toBeInTheDocument();
+  });
+
+  it('hides + button when policy is admin_only and user is member', () => {
+    render(
+      <ServerList
+        getToken={getToken}
+        guilds={[]}
+        activeGuild={null}
+        onGuildSelect={() => {}}
+        onGuildCreated={() => {}}
+        instanceData={{ serverCreationPolicy: 'admin_only' }}
+        userRole="member"
+      />,
+    );
+    expect(screen.queryByTitle('Create a guild')).not.toBeInTheDocument();
+  });
+
+  it('shows + button when policy is admin_only and user is admin', () => {
+    render(
+      <ServerList
+        getToken={getToken}
+        guilds={[]}
+        activeGuild={null}
+        onGuildSelect={() => {}}
+        onGuildCreated={() => {}}
+        instanceData={{ serverCreationPolicy: 'admin_only' }}
+        userRole="admin"
+      />,
+    );
+    expect(screen.getByTitle('Create a guild')).toBeInTheDocument();
   });
 });

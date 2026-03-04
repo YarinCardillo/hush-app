@@ -23,7 +23,7 @@ const styles = {
     color: 'var(--hush-text-secondary)',
     marginBottom: '8px',
   },
-  instanceName: {
+  guildName: {
     fontSize: '1.4rem',
     fontWeight: 300,
     color: 'var(--hush-text)',
@@ -67,14 +67,19 @@ function inviteErrorMessage(err) {
   const msg = err?.message || '';
   if (/not found|expired|no longer valid/i.test(msg)) return 'Invite not found or expired.';
   if (/already.*member|409/i.test(msg)) return 'You are already a member.';
+  if (/banned/i.test(msg)) return 'You are banned from this guild.';
   if (/invalid|expired|400/i.test(msg)) return 'Invite is invalid or expired.';
   return msg || 'Something went wrong.';
 }
 
 /**
- * Two-phase invite page:
+ * Two-phase guild invite page:
  * - Unauthenticated: shows register form, then claims invite after registration.
- * - Authenticated: auto-claims the invite and redirects to /channels.
+ * - Authenticated: auto-claims the invite and navigates to /servers/${serverId}/channels.
+ *
+ * serverId comes from two sources:
+ * 1. getInviteInfo response (before claim) — available immediately after page load
+ * 2. claimInvite response — used to navigate after successful claim
  */
 export default function Invite() {
   const { code } = useParams();
@@ -118,11 +123,18 @@ export default function Invite() {
     return () => { cancelled = true; };
   }, [code]);
 
-  // Authenticated flow: auto-claim invite
+  // Authenticated flow: auto-claim invite and navigate to the guild
   useEffect(() => {
     if (!isAuthenticated || !token || !invite || !code) return;
     claimInvite(token, code)
-      .then(() => navigate('/channels', { replace: true }))
+      .then((result) => {
+        const serverId = result?.serverId ?? invite?.serverId;
+        if (serverId) {
+          navigate(`/servers/${serverId}/channels`, { replace: true });
+        } else {
+          navigate('/', { replace: true });
+        }
+      })
       .catch((err) => setError(inviteErrorMessage(err)));
   }, [isAuthenticated, token, invite, code, navigate]);
 
@@ -139,15 +151,15 @@ export default function Invite() {
 
     setRegisterLoading(true);
     try {
-      // Register via AuthContext so token + user state are set globally
+      // Register via AuthContext so token + user state are set globally.
+      // After authRegister, the authenticated useEffect above will auto-claim the invite.
       await authRegister(trimmedUsername, password, trimmedDisplayName || trimmedUsername);
-      // After authRegister, the token useEffect (line 124) will auto-claim the invite
     } catch (err) {
       setError(inviteErrorMessage(err));
     } finally {
       setRegisterLoading(false);
     }
-  }, [username, password, displayName, code, navigate]);
+  }, [username, password, displayName, authRegister]);
 
   if (loading) {
     return (
@@ -172,13 +184,15 @@ export default function Invite() {
 
   if (!invite) return null;
 
+  const guildName = invite.guildName ?? invite.instanceName ?? 'a guild';
+
   // Authenticated: show redirecting state while auto-claim runs
   if (isAuthenticated) {
     return (
       <div style={styles.page}>
         <div className="glass" style={styles.card}>
           <p style={styles.title}>You're invited to join</p>
-          <p style={styles.instanceName}>{invite.instanceName}</p>
+          <p style={styles.guildName}>{guildName}</p>
           {error && <p style={styles.error}>{error}</p>}
           {!error && (
             <p style={{ color: 'var(--hush-text-muted)', fontSize: '0.9rem' }}>Joining…</p>
@@ -198,7 +212,7 @@ export default function Invite() {
     <div style={styles.page}>
       <div className="glass" style={styles.card}>
         <p style={styles.title}>You're invited to join</p>
-        <p style={styles.instanceName}>{invite.instanceName}</p>
+        <p style={styles.guildName}>{guildName}</p>
         {error && <p style={styles.error}>{error}</p>}
         <form style={styles.form} onSubmit={handleRegisterAndClaim}>
           <div>

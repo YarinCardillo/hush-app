@@ -121,7 +121,7 @@ describe('VoiceChannel', () => {
     renderVoiceChannel(channel, 's1');
     await waitFor(() => {
       expect(mockConnectRoom).toHaveBeenCalledWith(
-        'server-s1-channel-ch1',
+        'channel-ch1',
         'Test User',
         'ch1',
       );
