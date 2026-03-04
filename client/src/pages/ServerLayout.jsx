@@ -623,6 +623,7 @@ export default function ServerLayout() {
                           myRole={myRole}
                           showToast={showToast}
                           onMemberUpdate={handleMemberUpdate}
+                          serverId={serverId}
                         />
                       </div>
                     </div>
@@ -657,6 +658,7 @@ export default function ServerLayout() {
                             myRole={myRole}
                             showToast={showToast}
                             onMemberUpdate={handleMemberUpdate}
+                            serverId={serverId}
                           />
                         </div>
                       </div>
@@ -708,6 +710,7 @@ export default function ServerLayout() {
                   myRole={myRole}
                   showToast={showToast}
                   onMemberUpdate={handleMemberUpdate}
+                  serverId={serverId}
                 />
               </div>
             </>

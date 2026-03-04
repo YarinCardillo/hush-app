@@ -126,6 +126,7 @@ const ACTION_SUCCESS_MESSAGES = {
  *   myRole: string,
  *   showToast: (message: string, type: string) => void,
  *   onMemberUpdate: () => void,
+ *   serverId: string,
  * }} props
  */
 export default function MemberList({
@@ -135,6 +136,7 @@ export default function MemberList({
   myRole = 'member',
   showToast,
   onMemberUpdate,
+  serverId,
 }) {
   const [selectedMember, setSelectedMember] = useState(null);
   const [profilePosition, setProfilePosition] = useState({ x: 0, y: 0 });
@@ -156,16 +158,16 @@ export default function MemberList({
 
     switch (action) {
       case 'kick':
-        await kickUser(token, memberId, data.reason);
+        await kickUser(token, serverId, memberId, data.reason);
         break;
       case 'ban':
-        await banUser(token, memberId, data.reason, data.expiresIn);
+        await banUser(token, serverId, memberId, data.reason, data.expiresIn);
         break;
       case 'mute':
-        await muteUser(token, memberId, data.reason, data.expiresIn);
+        await muteUser(token, serverId, memberId, data.reason, data.expiresIn);
         break;
       case 'changeRole':
-        await changeUserRole(token, memberId, data.newRole, data.reason);
+        await changeUserRole(token, serverId, memberId, data.newRole, data.reason);
         break;
       default:
         throw new Error(`Unknown action: ${action}`);

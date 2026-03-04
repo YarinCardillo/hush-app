@@ -233,18 +233,23 @@ export async function deleteGuildChannel(token, serverId, channelId) {
 }
 
 /**
- * Move a channel to a new parent and/or position (admin only).
+ * Move a channel to a new parent and/or position within a guild (admin only).
  * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
  * @param {string} channelId - Channel UUID
  * @param {{ parentId?: string|null, position: number }} body
  * @returns {Promise<void>}
  */
-export async function moveChannel(token, channelId, body) {
-  const res = await fetchWithAuth(token, `/api/channels/${encodeURIComponent(channelId)}/move`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+export async function moveChannel(token, serverId, channelId, body) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/channels/${encodeURIComponent(channelId)}/move`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `move channel ${res.status}`);
@@ -322,18 +327,23 @@ export async function claimInvite(token, code) {
 // ── Moderation API ───────────────────────────────────────────────────────────
 
 /**
- * Kick a user from the instance.
+ * Kick a user from a guild.
  * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
  * @param {string} userId - Target user UUID
  * @param {string} reason - Required reason string
  * @returns {Promise<void>}
  */
-export async function kickUser(token, userId, reason) {
-  const res = await fetchWithAuth(token, '/api/moderation/kick', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, reason }),
-  });
+export async function kickUser(token, serverId, userId, reason) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/moderation/kick`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, reason }),
+    },
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `kick ${res.status}`);
@@ -341,19 +351,24 @@ export async function kickUser(token, userId, reason) {
 }
 
 /**
- * Ban a user from the instance.
+ * Ban a user from a guild.
  * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
  * @param {string} userId - Target user UUID
  * @param {string} reason - Required reason string
  * @param {number|null} [expiresIn] - Duration in seconds; null = permanent
  * @returns {Promise<void>}
  */
-export async function banUser(token, userId, reason, expiresIn) {
-  const res = await fetchWithAuth(token, '/api/moderation/ban', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, reason, expiresIn: expiresIn ?? null }),
-  });
+export async function banUser(token, serverId, userId, reason, expiresIn) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/moderation/ban`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, reason, expiresIn: expiresIn ?? null }),
+    },
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `ban ${res.status}`);
@@ -361,19 +376,24 @@ export async function banUser(token, userId, reason, expiresIn) {
 }
 
 /**
- * Mute a user in the instance.
+ * Mute a user in a guild.
  * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
  * @param {string} userId - Target user UUID
  * @param {string} reason - Required reason string
  * @param {number|null} [expiresIn] - Duration in seconds; null = permanent
  * @returns {Promise<void>}
  */
-export async function muteUser(token, userId, reason, expiresIn) {
-  const res = await fetchWithAuth(token, '/api/moderation/mute', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, reason, expiresIn: expiresIn ?? null }),
-  });
+export async function muteUser(token, serverId, userId, reason, expiresIn) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/moderation/mute`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, reason, expiresIn: expiresIn ?? null }),
+    },
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `mute ${res.status}`);
@@ -381,19 +401,24 @@ export async function muteUser(token, userId, reason, expiresIn) {
 }
 
 /**
- * Change a user's role in the instance.
+ * Change a user's role in a guild.
  * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
  * @param {string} userId - Target user UUID
  * @param {string} newRole - 'member' | 'mod' | 'admin'
  * @param {string} reason - Required reason string
  * @returns {Promise<void>}
  */
-export async function changeUserRole(token, userId, newRole, reason) {
-  const res = await fetchWithAuth(token, '/api/moderation/role', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, newRole, reason }),
-  });
+export async function changeUserRole(token, serverId, userId, newRole, reason) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/members/${encodeURIComponent(userId)}/role`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newRole, reason }),
+    },
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `change role ${res.status}`);

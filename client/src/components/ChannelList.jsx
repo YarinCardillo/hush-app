@@ -987,7 +987,7 @@ export default function ChannelList({
       setLocalChannels((prev) => prev.map((ch) => posMap.has(ch.id) ? { ...ch, position: posMap.get(ch.id) } : ch));
 
       try {
-        await moveChannel(token, active.id, { parentId: null, position: overIdx });
+        await moveChannel(token, serverId, active.id, { parentId: null, position: overIdx });
         const updated = await getGuildChannels(token, serverId);
         onChannelsUpdated?.(updated);
       } catch {
@@ -1048,7 +1048,7 @@ export default function ChannelList({
     }));
 
     try {
-      await moveChannel(token, active.id, { parentId: targetParentId, position: targetPosition });
+      await moveChannel(token, serverId, active.id, { parentId: targetParentId, position: targetPosition });
       const updated = await getGuildChannels(token, serverId);
       onChannelsUpdated?.(updated);
     } catch {
