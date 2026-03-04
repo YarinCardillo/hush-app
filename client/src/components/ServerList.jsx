@@ -200,8 +200,8 @@ export default function ServerList({
         <button
           type="button"
           style={styles.addBtn}
-          title="Create a guild"
-          aria-label="Create a guild"
+          title="Create a server"
+          aria-label="Create a server"
           onClick={() => setShowCreateModal(true)}
           onMouseEnter={(e) => {
             e.currentTarget.style.borderColor = 'var(--hush-amber)';

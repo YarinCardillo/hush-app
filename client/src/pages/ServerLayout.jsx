@@ -522,7 +522,7 @@ export default function ServerLayout() {
           padding: '24px',
           background: 'var(--hush-black)',
         }}>
-          Create a guild or join one with an invite link.
+          Create a server or join one with an invite link.
         </div>
         <Toast toasts={toasts} />
       </div>

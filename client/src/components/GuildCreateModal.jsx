@@ -36,7 +36,7 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
     setError('');
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('Guild name is required.');
+      setError('Server name is required.');
       return;
     }
     const token = getToken();
@@ -49,7 +49,7 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
       const guild = await createGuild(token, trimmed);
       onCreated(guild);
     } catch (err) {
-      setError(err.message || 'Failed to create guild.');
+      setError(err.message || 'Failed to create server.');
     } finally {
       setLoading(false);
     }
@@ -64,16 +64,16 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
         className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={modalStyles.title}>Create a guild</div>
+        <div style={modalStyles.title}>Create a server</div>
         <form style={modalStyles.form} onSubmit={handleSubmit}>
           <div>
-            <label htmlFor="guild-name" style={modalStyles.fieldLabel}>Guild name</label>
+            <label htmlFor="guild-name" style={modalStyles.fieldLabel}>Server name</label>
             <input
               id="guild-name"
               name="guild-name"
               className="input"
               type="text"
-              placeholder="My guild"
+              placeholder="My server"
               value={name}
               onChange={(e) => { setName(e.target.value); setError(''); }}
               maxLength={100}
