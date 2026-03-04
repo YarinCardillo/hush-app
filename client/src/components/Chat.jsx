@@ -256,6 +256,7 @@ const styles = {
 
 export default function Chat({
   channelId,
+  serverId,
   currentUserId,
   getToken,
   getStore,
@@ -307,7 +308,7 @@ export default function Chat({
 
   // Load history and subscribe to channel
   useEffect(() => {
-    if (!channelId || !getToken) return;
+    if (!channelId || !serverId || !getToken) return;
     const token = getToken();
     if (!token) return;
 
@@ -316,7 +317,7 @@ export default function Chat({
 
     const loadHistory = async () => {
       try {
-        const list = await api.getChannelMessages(token, channelId, { limit: 50 });
+        const list = await api.getChannelMessages(token, serverId, channelId, { limit: 50 });
         const decrypted = [];
         for (let i = list.length - 1; i >= 0; i--) {
           const m = list[i];
@@ -338,10 +339,10 @@ export default function Chat({
       }
     };
     loadHistory();
-  }, [channelId, getToken, currentUserId]);
+  }, [channelId, serverId, getToken, currentUserId]);
 
   const loadMore = useCallback(async () => {
-    if (!channelId || !getToken || loadMoreLoading || !hasMoreOlder || messages.length === 0) return;
+    if (!channelId || !serverId || !getToken || loadMoreLoading || !hasMoreOlder || messages.length === 0) return;
     const token = getToken();
     if (!token) return;
     const oldestTs = messages[0]?.timestamp;
@@ -349,7 +350,7 @@ export default function Chat({
     setLoadMoreLoading(true);
     try {
       const before = new Date(oldestTs).toISOString();
-      const list = await api.getChannelMessages(token, channelId, { before, limit: 50 });
+      const list = await api.getChannelMessages(token, serverId, channelId, { before, limit: 50 });
       if (list.length === 0) {
         setHasMoreOlder(false);
         return;
@@ -378,7 +379,7 @@ export default function Chat({
     } finally {
       setLoadMoreLoading(false);
     }
-  }, [channelId, getToken, messages, loadMoreLoading, hasMoreOlder, currentUserId]);
+  }, [channelId, serverId, getToken, messages, loadMoreLoading, hasMoreOlder, currentUserId]);
 
   const handleScroll = useCallback(() => {
     const el = messagesScrollRef.current;

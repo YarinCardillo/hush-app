@@ -95,6 +95,7 @@ export default function TextChannel({
         <div style={styles.chatArea}>
           <Chat
             channelId={channel.id}
+            serverId={serverId}
             currentUserId={currentUserId}
             getToken={getToken}
             getStore={getStore}

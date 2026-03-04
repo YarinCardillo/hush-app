@@ -635,6 +635,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
                 <div style={styles.sidebarLabel}>Chat</div>
                 <Chat
                   channelId={channel.id}
+                  serverId={serverId}
                   currentUserId={currentUserId}
                   getToken={getToken}
                   getStore={getStore}
@@ -686,6 +687,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
                   <div style={styles.sidebarLabel}>Chat</div>
                   <Chat
                     channelId={channel.id}
+                    serverId={serverId}
                     currentUserId={currentUserId}
                     getToken={getToken}
                     getStore={getStore}

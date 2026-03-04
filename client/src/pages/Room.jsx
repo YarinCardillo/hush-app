@@ -261,6 +261,7 @@ export default function Room() {
   // If false when auth guard fires, the user opened a direct link → redirect to /?join=
   // If true, the user was in the room and left/lost session → redirect to /
   const hadSessionRef = useRef(!!sessionStorage.getItem('hush_channelId'));
+  const roomServerId = sessionStorage.getItem('hush_serverId');
   const [roomDisplayName, setRoomDisplayName] = useState(() => decodeURIComponent(roomName));
   const [quality, setQuality] = useState(DEFAULT_QUALITY);
   const [recommendedQualityKey, setRecommendedQualityKey] = useState(null);
@@ -1013,6 +1014,7 @@ export default function Room() {
                 <div style={styles.sidebarLabel}>Chat</div>
                 <Chat
                   channelId={sessionStorage.getItem('hush_channelId')}
+                  serverId={roomServerId}
                   currentUserId={user?.id ?? ''}
                   getToken={() => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null}
                   getStore={() => {
@@ -1064,6 +1066,7 @@ export default function Room() {
                   <div style={styles.sidebarLabel}>Chat</div>
                   <Chat
                     channelId={sessionStorage.getItem('hush_channelId')}
+                    serverId={roomServerId}
                     currentUserId={user?.id ?? ''}
                     getToken={() => sessionStorage.getItem('hush_jwt') ?? sessionStorage.getItem('hush_token') ?? null}
                     getStore={() => {
