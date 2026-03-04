@@ -21,6 +21,7 @@ import { getGuildChannels, createGuildChannel, createGuildInvite, moveChannel, d
 import modalStyles from './modalStyles';
 import ConfirmModal from './ConfirmModal';
 import ServerSettingsModal from './ServerSettingsModal';
+import BanMuteListModal from './BanMuteListModal';
 
 const CHANNEL_TYPE_TEXT = 'text';
 const CHANNEL_TYPE_VOICE = 'voice';
@@ -825,12 +826,14 @@ export default function ChannelList({
   onChannelSelect,
   onChannelsUpdated,
   voiceParticipants,
+  showToast,
 }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showServerMenu, setShowServerMenu] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showBanMuteModal, setShowBanMuteModal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null); // { id, name, isCategory }
   const [activeId, setActiveId] = useState(null);
   const [localChannels, setLocalChannels] = useState(channels ?? []);
@@ -1095,6 +1098,17 @@ export default function ChannelList({
               <button
                 type="button"
                 style={styles.addBtn}
+                title="Ban/Mute management"
+                onClick={() => setShowBanMuteModal(true)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                style={styles.addBtn}
                 title="Create category"
                 onClick={() => setShowCreateCategoryModal(true)}
               >
@@ -1244,6 +1258,15 @@ export default function ChannelList({
           instanceData={instanceData}
           isAdmin={isAdmin}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+      {showBanMuteModal && (
+        <BanMuteListModal
+          isOpen={showBanMuteModal}
+          onClose={() => setShowBanMuteModal(false)}
+          serverId={serverId}
+          getToken={getToken}
+          showToast={showToast}
         />
       )}
     </div>

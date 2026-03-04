@@ -402,6 +402,90 @@ export async function muteUser(token, serverId, userId, reason, expiresIn) {
 }
 
 /**
+ * Unban a user from a guild. Requires admin role.
+ * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
+ * @param {string} userId - Target user UUID
+ * @param {string} reason - Required reason string
+ * @returns {Promise<void>}
+ */
+export async function unbanUser(token, serverId, userId, reason) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/moderation/unban`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, reason }),
+    },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `unban failed ${res.status}`);
+  }
+}
+
+/**
+ * Unmute a user in a guild. Requires mod+ role.
+ * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
+ * @param {string} userId - Target user UUID
+ * @param {string} reason - Required reason string
+ * @returns {Promise<void>}
+ */
+export async function unmuteUser(token, serverId, userId, reason) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/moderation/unmute`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, reason }),
+    },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `unmute failed ${res.status}`);
+  }
+}
+
+/**
+ * List active bans for a guild. Requires admin role.
+ * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
+ * @returns {Promise<Array<{ id: string, userId: string, actorId: string, reason: string, createdAt: string, expiresAt?: string }>>}
+ */
+export async function listBans(token, serverId) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/moderation/bans`,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `list bans failed ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * List active mutes for a guild. Requires admin role.
+ * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
+ * @returns {Promise<Array<{ id: string, userId: string, actorId: string, reason: string, createdAt: string, expiresAt?: string }>>}
+ */
+export async function listMutes(token, serverId) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/moderation/mutes`,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `list mutes failed ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
  * Change a user's role in a guild.
  * @param {string} token - JWT
  * @param {string} serverId - Guild UUID
