@@ -377,11 +377,14 @@ export default function ServerLayout() {
     const handler = (data) => {
       const reason = data.reason || 'You have been banned';
       showToast({ message: `Account suspended: ${reason}`, variant: 'error' });
-      setTimeout(() => logout(), 2000);
+      setTimeout(() => {
+        logout();
+        navigate('/', { replace: true });
+      }, 2000);
     };
     wsClient.on('instance_banned', handler);
     return () => wsClient.off('instance_banned', handler);
-  }, [wsClient, logout, showToast]);
+  }, [wsClient, logout, showToast, navigate]);
 
   // member_muted: disconnect from voice if in a call; show toast to muted user (guild-scoped)
   useEffect(() => {
