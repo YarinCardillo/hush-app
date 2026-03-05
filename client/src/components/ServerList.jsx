@@ -158,6 +158,7 @@ export default function ServerList({
   onGuildCreated,
   instanceData,
   userRole = 'member',
+  compact = false,
 }) {
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -171,7 +172,7 @@ export default function ServerList({
   }, [onGuildCreated]);
 
   return (
-    <div style={styles.strip}>
+    <div style={{ ...styles.strip, ...(compact ? { width: 56, minWidth: 56 } : {}) }}>
       {guilds.map((guild) => {
         const isActive = guild.id === activeGuild?.id;
         const bg = guildColor(guild.id);

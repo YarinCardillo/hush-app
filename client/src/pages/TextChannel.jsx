@@ -68,6 +68,7 @@ export default function TextChannel({
   members = [],
   showMembers = false,
   onToggleMembers,
+  onToggleDrawer,
   sidebarSlot = null,
 }) {
   const { user } = useAuth();
@@ -79,7 +80,27 @@ export default function TextChannel({
   return (
     <div style={styles.root}>
       <header style={styles.header}>
-        <span style={styles.channelName}>#{channel.name}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+          {onToggleDrawer && (
+            <button
+              type="button"
+              onClick={onToggleDrawer}
+              style={{
+                width: 44, height: 44,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'none', border: 'none',
+                color: 'var(--hush-text-secondary)', cursor: 'pointer',
+                padding: 0, flexShrink: 0,
+              }}
+              aria-label="Toggle channels"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+          )}
+          <span style={styles.channelName}>#{channel.name}</span>
+        </div>
         {onToggleMembers && (
           <button
             type="button"

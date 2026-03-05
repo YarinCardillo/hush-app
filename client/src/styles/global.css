@@ -754,6 +754,33 @@ a[href]:active {
   pointer-events: none;
 }
 
+/* ── Left drawer panel (mobile channel navigation) ─────── */
+
+.sidebar-panel-left {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: calc(56px + 260px);
+  max-width: 85vw;
+  z-index: 50;
+  background: var(--hush-surface);
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+  transform: translateX(-100%);
+  transition: transform 400ms var(--ease-out);
+}
+
+.sidebar-panel-left.sidebar-panel-open {
+  transform: translateX(0);
+}
+
+.sidebar-panel-left:not(.sidebar-panel-open) {
+  pointer-events: none;
+}
+
 .member-list-row:hover {
   background: var(--hush-hover);
 }

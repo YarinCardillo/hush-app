@@ -94,6 +94,19 @@ const layoutStyles = {
     cursor: 'pointer',
     flexShrink: 0,
   },
+  hamburgerBtn: {
+    width: 44,
+    height: 44,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'none',
+    border: 'none',
+    color: 'var(--hush-text-secondary)',
+    cursor: 'pointer',
+    padding: 0,
+    flexShrink: 0,
+  },
 };
 
 function getToken() {
@@ -141,6 +154,9 @@ export default function ServerLayout() {
 
   const currentUserId = user?.id ?? '';
   const isMobile = breakpoint === 'mobile';
+  const [showDrawer, setShowDrawer] = useState(false);
+  const closeDrawer = useCallback(() => setShowDrawer(false), []);
+  const toggleDrawer = useCallback(() => setShowDrawer(p => !p), []);
   const { toasts, show: showToast } = useToast();
 
   const isViewingVoice = activeVoiceChannel != null && channelId === activeVoiceChannel.id;
@@ -159,6 +175,11 @@ export default function ServerLayout() {
   useEffect(() => {
     if (!isViewingVoice) setOrbPhase('idle');
   }, [isViewingVoice]);
+
+  // Close mobile drawer when navigating to a channel
+  useEffect(() => {
+    if (isMobile) setShowDrawer(false);
+  }, [channelId, isMobile]);
 
   useEffect(() => {
     leavingVoiceRef.current = false;
@@ -478,6 +499,7 @@ export default function ServerLayout() {
 
   /** Called by ServerList when user selects a different guild. */
   const handleGuildSelect = useCallback((guild) => {
+    setShowDrawer(false);
     navigate(`/servers/${guild.id}/channels`);
   }, [navigate]);
 
@@ -569,44 +591,71 @@ export default function ServerLayout() {
     );
   }
 
+  const serverListEl = (
+    <ServerList
+      getToken={getToken}
+      guilds={guilds}
+      activeGuild={activeGuild}
+      onGuildSelect={handleGuildSelect}
+      onGuildCreated={handleGuildCreated}
+      instanceData={instanceData}
+      userRole={myRole}
+      compact={isMobile}
+    />
+  );
+
+  const channelListEl = (
+    <ChannelList
+      getToken={getToken}
+      serverId={serverId}
+      guildName={activeGuild?.name}
+      instanceData={instanceData}
+      channels={channels}
+      myRole={myRole}
+      activeChannelId={channelId}
+      onChannelSelect={handleChannelSelect}
+      onChannelsUpdated={handleChannelsUpdated}
+      voiceParticipants={voiceParticipants}
+      showToast={showToast}
+      members={members}
+    />
+  );
+
   return (
     <div style={layoutStyles.root}>
-      <ServerList
-        getToken={getToken}
-        guilds={guilds}
-        activeGuild={activeGuild}
-        onGuildSelect={handleGuildSelect}
-        onGuildCreated={handleGuildCreated}
-        instanceData={instanceData}
-        userRole={myRole}
-      />
-      <>
-        <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
-          <ChannelList
-            getToken={getToken}
-            serverId={serverId}
-            guildName={activeGuild?.name}
-            instanceData={instanceData}
-            channels={channels}
-            myRole={myRole}
-            activeChannelId={channelId}
-            onChannelSelect={handleChannelSelect}
-            onChannelsUpdated={handleChannelsUpdated}
-            voiceParticipants={voiceParticipants}
-            showToast={showToast}
-            members={members}
+      {/* ── Left navigation: in-flow on desktop, drawer on mobile ── */}
+      {!isMobile && (
+        <>
+          {serverListEl}
+          <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
+            {channelListEl}
+          </div>
+          <div
+            style={layoutStyles.resizeHandle}
+            onMouseDown={handleSidebarResize}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-border)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize channel list"
           />
-        </div>
-        <div
-          style={layoutStyles.resizeHandle}
-          onMouseDown={handleSidebarResize}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-border)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize channel list"
-        />
-      </>
+        </>
+      )}
+      {isMobile && (
+        <>
+          <div
+            className={`sidebar-overlay ${showDrawer ? 'sidebar-overlay-open' : ''}`}
+            onClick={closeDrawer}
+            aria-hidden={!showDrawer}
+          />
+          <div className={`sidebar-panel-left ${showDrawer ? 'sidebar-panel-open' : ''}`}>
+            {serverListEl}
+            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+              {channelListEl}
+            </div>
+          </div>
+        </>
+      )}
       <div style={layoutStyles.main}>
         <div style={layoutStyles.contentRow}>
           <div style={layoutStyles.channelArea}>
@@ -649,6 +698,7 @@ export default function ServerLayout() {
                   members={members}
                   showMembers={showMembers}
                   onToggleMembers={() => togglePanel('members')}
+                  onToggleDrawer={isMobile ? toggleDrawer : undefined}
                   sidebarSlot={!isMobile ? (
                     <div className={`sidebar-desktop ${showMembers ? 'sidebar-desktop-open' : ''}`}>
                       <div className="sidebar-desktop-inner">
@@ -671,7 +721,15 @@ export default function ServerLayout() {
                 <>
                   {!currentChannel && (
                     <header style={layoutStyles.channelAreaHeader}>
-                      <div />
+                      {isMobile ? (
+                        <button type="button" onClick={toggleDrawer} style={layoutStyles.hamburgerBtn} aria-label="Toggle channels">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+                          </svg>
+                        </button>
+                      ) : (
+                        <div />
+                      )}
                       <button
                         type="button"
                         style={layoutStyles.membersToggle}

@@ -212,7 +212,7 @@ const styles = {
     fontFamily: "'Cormorant Garamond', Georgia, serif",
     fontStyle: 'italic',
     fontWeight: 400,
-    fontSize: '8rem',
+    fontSize: 'clamp(4rem, 15vw, 8rem)',
     letterSpacing: '0.06em',
     color: 'var(--hush-text)',
     textTransform: 'lowercase',
@@ -240,6 +240,8 @@ const styles = {
     color: 'var(--hush-text-secondary)',
     fontSize: '0.9rem',
     fontWeight: 400,
+    textAlign: 'center',
+    lineHeight: 1.4,
   },
   e2eeBadge: {
     display: 'inline-flex',
