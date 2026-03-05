@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DndContext,
   PointerSensor,
@@ -285,7 +286,7 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
     }
   };
 
-  return (
+  return createPortal(
     <div
       className={`modal-backdrop ${isOpen ? 'modal-backdrop-open' : ''}`}
       onClick={onClose}
@@ -347,7 +348,8 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -395,7 +397,7 @@ function CreateCategoryModal({ getToken, serverId, onClose, onCreated }) {
     }
   };
 
-  return (
+  return createPortal(
     <div
       className={`modal-backdrop ${isOpen ? 'modal-backdrop-open' : ''}`}
       onClick={onClose}
@@ -431,7 +433,8 @@ function CreateCategoryModal({ getToken, serverId, onClose, onCreated }) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -480,7 +483,7 @@ function InviteModal({ getToken, serverId, onClose }) {
     } catch { /* clipboard may not be available */ }
   };
 
-  return (
+  return createPortal(
     <div className={`modal-backdrop ${isOpen ? 'modal-backdrop-open' : ''}`} onClick={onClose}>
       <div className={`modal-content ${isOpen ? 'modal-content-open' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div style={modalStyles.title}>Invite people</div>
@@ -513,7 +516,8 @@ function InviteModal({ getToken, serverId, onClose }) {
           <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

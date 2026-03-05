@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { createGuild } from '../lib/api';
 import modalStyles from './modalStyles';
 
@@ -55,7 +56,7 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
     }
   };
 
-  return (
+  return createPortal(
     <div
       className={`modal-backdrop ${isOpen ? 'modal-backdrop-open' : ''}`}
       onClick={onClose}
@@ -92,6 +93,7 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

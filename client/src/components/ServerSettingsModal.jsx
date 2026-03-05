@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { updateInstance, getGuildMembers } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -397,7 +398,7 @@ export default function ServerSettingsModal({
     { key: TAB_MEMBERS, label: 'Members' },
   ];
 
-  return (
+  return createPortal(
     <div
       style={{
         ...styles.overlay,
@@ -482,6 +483,7 @@ export default function ServerSettingsModal({
       >
         ✕
       </button>
-    </div>
+    </div>,
+    document.body,
   );
 }

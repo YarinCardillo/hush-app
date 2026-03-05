@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import modalStyles from './modalStyles';
 
 /**
@@ -22,7 +23,7 @@ export default function ConfirmModal({ title, message, confirmLabel = 'Confirm',
     return () => document.removeEventListener('keydown', handleKey);
   }, [onConfirm, onCancel]);
 
-  return (
+  return createPortal(
     <div
       className={`modal-backdrop ${isOpen ? 'modal-backdrop-open' : ''}`}
       onClick={onCancel}
@@ -46,6 +47,7 @@ export default function ConfirmModal({ title, message, confirmLabel = 'Confirm',
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

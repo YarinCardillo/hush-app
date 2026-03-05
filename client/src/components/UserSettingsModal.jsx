@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useDevices } from '../hooks/useDevices';
@@ -1058,7 +1059,7 @@ export default function UserSettingsModal({ onClose }) {
 
   const allMobileTabs = [...baseTabs, ...adminTabs];
 
-  return (
+  return createPortal(
     <div
       style={{
         ...styles.overlay,
@@ -1169,7 +1170,8 @@ export default function UserSettingsModal({ onClose }) {
       >
         &#x2715;
       </button>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
