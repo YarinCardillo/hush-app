@@ -555,6 +555,86 @@ export async function getAuditLog(token, serverId, opts = {}) {
   return res.json();
 }
 
+// ── Instance Admin ────────────────────────────────────────
+
+/**
+ * Search instance users by username prefix (admin+).
+ * @param {string} token - JWT
+ * @param {string} query - Username prefix to search
+ * @returns {Promise<Array<{ id: string, username: string, displayName: string, role: string, createdAt: string, isBanned: boolean, banReason?: string, banExpiresAt?: string }>>}
+ */
+export async function searchInstanceUsers(token, query) {
+  const res = await fetchWithAuth(token, `/api/instance/users?q=${encodeURIComponent(query)}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Search failed');
+  return res.json();
+}
+
+/**
+ * Ban a user at the instance level (admin+).
+ * @param {string} token - JWT
+ * @param {string} userId - Target user UUID
+ * @param {string} reason - Ban reason (required)
+ * @param {number|null} [expiresIn] - Duration in seconds; null = permanent
+ * @returns {Promise<void>}
+ */
+export async function instanceBanUser(token, userId, reason, expiresIn) {
+  const res = await fetchWithAuth(token, '/api/instance/bans', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, reason, expiresIn: expiresIn ?? null }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Ban failed');
+}
+
+/**
+ * Unban a user at the instance level (admin+).
+ * @param {string} token - JWT
+ * @param {string} userId - Target user UUID
+ * @param {string} reason - Unban reason (required)
+ * @returns {Promise<void>}
+ */
+export async function instanceUnbanUser(token, userId, reason) {
+  const res = await fetchWithAuth(token, '/api/instance/unban', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, reason }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Unban failed');
+}
+
+/**
+ * Fetch instance-level audit log entries (owner only).
+ * @param {string} token - JWT
+ * @param {{ limit?: number, offset?: number, action?: string, targetId?: string }} [opts]
+ * @returns {Promise<Array<{ id: string, actorId: string, targetId?: string, action: string, reason: string, metadata?: object, createdAt: string }>>}
+ */
+export async function getInstanceAuditLog(token, opts = {}) {
+  const params = new URLSearchParams();
+  if (opts.limit != null) params.set('limit', String(opts.limit));
+  if (opts.offset != null) params.set('offset', String(opts.offset));
+  if (opts.action) params.set('action', opts.action);
+  if (opts.targetId) params.set('target_id', opts.targetId);
+  const qs = params.toString();
+  const res = await fetchWithAuth(token, `/api/instance/audit-log${qs ? '?' + qs : ''}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load audit log');
+  return res.json();
+}
+
+/**
+ * Update instance configuration (owner only).
+ * @param {string} token - JWT
+ * @param {{ registrationMode?: string, serverCreationPolicy?: string }} updates
+ * @returns {Promise<void>}
+ */
+export async function updateInstanceConfig(token, updates) {
+  const res = await fetchWithAuth(token, '/api/instance', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Config update failed');
+}
+
 // ── Call after Go backend register/login ──────────────────────────────────────
 
 /**
