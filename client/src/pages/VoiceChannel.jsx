@@ -260,6 +260,15 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     requestPermission,
   } = useDevices();
 
+  // Auto-leave and show toast when muted from voice join
+  useEffect(() => {
+    if (!error) return;
+    if (error.toLowerCase().includes('muted')) {
+      showToast?.({ message: error, variant: 'error' });
+      onLeave?.();
+    }
+  }, [error, showToast, onLeave]);
+
   useEffect(() => {
     if (!wsClient || !channel?.id) return;
     connectRoomRef.current(roomName, displayName, channel.id).catch(() => {

@@ -203,6 +203,9 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
           if (response.status === 401) {
             throw new Error('Session invalid. Please sign in again.');
           }
+          if (response.status === 403 && errorData.code === 'muted') {
+            throw new Error(msg);
+          }
           throw new Error(msg);
         }
 

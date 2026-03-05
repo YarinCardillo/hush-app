@@ -342,6 +342,22 @@ export default function ServerLayout() {
     return () => wsClient.off('member_banned', handler);
   }, [wsClient, currentUserId, serverId, navigate, guilds, activeGuild, showToast]);
 
+  // member_muted: disconnect from voice if in a call; show toast to muted user (guild-scoped)
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      if (data.server_id !== serverId) return;
+      if (data.user_id === currentUserId) {
+        if (activeVoiceChannel) {
+          handleVoiceLeave();
+        }
+        showToast({ message: 'You are muted in this server and cannot join voice channels.', variant: 'error' });
+      }
+    };
+    wsClient.on('member_muted', handler);
+    return () => wsClient.off('member_muted', handler);
+  }, [wsClient, serverId, currentUserId, activeVoiceChannel, handleVoiceLeave, showToast]);
+
   // member_joined: append new member to the list (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
