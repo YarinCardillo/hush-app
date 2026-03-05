@@ -9,9 +9,15 @@ import { useState, useCallback } from 'react';
 export function useToast() {
   const [toasts, setToasts] = useState([]);
 
-  const show = useCallback((message, type = 'info') => {
+  const show = useCallback((messageOrObj, type = 'info') => {
     const id = Date.now();
-    setToasts((prev) => [...prev, { id, message, type }]);
+    const message = typeof messageOrObj === 'object' && messageOrObj !== null
+      ? messageOrObj.message
+      : messageOrObj;
+    const resolvedType = typeof messageOrObj === 'object' && messageOrObj !== null
+      ? (messageOrObj.variant || messageOrObj.type || type)
+      : type;
+    setToasts((prev) => [...prev, { id, message, type: resolvedType }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3000);

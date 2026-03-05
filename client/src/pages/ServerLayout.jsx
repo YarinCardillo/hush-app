@@ -292,6 +292,14 @@ export default function ServerLayout() {
     return () => wsClient.off('instance_updated', handler);
   }, [wsClient]);
 
+  const handleVoiceLeave = useCallback(() => {
+    leavingVoiceRef.current = true;
+    setOrbPhase('idle');
+    setActiveVoiceChannel(null);
+    activeVoiceMemberIdsRef.current = [];
+    navigate(`/servers/${serverId}/channels`);
+  }, [navigate, serverId]);
+
   // member_kicked: remove from list; toast + navigate self if kicked (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
@@ -524,14 +532,6 @@ export default function ServerLayout() {
   const handleChannelsUpdated = useCallback((updatedChannels) => {
     setChannels(Array.isArray(updatedChannels) ? updatedChannels : []);
   }, []);
-
-  const handleVoiceLeave = useCallback(() => {
-    leavingVoiceRef.current = true;
-    setOrbPhase('idle');
-    setActiveVoiceChannel(null);
-    activeVoiceMemberIdsRef.current = [];
-    navigate(`/servers/${serverId}/channels`);
-  }, [navigate, serverId]);
 
   // Derive myRole from activeGuild or guild membership in members list
   const myRole = activeGuild?.myRole
