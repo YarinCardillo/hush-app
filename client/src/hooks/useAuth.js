@@ -191,8 +191,8 @@ export function useAuth() {
         const res = await fetchWithAuth(stored, '/api/auth/me');
         if (!res.ok) {
           clearSession();
-          setToken(null);
-          setUser(null);
+          window.location.href = '/';
+          return;
         }
       } catch {
         // network error — don't log out, might be offline
