@@ -181,6 +181,27 @@ export function useAuth() {
     return () => { cancelled = true; };
   }, []);
 
+  // Re-verify session when tab regains focus (catches bans applied while tab was hidden)
+  useEffect(() => {
+    const onVisible = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const stored = sessionStorage.getItem(JWT_KEY);
+      if (!stored) return;
+      try {
+        const res = await fetchWithAuth(stored, '/api/auth/me');
+        if (!res.ok) {
+          clearSession();
+          setToken(null);
+          setUser(null);
+        }
+      } catch {
+        // network error — don't log out, might be offline
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+
   return {
     user,
     token,
