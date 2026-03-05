@@ -594,6 +594,7 @@ export default function ServerLayout() {
             onChannelsUpdated={handleChannelsUpdated}
             voiceParticipants={voiceParticipants}
             showToast={showToast}
+            members={members}
           />
         </div>
         <div
