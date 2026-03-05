@@ -529,6 +529,32 @@ export async function deleteMessage(token, serverId, messageId) {
   }
 }
 
+/**
+ * Fetch guild audit log entries with optional filters.
+ * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
+ * @param {{ limit?: number, offset?: number, action?: string, actorId?: string, targetId?: string }} [opts]
+ * @returns {Promise<Array<{ id: string, actorId: string, targetId?: string, action: string, reason: string, metadata?: object, createdAt: string }>>}
+ */
+export async function getAuditLog(token, serverId, opts = {}) {
+  const params = new URLSearchParams();
+  if (opts.limit != null) params.set('limit', String(opts.limit));
+  if (opts.offset != null) params.set('offset', String(opts.offset));
+  if (opts.action) params.set('action', opts.action);
+  if (opts.actorId) params.set('actor_id', opts.actorId);
+  if (opts.targetId) params.set('target_id', opts.targetId);
+  const qs = params.toString();
+  const res = await fetchWithAuth(
+    token,
+    `/api/servers/${encodeURIComponent(serverId)}/moderation/audit-log${qs ? '?' + qs : ''}`,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to load audit log');
+  }
+  return res.json();
+}
+
 // ── Call after Go backend register/login ──────────────────────────────────────
 
 /**
