@@ -371,6 +371,18 @@ export default function ServerLayout() {
     return () => wsClient.off('member_banned', handler);
   }, [wsClient, currentUserId, serverId, navigate, guilds, activeGuild, showToast]);
 
+  // instance_banned: force logout + redirect to login
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      const reason = data.reason || 'You have been banned';
+      showToast({ message: `Account suspended: ${reason}`, variant: 'error' });
+      setTimeout(() => logout(), 2000);
+    };
+    wsClient.on('instance_banned', handler);
+    return () => wsClient.off('instance_banned', handler);
+  }, [wsClient, logout, showToast]);
+
   // member_muted: disconnect from voice if in a call; show toast to muted user (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
