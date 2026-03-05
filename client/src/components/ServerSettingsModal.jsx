@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { updateInstance, getGuildMembers } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 
 const TAB_OVERVIEW = 'overview';
 const TAB_MEMBERS = 'members';
@@ -373,6 +374,8 @@ export default function ServerSettingsModal({
 }) {
   const [tab, setTab] = useState(TAB_OVERVIEW);
   const [isOpen, setIsOpen] = useState(false);
+  const breakpoint = useBreakpoint();
+  const isMobile = breakpoint === 'mobile';
 
   useEffect(() => {
     const t = requestAnimationFrame(() => setIsOpen(true));
@@ -389,34 +392,73 @@ export default function ServerSettingsModal({
     if (e.target === e.currentTarget) onClose();
   }, [onClose]);
 
+  const tabs = [
+    ...(isAdmin ? [{ key: TAB_OVERVIEW, label: 'Overview' }] : []),
+    { key: TAB_MEMBERS, label: 'Members' },
+  ];
+
   return (
     <div
-      style={{ ...styles.overlay, ...(isOpen ? { opacity: 1 } : {}) }}
+      style={{
+        ...styles.overlay,
+        ...(isOpen ? { opacity: 1 } : {}),
+        ...(isMobile ? { flexDirection: 'column' } : {}),
+      }}
       onClick={handleOverlayClick}
     >
-      <div style={styles.sidebar}>
-        <div style={styles.sidebarGroup}>
-          <div style={styles.sidebarGroupLabel}>{instanceName ?? 'instance'}</div>
-          {isAdmin && (
+      {isMobile ? (
+        <div style={{
+          display: 'flex',
+          gap: '2px',
+          background: 'var(--hush-surface)',
+          padding: '8px 8px 0',
+          flexShrink: 0,
+          borderBottom: '1px solid var(--hush-border)',
+        }}>
+          {tabs.map((t) => (
             <button
+              key={t.key}
               type="button"
-              style={styles.sidebarItem(tab === TAB_OVERVIEW)}
-              onClick={() => setTab(TAB_OVERVIEW)}
+              style={{
+                flex: 1,
+                padding: '8px 4px',
+                fontSize: '0.78rem',
+                fontFamily: 'var(--font-sans)',
+                fontWeight: tab === t.key ? 600 : 400,
+                color: tab === t.key ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
+                background: tab === t.key ? 'var(--hush-elevated)' : 'none',
+                border: 'none',
+                borderBottom: tab === t.key ? '2px solid var(--hush-amber)' : '2px solid transparent',
+                cursor: 'pointer',
+              }}
+              onClick={() => setTab(t.key)}
             >
-              Overview
+              {t.label}
             </button>
-          )}
-          <button
-            type="button"
-            style={styles.sidebarItem(tab === TAB_MEMBERS)}
-            onClick={() => setTab(TAB_MEMBERS)}
-          >
-            Members
-          </button>
+          ))}
         </div>
-      </div>
+      ) : (
+        <div style={styles.sidebar}>
+          <div style={styles.sidebarGroup}>
+            <div style={styles.sidebarGroupLabel}>{instanceName ?? 'instance'}</div>
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                style={styles.sidebarItem(tab === t.key)}
+                onClick={() => setTab(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
-      <div style={styles.content}>
+      <div style={{
+        ...styles.content,
+        ...(isMobile ? { padding: '20px 16px', maxWidth: 'none' } : {}),
+      }}>
         {tab === TAB_OVERVIEW && isAdmin && (
           <OverviewTab
             getToken={getToken}

@@ -31,9 +31,9 @@ const overlayStyle = {
 const panelStyle = {
   background: 'var(--hush-elevated)',
   borderRadius: '8px',
-  padding: '24px',
+  padding: 'clamp(14px, 3vw, 24px)',
   width: '680px',
-  maxWidth: '92vw',
+  maxWidth: '95vw',
   maxHeight: '82vh',
   display: 'flex',
   flexDirection: 'column',
@@ -78,12 +78,12 @@ const selectStyle = {
   borderRadius: '4px',
   color: 'var(--hush-text)',
   cursor: 'pointer',
-  minWidth: '140px',
+  minWidth: '0',
 };
 
 const inputStyle = {
   flex: 1,
-  minWidth: '160px',
+  minWidth: '0',
   padding: '6px 10px',
   fontSize: '0.82rem',
   background: 'var(--hush-black)',
@@ -95,11 +95,14 @@ const inputStyle = {
 
 const tableWrapStyle = {
   overflowY: 'auto',
+  overflowX: 'auto',
   flex: 1,
+  WebkitOverflowScrolling: 'touch',
 };
 
 const tableStyle = {
   width: '100%',
+  minWidth: '560px',
   borderCollapse: 'collapse',
   fontSize: '0.8rem',
 };

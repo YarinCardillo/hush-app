@@ -15,9 +15,9 @@ const overlayStyle = {
 const panelStyle = {
   background: 'var(--hush-elevated)',
   borderRadius: '8px',
-  padding: '24px',
+  padding: 'clamp(14px, 3vw, 24px)',
   width: '540px',
-  maxWidth: '90vw',
+  maxWidth: '92vw',
   maxHeight: '80vh',
   display: 'flex',
   flexDirection: 'column',

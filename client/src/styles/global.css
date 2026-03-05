@@ -840,9 +840,9 @@ a[href]:active {
   background: var(--hush-surface);
   border: 1px solid transparent;
   border-radius: var(--radius-xl);
-  padding: 28px;
+  padding: clamp(16px, 4vw, 28px);
   width: 380px;
-  max-width: 90vw;
+  max-width: 92vw;
   max-height: 70vh;
   display: flex;
   flex-direction: column;
