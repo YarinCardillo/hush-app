@@ -123,6 +123,11 @@ export default function ServerLayout() {
   const splat = params['*'] ?? '';
   const channelId = splat.startsWith('channels/') ? splat.slice('channels/'.length) : undefined;
   const navigate = useNavigate();
+  // Stable ref for navigate — useNavigate() returns a new identity on every
+  // navigation in React Router v6, which would cause useEffects that list it
+  // as a dependency to re-fire on every route change.
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
   const { token: authToken, user, logout } = useAuth();
   const breakpoint = useBreakpoint();
   const [instanceData, setInstanceData] = useState(null);
@@ -278,12 +283,12 @@ export default function ServerLayout() {
         return prev;
       });
       if (channelId === data.channel_id) {
-        navigate(`/servers/${serverId}/channels`, { replace: true });
+        navigateRef.current(`/servers/${serverId}/channels`, { replace: true });
       }
     };
     wsClient.on('channel_deleted', handler);
     return () => wsClient.off('channel_deleted', handler);
-  }, [wsClient, channelId, serverId, navigate]);
+  }, [wsClient, channelId, serverId]);
 
   // channel_moved: refetch channel list for correct ordering (guild-scoped)
   useEffect(() => {
@@ -319,8 +324,8 @@ export default function ServerLayout() {
     setOrbPhase('idle');
     setActiveVoiceChannel(null);
     activeVoiceMemberIdsRef.current = [];
-    navigate(`/servers/${serverId}/channels`);
-  }, [navigate, serverId]);
+    navigateRef.current(`/servers/${serverId}/channels`);
+  }, [serverId]);
 
   // member_kicked: remove from list; toast + navigate self if kicked (guild-scoped)
   useEffect(() => {
@@ -335,9 +340,9 @@ export default function ServerLayout() {
         setTimeout(() => {
           const nextGuild = guilds.find((g) => g.id !== serverId);
           if (nextGuild) {
-            navigate(`/servers/${nextGuild.id}/channels`);
+            navigateRef.current(`/servers/${nextGuild.id}/channels`);
           } else {
-            navigate('/guilds');
+            navigateRef.current('/guilds');
           }
         }, 2500);
         return;
@@ -346,7 +351,7 @@ export default function ServerLayout() {
     };
     wsClient.on('member_kicked', handler);
     return () => wsClient.off('member_kicked', handler);
-  }, [wsClient, currentUserId, serverId, navigate, guilds, activeGuild, showToast]);
+  }, [wsClient, currentUserId, serverId, guilds, activeGuild, showToast]);
 
   // member_banned: remove from list; toast + navigate self if banned (guild-scoped)
   useEffect(() => {
@@ -361,9 +366,9 @@ export default function ServerLayout() {
         setTimeout(() => {
           const nextGuild = guilds.find((g) => g.id !== serverId);
           if (nextGuild) {
-            navigate(`/servers/${nextGuild.id}/channels`);
+            navigateRef.current(`/servers/${nextGuild.id}/channels`);
           } else {
-            navigate('/guilds');
+            navigateRef.current('/guilds');
           }
         }, 2500);
         return;
@@ -372,7 +377,7 @@ export default function ServerLayout() {
     };
     wsClient.on('member_banned', handler);
     return () => wsClient.off('member_banned', handler);
-  }, [wsClient, currentUserId, serverId, navigate, guilds, activeGuild, showToast]);
+  }, [wsClient, currentUserId, serverId, guilds, activeGuild, showToast]);
 
   // instance_banned: clear session + hard reload to login
   useEffect(() => {
@@ -504,14 +509,14 @@ export default function ServerLayout() {
         if (err?.status === 403) {
           showToast({ message: 'You no longer have access to this server', variant: 'error' });
           setGuilds((prev) => prev.filter((g) => g.id !== serverId));
-          navigate('/guilds', { replace: true });
+          navigateRef.current('/guilds', { replace: true });
           return;
         }
         setChannels([]);
         setMembers([]);
       })
       .finally(() => setLoading(false));
-  }, [authToken, serverId, showToast, navigate]);
+  }, [authToken, serverId, showToast]);
 
   /** Refresh member list after a mod action completes. */
   const handleMemberUpdate = useCallback(() => {
@@ -524,8 +529,8 @@ export default function ServerLayout() {
   /** Called by ServerList when user selects a different guild. */
   const handleGuildSelect = useCallback((guild) => {
     setShowDrawer(false);
-    navigate(`/servers/${guild.id}/channels`);
-  }, [navigate]);
+    navigateRef.current(`/servers/${guild.id}/channels`);
+  }, []);
 
   /** Called by GuildCreateModal on success — refetch guilds and navigate to new guild. */
   const handleGuildCreated = useCallback((newGuild) => {
@@ -536,9 +541,9 @@ export default function ServerLayout() {
       }).catch(() => {});
     }
     if (newGuild?.id) {
-      navigate(`/servers/${newGuild.id}/channels`);
+      navigateRef.current(`/servers/${newGuild.id}/channels`);
     }
-  }, [navigate]);
+  }, []);
 
   const currentChannel = channels.find((c) => c.id === channelId);
 
@@ -557,7 +562,10 @@ export default function ServerLayout() {
       setPendingVoiceSwitch(channel);
       return;
     }
-    navigate(`/servers/${serverId}/channels/${channel.id}`);
+    // Close mobile drawer synchronously with navigation to avoid a flash
+    // where the old drawer lingers for one frame over the new content.
+    if (isMobile) setShowDrawer(false);
+    navigateRef.current(`/servers/${serverId}/channels/${channel.id}`);
     if (channel.type === 'voice') {
       activeVoiceMemberIdsRef.current = memberIds;
       setVoiceMountKey((k) => k + 1);
@@ -569,11 +577,11 @@ export default function ServerLayout() {
     const channel = pendingVoiceSwitch;
     setPendingVoiceSwitch(null);
     if (!channel) return;
-    navigate(`/servers/${serverId}/channels/${channel.id}`);
+    navigateRef.current(`/servers/${serverId}/channels/${channel.id}`);
     activeVoiceMemberIdsRef.current = memberIds;
     setVoiceMountKey((k) => k + 1);
     setActiveVoiceChannel(channel);
-  }, [pendingVoiceSwitch, memberIds, serverId, navigate]);
+  }, [pendingVoiceSwitch, memberIds, serverId]);
 
   const handleChannelsUpdated = useCallback((updatedChannels) => {
     setChannels(Array.isArray(updatedChannels) ? updatedChannels : []);

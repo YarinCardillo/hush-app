@@ -573,7 +573,13 @@ export default function Chat({
               {loadMoreLoading ? 'Loading…' : 'Scroll up for older messages'}
             </div>
           )}
-          {isChannelTransitioning ? null : !isInitialLoading && !hasMessages ? (
+          {isChannelTransitioning || isInitialLoading ? (
+            <div style={styles.empty}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)' }}>
+                Loading…
+              </div>
+            </div>
+          ) : !hasMessages ? (
             <div style={styles.empty}>
               <div style={styles.emptyIcon}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
