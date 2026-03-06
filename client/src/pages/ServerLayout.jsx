@@ -713,7 +713,6 @@ export default function ServerLayout() {
                 <div style={{ ...layoutStyles.placeholder, position: 'relative', zIndex: 1 }}>Loading…</div>
               ) : currentChannel?.type === 'system' ? (
                 <SystemChannel
-                  key={currentChannel.id}
                   channel={currentChannel}
                   serverId={serverId}
                   getToken={getToken}
@@ -723,7 +722,6 @@ export default function ServerLayout() {
                 />
               ) : currentChannel?.type === 'text' ? (
                 <TextChannel
-                  key={currentChannel.id}
                   channel={currentChannel}
                   serverId={serverId}
                   getToken={getToken}

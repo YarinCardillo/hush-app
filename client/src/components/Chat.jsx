@@ -283,10 +283,8 @@ export default function Chat({
   const displayNameMap = useMemo(() => {
     const map = new Map();
     for (const m of members) {
-      if (m.userId && m.displayName) map.set(m.userId, m.displayName);
-    }
-    if (map.size === 0 && members.length > 0) {
-      console.warn('[chat] displayNameMap empty despite', members.length, 'members — check member shape:', members[0]);
+      const uid = m.userId ?? m.id;
+      if (uid && m.displayName) map.set(uid, m.displayName);
     }
     return map;
   }, [members]);
@@ -314,6 +312,11 @@ export default function Chat({
 
     setIsInitialLoading(true);
     setMessages([]);
+    setInputText('');
+    setHasMoreOlder(true);
+    knownMessageIdsRef.current = new Set();
+    lastSentTempIdRef.current = null;
+    scrollRestoreRef.current = null;
 
     const loadHistory = async () => {
       try {
@@ -407,18 +410,17 @@ export default function Chat({
 
       // Self-echo: server confirmed our message was persisted.
       // The ciphertext was encrypted for the recipient, so we can't decrypt it.
-      // Match the oldest pending optimistic message and confirm it; cache plaintext for re-entry.
+      // Read plaintext from the synchronous _pendingSends map (not React state)
+      // so the cache write doesn't depend on React 18's deferred updater execution.
       if (senderId === currentUserId) {
-        let cachedContent = null;
+        const pendingContent = consumePendingSend(data.channel_id, currentUserId, ts);
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.pending && m.sender === currentUserId);
           if (idx < 0) return prev;
-          cachedContent = prev[idx].content ?? '';
           return prev.map((m, i) => (i === idx ? { ...m, id, pending: false, failed: false, timestamp: ts } : m));
         });
-        if (cachedContent !== null) {
-          setCachedMessageRef.current?.(id, { content: cachedContent, senderId: currentUserId, timestamp: ts });
-          consumePendingSend(data.channel_id, currentUserId, ts);
+        if (pendingContent !== null) {
+          setCachedMessageRef.current?.(id, { content: pendingContent, senderId: currentUserId, timestamp: ts });
         }
         return;
       }
