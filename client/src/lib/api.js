@@ -189,7 +189,9 @@ export async function getGuildChannels(token, serverId) {
   const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/channels`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `get channels ${res.status}`);
+    const e = new Error(err.error || `get channels ${res.status}`);
+    e.status = res.status;
+    throw e;
   }
   return res.json();
 }
@@ -267,7 +269,9 @@ export async function getGuildMembers(token, serverId) {
   const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/members`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `get members ${res.status}`);
+    const e = new Error(err.error || `get members ${res.status}`);
+    e.status = res.status;
+    throw e;
   }
   return res.json();
 }
@@ -552,6 +556,26 @@ export async function getAuditLog(token, serverId, opts = {}) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'Failed to load audit log');
   }
+  return res.json();
+}
+
+// ── System Messages ───────────────────────────────────────────────────────────
+
+/**
+ * Fetch paginated system messages for a guild.
+ * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
+ * @param {{ before?: string, limit?: number }} [opts] - before: RFC3339 cursor; limit: default 50
+ * @returns {Promise<Array<{ id: string, serverId: string, eventType: string, actorId: string, targetId?: string, reason?: string, metadata?: object, createdAt: string }>>}
+ */
+export async function getSystemMessages(token, serverId, opts = {}) {
+  const params = new URLSearchParams();
+  if (opts.before) params.set('before', opts.before);
+  if (opts.limit != null) params.set('limit', String(opts.limit));
+  const qs = params.toString();
+  const path = `/api/servers/${encodeURIComponent(serverId)}/system-messages${qs ? '?' + qs : ''}`;
+  const res = await fetchWithAuth(token, path);
+  if (!res.ok) throw new Error(`getSystemMessages: ${res.status}`);
   return res.json();
 }
 
