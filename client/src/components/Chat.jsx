@@ -304,16 +304,17 @@ export default function Chat({
   setCachedMessageRef.current = setCachedMessage;
   const wsClient = wsClientProp;
 
+  // Track which channel the current messages belong to, so we can detect
+  // stale messages during render without clearing them (avoids empty-flash).
+  const loadedChannelRef = useRef(channelId);
+
   // Load history and subscribe to channel
   useEffect(() => {
     if (!channelId || !serverId || !getToken) return;
     const token = getToken();
     if (!token) return;
 
-    setIsInitialLoading(true);
-    setMessages([]);
-    setInputText('');
-    setHasMoreOlder(true);
+    // Reset refs immediately (sync, no re-render)
     knownMessageIdsRef.current = new Set();
     lastSentTempIdRef.current = null;
     scrollRestoreRef.current = null;
@@ -333,10 +334,15 @@ export default function Chat({
           );
           knownMessageIdsRef.current.add(m.id);
         }
+        // Atomic replacement: old messages → new messages in one render
+        loadedChannelRef.current = channelId;
         setMessages(decrypted);
         setHasMoreOlder(list.length >= 50);
+        setInputText('');
       } catch (err) {
         console.error('[chat] Load history failed:', err.message);
+        loadedChannelRef.current = channelId;
+        setMessages([]);
       } finally {
         setIsInitialLoading(false);
       }
@@ -545,7 +551,11 @@ export default function Chat({
     });
   };
 
-  const hasMessages = messages.length > 0;
+  // While fetching a new channel's messages, hide stale content from the
+  // previous channel so the user never sees the wrong messages.
+  const isChannelTransitioning = loadedChannelRef.current !== channelId;
+  const visibleMessages = isChannelTransitioning ? [] : messages;
+  const hasMessages = visibleMessages.length > 0;
 
   return (
     <div style={styles.container}>
@@ -558,12 +568,12 @@ export default function Chat({
             ...(hasMessages ? styles.messagesScrollWithMessages : {}),
           }}
         >
-          {hasMoreOlder && (loadMoreLoading || messages.length > 0) && (
+          {!isChannelTransitioning && hasMoreOlder && (loadMoreLoading || visibleMessages.length > 0) && (
             <div style={{ padding: '8px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--hush-text-muted)' }}>
               {loadMoreLoading ? 'Loading…' : 'Scroll up for older messages'}
             </div>
           )}
-          {!isInitialLoading && !hasMessages ? (
+          {isChannelTransitioning ? null : !isInitialLoading && !hasMessages ? (
             <div style={styles.empty}>
               <div style={styles.emptyIcon}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -575,7 +585,7 @@ export default function Chat({
               </div>
             </div>
           ) : (
-            messages.map((msg) => {
+            visibleMessages.map((msg) => {
               const isOwn = msg.sender === currentUserId;
               const isFailed = msg.failed === true;
               const isPending = msg.pending === true;
