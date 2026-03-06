@@ -28,6 +28,7 @@ import AuditLogModal from './AuditLogModal';
 const CHANNEL_TYPE_TEXT = 'text';
 const CHANNEL_TYPE_VOICE = 'voice';
 const CHANNEL_TYPE_CATEGORY = 'category';
+const CHANNEL_TYPE_SYSTEM = 'system';
 
 function loadCollapsedMap(storageKey) {
   try {
@@ -203,12 +204,15 @@ const styles = {
 };
 
 function groupChannelsByParent(channels) {
+  // System channels are handled separately — exclude them from grouping
+  const nonSystemChannels = channels.filter((ch) => ch.type !== CHANNEL_TYPE_SYSTEM);
+
   const byParent = new Map();
   byParent.set(null, []);
   const channelById = new Map();
   const sortFn = (a, b) => a.position - b.position || (a.name || '').localeCompare(b.name || '');
 
-  channels.forEach((ch) => {
+  nonSystemChannels.forEach((ch) => {
     channelById.set(ch.id, ch);
     if (ch.type === CHANNEL_TYPE_CATEGORY) return; // categories are headers, not rows
     const key = ch.parentId ?? null;
@@ -217,7 +221,7 @@ function groupChannelsByParent(channels) {
   });
 
   // Ensure every category-type channel has a group entry (even if empty)
-  channels.filter((ch) => ch.type === CHANNEL_TYPE_CATEGORY).forEach((ch) => {
+  nonSystemChannels.filter((ch) => ch.type === CHANNEL_TYPE_CATEGORY).forEach((ch) => {
     if (!byParent.has(ch.id)) byParent.set(ch.id, []);
   });
 
@@ -225,7 +229,7 @@ function groupChannelsByParent(channels) {
   byParent.forEach((list, key) => { if (key !== null) list.sort(sortFn); });
 
   // Sort categories by position, then add their children
-  const categories = channels.filter((ch) => ch.type === CHANNEL_TYPE_CATEGORY).sort(sortFn);
+  const categories = nonSystemChannels.filter((ch) => ch.type === CHANNEL_TYPE_CATEGORY).sort(sortFn);
   const ordered = [];
   categories.forEach((cat) => {
     ordered.push({ key: cat.id, label: cat.name ?? 'Category', channels: byParent.get(cat.id) || [] });
@@ -820,6 +824,37 @@ function UncategorizeZone({ position, visible }) {
   );
 }
 
+/** System channel row: pinned at top, not draggable, shield icon, muted color. */
+function SystemChannelRow({ channel, isActive, onSelect }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      style={{
+        ...styles.channelRow(isActive),
+        ...(hover && !isActive ? styles.channelRowHover : {}),
+      }}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <span style={styles.channelIcon} aria-hidden>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
+      </span>
+      <span style={{ ...styles.channelName, color: 'var(--hush-text-muted)' }}>{channel.name}</span>
+    </div>
+  );
+}
+
 export default function ChannelList({
   getToken,
   serverId,
@@ -909,6 +944,10 @@ export default function ChannelList({
   }, [getToken, serverId, onChannelsUpdated]);
 
   const groups = groupChannelsByParent(localChannels);
+  const systemChannels = useMemo(
+    () => localChannels.filter((ch) => ch.type === CHANNEL_TYPE_SYSTEM),
+    [localChannels],
+  );
   const channelMap = useMemo(() => {
     const m = new Map();
     localChannels.forEach((ch) => m.set(ch.id, ch));
@@ -1192,6 +1231,14 @@ export default function ChannelList({
         onDragEnd={handleDragEnd}
       >
         <div style={styles.list}>
+          {systemChannels.map((ch) => (
+            <SystemChannelRow
+              key={ch.id}
+              channel={ch}
+              isActive={activeChannelId === ch.id}
+              onSelect={() => onChannelSelect(ch)}
+            />
+          ))}
           <SortableContext items={sortedCategoryIds} strategy={verticalListSortingStrategy}>
             {groups.map((group) => (
               <CategorySection

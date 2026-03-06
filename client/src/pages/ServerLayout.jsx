@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ServerList from '../components/ServerList';
 import ChannelList from '../components/ChannelList';
 import MemberList from '../components/MemberList';
+import SystemChannel from './SystemChannel';
 import TextChannel from './TextChannel';
 import VoiceChannel from './VoiceChannel';
 import { getInstance, getMyGuilds, getGuildChannels, getGuildMembers } from '../lib/api';
@@ -209,9 +210,9 @@ export default function ServerLayout() {
     const subscribe = () => {
       const prev = prevServerIdRef.current;
       if (prev && prev !== serverId) {
-        wsClient.send('unsubscribe.server', { serverId: prev });
+        wsClient.send('unsubscribe.server', { server_id: prev });
       }
-      wsClient.send('subscribe.server', { serverId });
+      wsClient.send('subscribe.server', { server_id: serverId });
       prevServerIdRef.current = serverId;
     };
     // Send immediately (no-ops if not connected yet) and also on open
@@ -330,6 +331,7 @@ export default function ServerLayout() {
       if (data.user_id === currentUserId) {
         const serverName = activeGuild?.name || 'the server';
         showToast({ message: `You were removed from ${serverName}`, variant: 'error' });
+        setGuilds((prev) => prev.filter((g) => g.id !== serverId));
         setTimeout(() => {
           const nextGuild = guilds.find((g) => g.id !== serverId);
           if (nextGuild) {
@@ -355,6 +357,7 @@ export default function ServerLayout() {
       if (data.user_id === currentUserId) {
         const serverName = activeGuild?.name || 'the server';
         showToast({ message: `You were banned from ${serverName}`, variant: 'error' });
+        setGuilds((prev) => prev.filter((g) => g.id !== serverId));
         setTimeout(() => {
           const nextGuild = guilds.find((g) => g.id !== serverId);
           if (nextGuild) {
@@ -497,12 +500,18 @@ export default function ServerLayout() {
         setChannels(Array.isArray(chans) ? chans : []);
         setMembers(Array.isArray(mems) ? mems : []);
       })
-      .catch(() => {
+      .catch((err) => {
+        if (err?.status === 403) {
+          showToast({ message: 'You no longer have access to this server', variant: 'error' });
+          setGuilds((prev) => prev.filter((g) => g.id !== serverId));
+          navigate('/guilds', { replace: true });
+          return;
+        }
         setChannels([]);
         setMembers([]);
       })
       .finally(() => setLoading(false));
-  }, [authToken, serverId]);
+  }, [authToken, serverId, showToast, navigate]);
 
   /** Refresh member list after a mod action completes. */
   const handleMemberUpdate = useCallback(() => {
@@ -702,6 +711,16 @@ export default function ServerLayout() {
             {!isViewingVoice && (
               loading ? (
                 <div style={{ ...layoutStyles.placeholder, position: 'relative', zIndex: 1 }}>Loading…</div>
+              ) : currentChannel?.type === 'system' ? (
+                <SystemChannel
+                  key={currentChannel.id}
+                  channel={currentChannel}
+                  serverId={serverId}
+                  getToken={getToken}
+                  wsClient={wsClient}
+                  members={members}
+                  onToggleDrawer={isMobile ? toggleDrawer : undefined}
+                />
               ) : currentChannel?.type === 'text' ? (
                 <TextChannel
                   key={currentChannel.id}
