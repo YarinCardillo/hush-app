@@ -222,10 +222,21 @@ For each recipient user:
 3. On success with inactive session: activate it.
 4. On any error: discard all state changes, discard message.
 
-### Relevance to Hush
-- Hush uses `deviceId` in key bundles and session management.
+### Hush Linked-Device Model
+- Each device generates its own independent keypair (`IK_device_priv`, `IK_device_pub`). Private keys never leave the device.
+- The root identity key (device 1) is derived from a BIP39 12-word mnemonic shown once at registration.
+- To add a new device, the new device displays a QR code containing: `IK_new_pub`, an ephemeral key `EK_pub` for key agreement, expiry timestamp, one-time nonce.
+- An existing (already authenticated) device scans the QR and produces a certificate: `certificate = Sign(IK_existing_priv, IK_new_pub)`.
+- The certificate and `IK_new_pub` are sent to the server. The server verifies the certificate against the signing device's public key.
+- The server maintains a certified device list per account:
+  ```
+  device_1: IK_A_pub   ← root key, no certificate needed
+  device_2: IK_B_pub   ← certified by IK_A_priv
+  device_3: IK_C_pub   ← certified by IK_A_priv or IK_B_priv
+  ```
+- Initial data transfer (server list, sessions) between devices uses an ephemeral DH on the QR's `EK` — never in cleartext on the server.
+- QR expires after a few seconds or on first use.
 - `signalStore.js` stores sessions by `(userId, deviceId)`.
-- Current model: one device per user (DEFAULT_DEVICE_ID). Multi-device is a future concern.
 - Session expiration (`MAXSEND`, `MAXRECV`) not yet implemented.
 
 ---
@@ -259,7 +270,9 @@ For each recipient user:
 ## 7. Security Invariants (Checklist for Code Review)
 
 ### Key Lifecycle
-- [ ] Identity keys generated once, stored encrypted, never re-generated.
+- [ ] Root identity key deterministically derived from BIP39 12-word mnemonic at registration. Mnemonic shown once, never stored on server.
+- [ ] Each additional device generates its own independent keypair; certified by an existing device's signature.
+- [ ] Server stores only public keys and device certificates. No private keys, passwords, or mnemonic material.
 - [ ] Signed pre-keys rotated on schedule, old private keys deleted after grace period.
 - [ ] One-time pre-keys deleted server-side after serving, client-side after use.
 - [ ] Ephemeral keys deleted immediately after DH computation.
@@ -330,16 +343,16 @@ AD = Encode(IK_A) || Encode(IK_B)
 
 ### Private Key Persistence
 
-Client stores private keys in IndexedDB (`signalStore.js`, DB version 2):
+Client stores private keys in IndexedDB (`signalStore.js`, DB version 2). The root identity key pair is deterministically derived from a BIP39 12-word mnemonic at registration. On additional devices, an independent keypair is generated locally and certified by an existing device. Private keys never leave the device that generated them.
 
 | Store | Key | Contents |
 |-|-|-|
-| `identity` | `identity` | `{ publicKey, privateKey }` — identity key pair |
+| `identity` | `identity` | `{ publicKey, privateKey }` — device identity key pair (root device: derived from mnemonic; linked devices: independently generated) |
 | `signedPreKeys` | SPK ID | `{ id, publicKey, privateKey, signature }` — needed for X3DH responder |
 | `otpPrivateKeys` | OPK key ID | `{ keyId, publicKey, privateKey }` — consumed and deleted after first use |
 | `sessions` | `userId:deviceId` | `{ state, ad }` — Double Ratchet state + associated data |
 
-SPK and OPK private keys are required for the X3DH responder flow (receiving initial messages). Only public keys are uploaded to the server.
+SPK and OPK private keys are required for the X3DH responder flow (receiving initial messages). Only public keys are uploaded to the server. The mnemonic phrase is not stored anywhere after initial display — it is the user's sole recovery mechanism.
 
 ### X3DH Responder Flow
 
