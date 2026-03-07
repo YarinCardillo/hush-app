@@ -11,11 +11,13 @@ High-quality screen sharing with end-to-end encryption. Open source, self-hostab
 Hush is a privacy-first Discord alternative for screen sharing, voice, video, and text chat, all end-to-end encrypted. Create or join a server, add text and voice channels, invite friends. The server never sees your content.
 
 **Features:**
+- Mnemonic-based identity: a BIP39 12-word phrase is your account. No email, no password, no central recovery. The server stores only your public key.
+- Multi-device support: each device has its own keypair, certified by an existing device via QR scan. Private keys never leave the device.
 - Screen sharing, webcam, and microphone
 - E2EE chat (Signal Protocol: X3DH + Double Ratchet)
 - E2EE media (LiveKit frame encryption, AES-256-GCM)
 - Servers with text and voice channels (Discord-like)
-- Guest access (no account required to try)
+- Guest access (no account required to try — ephemeral identity)
 - Self-hostable: `./scripts/setup.sh` then `docker-compose up -d`
 
 **Privacy:**

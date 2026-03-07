@@ -324,7 +324,7 @@ graph LR
   end
 
   subgraph "Go API :8080"
-    Auth["/api/auth<br/>register, login"]
+    Auth["/api/auth<br/>register (BIP39), verify"]
     Servers["/api/servers<br/>CRUD, join, leave"]
     Channels["/api/channels<br/>messages"]
     Keys["/api/keys<br/>Signal pre-keys"]
@@ -464,16 +464,17 @@ server/migrations/
 
 | Table | Purpose |
 |-|-|
-| `users` | username, password_hash, display_name |
+| `users` | username, public_key (root IK), display_name |
+| `devices` | device_id, user_id, device_public_key, certificate (signed by certifying device), label, last_seen |
 | `sessions` | JWT token hashes, expiry |
 | `servers` | Server name, owner, icon |
 | `channels` | Type (text/voice/category), voice_mode, position, parent |
 | `channel_config` | Per-channel settings: retention, max media size |
 | `server_members` | User-server membership with role (member/mod/admin) |
 | `messages` | ciphertext (BYTEA), sender, channel, timestamp |
-| `signal_identity_keys` | Per-device identity key, signed pre-key, registration ID |
+| `signal_identity_keys` | Per-device identity key (IK_device_pub), signed pre-key, registration ID |
 | `signal_one_time_pre_keys` | Ephemeral pre-keys with used flag |
-| `devices` | User devices (device_id, label, last_seen) |
+| ~~`devices`~~ | *(moved to Core Tables above with certified key fields)* |
 | `invite_codes` | Server invites with expiry, max uses |
 
 ### Connecting Directly
