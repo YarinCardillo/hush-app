@@ -10,21 +10,24 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    padding: '48px 24px',
+    padding: '80px 24px 48px',
     fontFamily: 'var(--font-sans, system-ui)',
   },
   title: {
     color: 'var(--hush-text, #e0e0e0)',
-    fontSize: '1.4rem',
-    fontWeight: 600,
-    marginBottom: 8,
+    fontSize: '2rem',
+    fontWeight: 300,
+    letterSpacing: '-0.02em',
+    marginBottom: 12,
   },
   subtitle: {
-    color: 'var(--hush-text-muted, #666)',
+    color: 'var(--hush-text-muted, #555568)',
     fontSize: '0.85rem',
-    fontFamily: 'var(--font-mono, monospace)',
-    letterSpacing: '0.08em',
-    marginBottom: 48,
+    fontWeight: 400,
+    marginBottom: 64,
+    textAlign: 'center',
+    maxWidth: 360,
+    lineHeight: 1.5,
   },
   grid: {
     display: 'flex',
@@ -39,8 +42,7 @@ const styles = {
     alignItems: 'center',
     gap: 16,
     padding: '32px 24px',
-    borderRadius: 16,
-    border: '1px solid var(--hush-border, #222)',
+    border: '1px solid transparent',
     background: 'var(--hush-surface, #111)',
     minWidth: 240,
   },
@@ -51,7 +53,6 @@ const styles = {
     textTransform: 'uppercase',
     color: 'var(--hush-text-secondary, #888)',
     padding: '4px 12px',
-    borderRadius: 6,
     background: 'var(--hush-elevated, #1a1a1a)',
   },
 };
@@ -61,8 +62,11 @@ export default function MascotDemo() {
 
   return (
     <div style={styles.root}>
-      <h1 style={styles.title}>HushOrb Animation States</h1>
-      <p style={styles.subtitle}>hover any orb to see the hover eye state</p>
+      <h1 style={styles.title}>Meet Vesper</h1>
+      <p style={styles.subtitle}>
+        the quiet presence that makes a server feel alive.
+        not a bot. not a feature. just here.
+      </p>
 
       <div style={styles.grid}>
         {phases.map((phase) => (
@@ -88,8 +92,7 @@ export default function MascotDemo() {
             fontSize: '0.8rem',
             fontFamily: 'var(--font-mono, monospace)',
             background: 'var(--hush-elevated, #1a1a1a)',
-            border: '1px solid var(--hush-border, #333)',
-            borderRadius: 8,
+            border: '1px solid transparent',
             color: 'var(--hush-text, #e0e0e0)',
             cursor: 'pointer',
             letterSpacing: '0.06em',
