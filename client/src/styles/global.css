@@ -43,7 +43,7 @@
   --hush-header-block-bg:    rgba(255, 255, 255, 0.03);
   --hush-header-block-border: rgba(255, 255, 255, 0.06);
 
-  /* ── HushOrb mascot — waiting state (dark theme defaults) ── */
+  /* ── Vesper — waiting state (dark theme defaults) ── */
   --orb-waiting-from:   #5a2c14;
   --orb-waiting-mid:    #3a1e0c;
   --orb-waiting-to:     #1b1912;
@@ -169,7 +169,7 @@
   --orb-waiting-ring:   rgba(213,79,18,0.2);
 }
 
-/* ── HushOrb phase tokens — registered so CSS can interpolate gradients between phases ── */
+/* ── Vesper phase tokens — registered so CSS can interpolate gradients between phases ── */
 
 @property --ob-from           { syntax: '<color>';  inherits: true; initial-value: #26241e; }
 @property --ob-mid            { syntax: '<color>';  inherits: true; initial-value: #1b1912; }
@@ -195,7 +195,7 @@
   --ob-to:             var(--orb-waiting-to);
   --ob-glow:           var(--orb-waiting-glow);
   --ob-ring:           var(--orb-waiting-ring);
-  --ob-eye:            var(--hush-text-secondary);
+  --ob-eye:            #4a4a4a;
   --ob-shadow-opacity: 0.3;
 }
 

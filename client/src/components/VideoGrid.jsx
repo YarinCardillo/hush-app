@@ -217,7 +217,7 @@ export default function VideoGrid({
     <>
       <div style={{ ...styles.streamsArea(isMobile, totalCards), ...gridStyle }}>
         {totalCards === 0 ? (
-          // HushOrb is rendered by ServerLayout as a persistent element.
+          // Vesper is rendered by ServerLayout as a persistent element.
           // Empty div preserves the flex layout; the orb shows through via z-index.
           <div style={styles.empty} />
         ) : (

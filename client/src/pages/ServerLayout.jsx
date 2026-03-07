@@ -13,7 +13,7 @@ import { JWT_KEY } from '../hooks/useAuth';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useSidebarResize } from '../hooks/useSidebarResize';
 import ConfirmModal from '../components/ConfirmModal';
-import HushOrb from '../components/HushOrb';
+import Vesper from '../components/Vesper';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
 
@@ -820,7 +820,7 @@ export default function ServerLayout() {
                 pointerEvents: 'none',
               }}>
                 <div style={{ pointerEvents: 'auto' }}>
-                  <HushOrb
+                  <Vesper
                     phase={orbPhase}
                     label={isViewingVoice ? undefined : 'select a channel'}
                   />

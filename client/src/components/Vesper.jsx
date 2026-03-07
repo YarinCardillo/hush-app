@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 
 const EYE_STATES = {
   idle:       { left: 'M -6 0 Q 0 1.5 6 0',       right: 'M -6 0 Q 0 1.5 6 0',       opacity: 0.4  },
-  waiting:    { left: 'M -5 2 Q 0 -4 5 2',         right: 'M -5 2 Q 0 -4 5 2',         opacity: 0.88 },
+  waiting:    { left: 'M -6 0 Q 0 1.5 6 0',       right: 'M -6 0 Q 0 1.5 6 0',       opacity: 0.4  },
   activating: { left: 'M -6 3 Q 0 -7 6 3',         right: 'M -6 3 Q 0 -7 6 3',         opacity: 1    },
   hover:      { left: 'M -5 -1.5 Q 0 3.5 5 -1.5', right: 'M -5 -1.5 Q 0 3.5 5 -1.5', opacity: 0.6  },
 };
@@ -59,12 +59,12 @@ function OrbEyes({ eyeState }) {
 }
 
 /**
- * Ambient orb mascot for voice channel empty states.
+ * Vesper — ambient presence for voice channels and empty states.
  * Phase is controlled externally by VoiceChannel based on room state.
  *
  * @param {'idle'|'waiting'|'activating'} phase - Current room state.
  */
-export default function HushOrb({ phase = 'idle', label }) {
+export default function Vesper({ phase = 'idle', label }) {
   const [hovered, setHovered] = useState(false);
 
   // Cross-fade the label text when phase (or explicit label) changes.
@@ -130,7 +130,7 @@ export default function HushOrb({ phase = 'idle', label }) {
             style={{
               width: 56, height: 56, borderRadius: '50%',
               background: 'radial-gradient(circle at 38% 35%, var(--ob-from) 0%, var(--ob-mid) 50%, var(--ob-to) 100%)',
-              boxShadow: '0 0 12px rgba(0,0,0,0.4)',
+              boxShadow: '0 0 12px rgba(0,0,0,0.4), inset 0 -6px 12px rgba(0,0,0,0.3)',
               transition: 'transform 0.2s ease',
               animation: phase === 'activating'
                 ? 'orbBounce 0.65s cubic-bezier(0.34,1.56,0.64,1)'
