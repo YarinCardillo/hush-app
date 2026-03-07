@@ -883,6 +883,10 @@ export default function Home() {
                 <Link to="/roadmap" style={styles.footerLink}>
                   roadmap
                 </Link>
+                {' · '}
+                <Link to="/mascot-demo" style={styles.footerLink}>
+                  meet vesper
+                </Link>
               </span>
             </div>
             <div style={styles.footerMeta}>

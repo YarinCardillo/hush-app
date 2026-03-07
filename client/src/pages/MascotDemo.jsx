@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import Vesper from '../components/Vesper';
 
 const phases = ['idle', 'waiting', 'activating'];
@@ -58,14 +59,30 @@ const styles = {
 };
 
 export default function MascotDemo() {
-  const [activePhase, setActivePhase] = useState(null);
+  const [activePhase, setActivePhase] = useState('idle');
 
   return (
     <div style={styles.root}>
+      <Link
+        to="/"
+        style={{
+          fontFamily: 'var(--font-mono, monospace)',
+          fontSize: '0.75rem',
+          color: 'var(--hush-text-muted)',
+          textDecoration: 'none',
+          letterSpacing: '0.05em',
+          marginBottom: 32,
+          alignSelf: 'flex-start',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--hush-amber)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--hush-text-muted)'; }}
+      >
+        &larr; hush
+      </Link>
       <h1 style={styles.title}>Meet Vesper</h1>
       <p style={styles.subtitle}>
-        the quiet presence that makes a server feel alive.
-        not a bot. not a feature. just here.
+        the quiet presence that makes a server feel alive.<br></br>
+        Not a bot. Not a feature. Just here.
       </p>
 
       <div style={styles.grid}>
@@ -84,8 +101,7 @@ export default function MascotDemo() {
         <button
           type="button"
           onClick={() => {
-            const idx = activePhase === null ? 0 : (phases.indexOf(activePhase) + 1) % phases.length;
-            setActivePhase(phases[idx]);
+            setActivePhase(phases[(phases.indexOf(activePhase) + 1) % phases.length]);
           }}
           style={{
             padding: '8px 20px',
@@ -98,11 +114,11 @@ export default function MascotDemo() {
             letterSpacing: '0.06em',
           }}
         >
-          {activePhase ?? 'start'} &rarr; {phases[(phases.indexOf(activePhase ?? 'activating') + 1) % phases.length]}
+          {activePhase} &rarr; {phases[(phases.indexOf(activePhase) + 1) % phases.length]}
         </button>
         <div style={{ ...styles.card, marginTop: 8 }}>
-          <span style={styles.phaseLabel}>interactive: {activePhase ?? 'idle'}</span>
-          <Vesper phase={activePhase ?? 'idle'} />
+          <span style={styles.phaseLabel}>interactive: {activePhase}</span>
+          <Vesper phase={activePhase} />
         </div>
       </div>
     </div>
