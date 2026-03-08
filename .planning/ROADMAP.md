@@ -24,7 +24,7 @@ The MVP path forward: E+2 (multi-tenant restoration) → F (security hardening +
 - [x] **Phase F: Security Hardening + Moderation** — Rate limiting, security headers, kick/ban/mute (guild-scoped), audit log, voice mute enforcement, audit log viewer (completed 2026-03-05)
 - [x] **Phase G: Instance-Level Admin Moderation** — Instance ban across all guilds, instance admin override logging (completed 2026-03-05)
 - [x] **Phase K.1: Instance Handshake** — GET /api/handshake with capabilities, server_creation_policy, registration_mode (completed 2026-03-06; `registration_mode` will govern mnemonic generation policy after Phase J)
-- [ ] **Phase K.4: System Messages** — System channel type per guild, moderation event broadcasting
+- [x] **Phase K.4: System Messages** — System channel type per guild, moderation event broadcasting (completed 2026-03-08)
 - [ ] **Phase K.5: Default Guild Template** — Seed #system, #general, voice room on guild creation
 - [ ] **Phase B.7: Crypto Key Lifecycle** — SPK rotation with grace period, OPK replenishment automation
 - [ ] **Phase J: BIP39 Cryptographic Identity** — Mnemonic-based registration, challenge-response auth, linked-device QR flow, recovery via 12 words
@@ -145,12 +145,13 @@ Plans:
   1. When a member is kicked, banned, or their role changes within a guild, a plaintext system message appears in that guild's #system channel for all connected guild members within one WebSocket round-trip
   2. Regular members cannot send to the system channel — only the server can write system messages; any attempt returns a 403
   3. System messages are stored in a separate `system_messages` table with a `server_id` column; the `messages.ciphertext` column is never written with plaintext content
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
+**Status:** Complete (2026-03-08)
 
 Plans:
 - [x] K.4-01-PLAN.md — Migration 000010, models, Store interface, DB implementations, system messages API, channel protections, leave endpoint, guild creation hook
 - [x] K.4-02-PLAN.md — Wire EmitSystemMessage into all 7 moderation/membership handlers, background cleanup goroutine
-- [ ] K.4-03-PLAN.md — Frontend: SystemChannel page, SystemMessageRow component, ChannelList pinning, ServerLayout routing
+- [x] K.4-03-PLAN.md — Frontend: SystemChannel page, SystemMessageRow component, ChannelList pinning, ServerLayout routing
 
 ---
 
@@ -162,7 +163,11 @@ Plans:
   1. When a guild is created, it is automatically populated with exactly three channels: `#system` (type=system), `#general` (type=text), and `General` (type=voice, quality mode)
   2. The template creation is idempotent — a failure mid-creation and retry does not create duplicate channels
   3. Existing guilds are not affected; the template only applies at guild creation time
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] K.5-01-PLAN.md — Backend: migration 000011 (server_template JSONB), models, Store interface, DB implementations, createServer template loop, template update API endpoint, tests
+- [ ] K.5-02-PLAN.md — Frontend: Server Template admin tab in UserSettingsModal, API client functions, human verification
 
 ---
 
@@ -227,8 +232,8 @@ Plans:
 | F. Security Hardening + Moderation | 4/4 | Complete    | 2026-03-05 |
 | G. Instance-Level Admin Moderation | 2/2 | Complete   | 2026-03-05 |
 | K.1. Instance Handshake | 1/1 | Complete    | 2026-03-06 |
-| K.4. System Messages | 2/3 | In Progress|  |
-| K.5. Default Guild Template | 0/TBD | Not started | - |
+| K.4. System Messages | 3/3 | Complete    | 2026-03-08 |
+| K.5. Default Guild Template | 0/2 | Not started | - |
 | B.7. Crypto Key Lifecycle | 0/TBD | Not started | - |
 | J. BIP39 Cryptographic Identity | 0/TBD | Not started | - |
 | I. Launch Preparation | 0/TBD | Not started | - |
