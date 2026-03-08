@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { createGuild } from '../lib/api';
+import { createGuild, listServerTemplates } from '../lib/api';
 import modalStyles from './modalStyles';
 
 /**
- * Guild creation modal — single text input for the guild name.
- * Per user decision: minimal friction, no icon upload or description.
+ * Guild creation modal — name input + template picker.
  *
  * @param {{
  *   getToken: () => string|null,
@@ -19,6 +18,11 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
 
+  // Template picker state
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
+
   useEffect(() => {
     const t = requestAnimationFrame(() => setIsOpen(true));
     return () => cancelAnimationFrame(t);
@@ -31,6 +35,25 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [onClose]);
+
+  // Load templates on mount
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    (async () => {
+      try {
+        const data = await listServerTemplates(token);
+        if (Array.isArray(data) && data.length > 0) {
+          setTemplates(data);
+          const def = data.find(t => t.isDefault);
+          setSelectedTemplateId(def ? def.id : data[0].id);
+        }
+      } catch {
+        // Templates are optional — if loading fails, server uses its default
+      }
+      setTemplatesLoaded(true);
+    })();
+  }, [getToken]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -47,7 +70,7 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
     }
     setLoading(true);
     try {
-      const guild = await createGuild(token, trimmed);
+      const guild = await createGuild(token, trimmed, selectedTemplateId);
       onCreated(guild);
     } catch (err) {
       setError(err.message || 'Failed to create server.');
@@ -82,13 +105,53 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
               autoFocus
             />
           </div>
+
+          {/* Template picker — only shown when templates are available */}
+          {templatesLoaded && templates.length > 1 && (
+            <div style={{ marginTop: '4px' }}>
+              <label style={modalStyles.fieldLabel}>Template</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+                {templates.map(tmpl => (
+                  <label
+                    key={tmpl.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      padding: '8px 10px', borderRadius: 'var(--radius-md)',
+                      background: selectedTemplateId === tmpl.id ? 'var(--hush-bg-hover)' : 'transparent',
+                      border: selectedTemplateId === tmpl.id ? '1px solid var(--hush-live)' : '1px solid var(--hush-border)',
+                      cursor: 'pointer', transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="template"
+                      value={tmpl.id}
+                      checked={selectedTemplateId === tmpl.id}
+                      onChange={() => setSelectedTemplateId(tmpl.id)}
+                      style={{ accentColor: 'var(--hush-live)' }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 500, fontSize: '0.85rem', color: 'var(--hush-text-primary)' }}>
+                        {tmpl.name}
+                        {tmpl.isDefault && <span style={{ fontSize: '0.7rem', color: 'var(--hush-text-ghost)', marginLeft: '6px' }}>(default)</span>}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--hush-text-ghost)' }}>
+                        {tmpl.channels.filter(c => c.type !== 'system').map(c => c.type === 'voice' ? `${c.name} (voice)` : `#${c.name}`).join(', ') || 'system only'}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           {error && <div style={modalStyles.error}>{error}</div>}
           <div style={modalStyles.actions}>
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>
             <button type="submit" className="btn btn-primary" disabled={loading || !name.trim()}>
-              {loading ? 'Creating…' : 'Create'}
+              {loading ? 'Creating\u2026' : 'Create'}
             </button>
           </div>
         </form>

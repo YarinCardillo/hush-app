@@ -10,8 +10,10 @@ import {
   instanceUnbanUser,
   getInstanceAuditLog,
   updateInstanceConfig,
-  getServerTemplate,
+  listServerTemplates,
+  createServerTemplate,
   updateServerTemplate,
+  deleteServerTemplate,
   fetchWithAuth,
 } from '../lib/api';
 
@@ -1125,144 +1127,161 @@ const templateStyles = {
   },
 };
 
-function ServerTemplateTab() {
-  const { token } = useAuth();
-  const [template, setTemplate] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [dirty, setDirty] = useState(false);
-
-  // New channel form state
+/** Channel editor for a single template — used by ServerTemplateTab */
+function TemplateChannelEditor({ channels, onChange }) {
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState('text');
   const [newVoiceMode, setNewVoiceMode] = useState('quality');
+
+  const recalcPositions = (tpl) => {
+    let pos = 0;
+    for (let i = 0; i < tpl.length; i++) {
+      tpl[i].position = tpl[i].type === 'system' ? -1 : pos++;
+    }
+  };
+
+  const update = (newChs) => { recalcPositions(newChs); onChange(newChs); };
+
+  const handleAdd = () => {
+    const name = newName.trim();
+    if (!name) return;
+    const entry = { name, type: newType, position: 0 };
+    if (newType === 'voice') entry.voiceMode = newVoiceMode;
+    update([...channels, entry]);
+    setNewName(''); setNewType('text'); setNewVoiceMode('quality');
+  };
+
+  const categories = channels.filter(ch => ch.type === 'category');
+
+  return (
+    <>
+      <div style={{ marginTop: '8px' }}>
+        {channels.map((ch, idx) => {
+          const isSystem = ch.type === 'system';
+          const isNested = ch.parentRef && categories.some(c => c.name === ch.parentRef);
+          return (
+            <div key={idx} style={{ ...templateStyles.channelRow(isSystem), ...(isNested ? templateStyles.channelRowNested : {}) }}>
+              <span style={templateStyles.typeIcon}>{CHANNEL_TYPE_ICONS[ch.type] || '?'}</span>
+              {isSystem ? (
+                <span style={templateStyles.nameLabel}>{ch.name}<span style={templateStyles.lockIcon}> (locked)</span></span>
+              ) : (
+                <input type="text" value={ch.name} style={templateStyles.nameInput} placeholder="Channel name"
+                  onChange={(e) => { const u = channels.map((c, i) => i === idx ? { ...c, name: e.target.value } : c); onChange(u); }} />
+              )}
+              {ch.type === 'voice' && (
+                <select style={templateStyles.smallSelect} value={ch.voiceMode || 'quality'}
+                  onChange={(e) => { const u = channels.map((c, i) => i === idx ? { ...c, voiceMode: e.target.value } : c); onChange(u); }}>
+                  <option value="quality">Quality</option>
+                  <option value="low-latency">Low-latency</option>
+                </select>
+              )}
+              {(ch.type === 'text' || ch.type === 'voice') && categories.length > 0 && (
+                <select style={templateStyles.smallSelect} value={ch.parentRef || ''} title="Parent category"
+                  onChange={(e) => {
+                    const u = channels.map((c, i) => {
+                      if (i !== idx) return c;
+                      const c2 = { ...c };
+                      e.target.value === '' ? delete c2.parentRef : c2.parentRef = e.target.value;
+                      return c2;
+                    });
+                    onChange(u);
+                  }}>
+                  <option value="">No category</option>
+                  {categories.map(cat => <option key={cat.name} value={cat.name}>{cat.name}</option>)}
+                </select>
+              )}
+              {!isSystem && (
+                <>
+                  <button type="button" style={templateStyles.arrowBtn} onClick={() => { if (idx <= 0) return; const u = [...channels]; [u[idx-1], u[idx]] = [u[idx], u[idx-1]]; update(u); }} disabled={idx === 0} title="Move up">&#x25B2;</button>
+                  <button type="button" style={templateStyles.arrowBtn} onClick={() => { if (idx >= channels.length-1) return; const u = [...channels]; [u[idx], u[idx+1]] = [u[idx+1], u[idx]]; update(u); }} disabled={idx === channels.length-1} title="Move down">&#x25BC;</button>
+                  <button type="button" style={templateStyles.removeBtn} onClick={() => update(channels.filter((_, i) => i !== idx))} title="Remove">&#x2715;</button>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={templateStyles.addForm}>
+        <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New channel name"
+          style={{ ...templateStyles.nameInput, flex: '1 1 120px' }} onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }} />
+        <select style={templateStyles.smallSelect} value={newType} onChange={(e) => setNewType(e.target.value)}>
+          <option value="text">Text</option><option value="voice">Voice</option><option value="category">Category</option>
+        </select>
+        {newType === 'voice' && (
+          <select style={templateStyles.smallSelect} value={newVoiceMode} onChange={(e) => setNewVoiceMode(e.target.value)}>
+            <option value="quality">Quality</option><option value="low-latency">Low-latency</option>
+          </select>
+        )}
+        <button type="button" className="btn btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+          onClick={handleAdd} disabled={!newName.trim()}>Add</button>
+      </div>
+    </>
+  );
+}
+
+function ServerTemplateTab() {
+  const { token } = useAuth();
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  // Editing state
+  const [editingId, setEditingId] = useState(null); // template id being edited, or 'new'
+  const [editName, setEditName] = useState('');
+  const [editChannels, setEditChannels] = useState([]);
+  const [editIsDefault, setEditIsDefault] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const reload = async () => {
+    try {
+      const data = await listServerTemplates(token);
+      setTemplates(Array.isArray(data) ? data : []);
+    } catch {
+      setError('Could not load templates');
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await getServerTemplate(token);
-        if (!cancelled) {
-          setTemplate(Array.isArray(data) ? data : DEFAULT_TEMPLATE);
-        }
+        const data = await listServerTemplates(token);
+        if (!cancelled) setTemplates(Array.isArray(data) ? data : []);
       } catch {
-        if (!cancelled) {
-          setTemplate(DEFAULT_TEMPLATE);
-          setError('Could not load template, showing defaults');
-        }
+        if (!cancelled) setError('Could not load templates');
       }
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [token]);
 
-  const updateTemplate = (newTpl) => {
-    setTemplate(newTpl);
-    setDirty(true);
-    setError('');
-    setSuccess('');
+  const startEdit = (tmpl) => {
+    setEditingId(tmpl.id);
+    setEditName(tmpl.name);
+    setEditChannels(tmpl.channels.map(ch => ({ ...ch })));
+    setEditIsDefault(tmpl.isDefault);
+    setError(''); setSuccess('');
   };
 
-  const handleNameChange = (idx, value) => {
-    const updated = template.map((ch, i) => i === idx ? { ...ch, name: value } : ch);
-    updateTemplate(updated);
+  const startNew = () => {
+    setEditingId('new');
+    setEditName('');
+    setEditChannels([...DEFAULT_TEMPLATE]);
+    setEditIsDefault(false);
+    setError(''); setSuccess('');
   };
 
-  const handleVoiceModeChange = (idx, value) => {
-    const updated = template.map((ch, i) => i === idx ? { ...ch, voiceMode: value } : ch);
-    updateTemplate(updated);
-  };
+  const cancelEdit = () => { setEditingId(null); setError(''); };
 
-  const handleParentRefChange = (idx, value) => {
-    const updated = template.map((ch, i) => {
-      if (i !== idx) return ch;
-      const ch2 = { ...ch };
-      if (value === '') {
-        delete ch2.parentRef;
-      } else {
-        ch2.parentRef = value;
-      }
-      return ch2;
-    });
-    updateTemplate(updated);
-  };
-
-  const handleRemove = (idx) => {
-    if (template[idx].type === 'system') return;
-    const updated = template.filter((_, i) => i !== idx);
-    updateTemplate(updated);
-  };
-
-  const handleMoveUp = (idx) => {
-    if (idx <= 0) return;
-    // Don't swap past position -1 system channel
-    const updated = [...template];
-    [updated[idx - 1], updated[idx]] = [updated[idx], updated[idx - 1]];
-    // Recalculate positions
-    recalcPositions(updated);
-    updateTemplate(updated);
-  };
-
-  const handleMoveDown = (idx) => {
-    if (idx >= template.length - 1) return;
-    const updated = [...template];
-    [updated[idx], updated[idx + 1]] = [updated[idx + 1], updated[idx]];
-    recalcPositions(updated);
-    updateTemplate(updated);
-  };
-
-  const recalcPositions = (tpl) => {
-    // System channels keep position -1, everything else gets 0-indexed
-    let pos = 0;
-    for (let i = 0; i < tpl.length; i++) {
-      if (tpl[i].type === 'system') {
-        tpl[i].position = -1;
-      } else {
-        tpl[i].position = pos++;
-      }
-    }
-  };
-
-  const handleAdd = () => {
-    const name = newName.trim();
-    if (!name) return;
-    const maxPos = template.reduce((max, ch) => Math.max(max, ch.position), 0);
-    const entry = {
-      name,
-      type: newType,
-      position: maxPos + 1,
-    };
-    if (newType === 'voice') {
-      entry.voiceMode = newVoiceMode;
-    }
-    const updated = [...template, entry];
-    recalcPositions(updated);
-    updateTemplate(updated);
-    setNewName('');
-    setNewType('text');
-    setNewVoiceMode('quality');
-  };
-
-  const handleReset = () => {
-    updateTemplate(DEFAULT_TEMPLATE.map(ch => ({ ...ch })));
-  };
-
-  const validate = () => {
-    // All names non-empty
-    for (const ch of template) {
+  const validateChannels = (chs) => {
+    for (const ch of chs) {
       if (!ch.name || !ch.name.trim()) return 'All channel names must be non-empty';
+      if (ch.type === 'voice' && !ch.voiceMode) return 'Voice channels must have a voice mode';
     }
-    // Voice channels must have voiceMode
-    for (const ch of template) {
-      if (ch.type === 'voice' && !ch.voiceMode) return 'Voice channels must have a voice mode selected';
-    }
-    // At least one system channel
-    if (!template.some(ch => ch.type === 'system')) return 'Template must include a system channel';
-    // No duplicate (name, type) pairs
+    if (!chs.some(ch => ch.type === 'system')) return 'Template must include a system channel';
     const seen = new Set();
-    for (const ch of template) {
+    for (const ch of chs) {
       const key = `${ch.name.toLowerCase()}:${ch.type}`;
       if (seen.has(key)) return `Duplicate channel: "${ch.name}" (${ch.type})`;
       seen.add(key);
@@ -1271,197 +1290,112 @@ function ServerTemplateTab() {
   };
 
   const handleSave = async () => {
-    const err = validate();
-    if (err) {
-      setError(err);
-      return;
-    }
-    setSaving(true);
-    setError('');
-    setSuccess('');
+    if (!editName.trim()) { setError('Template name is required'); return; }
+    const err = validateChannels(editChannels);
+    if (err) { setError(err); return; }
+    setSaving(true); setError(''); setSuccess('');
     try {
-      await updateServerTemplate(token, template);
-      setDirty(false);
-      setSuccess('Template saved');
+      const body = { name: editName.trim(), channels: editChannels, isDefault: editIsDefault };
+      if (editingId === 'new') {
+        await createServerTemplate(token, body);
+        setSuccess('Template created');
+      } else {
+        await updateServerTemplate(token, editingId, body);
+        setSuccess('Template saved');
+      }
+      await reload();
+      setEditingId(null);
       setTimeout(() => setSuccess(''), 3000);
-    } catch (e) {
-      setError(e.message);
-    }
+    } catch (e) { setError(e.message); }
     setSaving(false);
   };
 
-  const categories = template.filter(ch => ch.type === 'category');
+  const handleDelete = async (tmpl) => {
+    if (tmpl.isDefault) { setError('Cannot delete the default template'); return; }
+    if (!window.confirm(`Delete template "${tmpl.name}"?`)) return;
+    try {
+      await deleteServerTemplate(token, tmpl.id);
+      await reload();
+      setSuccess('Template deleted');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (e) { setError(e.message); }
+  };
 
-  if (loading) return <div style={adminStyles.emptyText}>Loading template...</div>;
+  if (loading) return <div style={adminStyles.emptyText}>Loading templates...</div>;
 
+  // Editing view
+  if (editingId) {
+    return (
+      <>
+        <div style={styles.sectionTitle}>{editingId === 'new' ? 'New Template' : `Edit: ${editName}`}</div>
+        <div style={{ marginTop: '12px' }}>
+          <label style={{ fontSize: '0.8rem', color: 'var(--hush-text-secondary)' }}>Template name</label>
+          <input type="text" className="input" value={editName} onChange={(e) => setEditName(e.target.value)}
+            placeholder="e.g. Gaming, Study Group" style={{ marginTop: '4px', marginBottom: '12px' }} autoFocus />
+        </div>
+        <label style={{ fontSize: '0.8rem', color: 'var(--hush-text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+          <input type="checkbox" checked={editIsDefault} onChange={(e) => setEditIsDefault(e.target.checked)} />
+          Default template (used when no template is selected)
+        </label>
+        <div style={{ fontSize: '0.8rem', color: 'var(--hush-text-ghost)', marginBottom: '8px' }}>
+          Channels created automatically when this template is chosen. The system channel is always included.
+        </div>
+        <TemplateChannelEditor channels={editChannels} onChange={setEditChannels} />
+        <div style={templateStyles.toolbar}>
+          <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving...' : editingId === 'new' ? 'Create Template' : 'Save Changes'}
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={cancelEdit}>Cancel</button>
+          {error && <span style={adminStyles.errorText}>{error}</span>}
+        </div>
+      </>
+    );
+  }
+
+  // List view
   return (
     <>
-      <div style={styles.sectionTitle}>Server Template</div>
-
+      <div style={styles.sectionTitle}>Server Templates</div>
       <div style={styles.fieldNote}>
-        Channels created automatically when a new server is made. The system channel is always included and cannot be removed.
+        Templates define channels created when a new server is made. Users pick a template when creating a server.
       </div>
 
-      <div style={{ marginTop: '16px' }}>
-        {template.map((ch, idx) => {
-          const isSystem = ch.type === 'system';
-          const isNested = ch.parentRef && categories.some(c => c.name === ch.parentRef);
-          return (
-            <div
-              key={idx}
-              style={{
-                ...templateStyles.channelRow(isSystem),
-                ...(isNested ? templateStyles.channelRowNested : {}),
-              }}
-            >
-              {/* Type icon */}
-              <span style={templateStyles.typeIcon}>
-                {CHANNEL_TYPE_ICONS[ch.type] || '?'}
-              </span>
-
-              {/* Name */}
-              {isSystem ? (
-                <span style={templateStyles.nameLabel}>
-                  {ch.name}
-                  <span style={templateStyles.lockIcon} title="Always included"> (locked)</span>
-                </span>
-              ) : (
-                <input
-                  type="text"
-                  value={ch.name}
-                  onChange={(e) => handleNameChange(idx, e.target.value)}
-                  style={templateStyles.nameInput}
-                  placeholder="Channel name"
-                />
-              )}
-
-              {/* Voice mode selector */}
-              {ch.type === 'voice' && (
-                <select
-                  style={templateStyles.smallSelect}
-                  value={ch.voiceMode || 'quality'}
-                  onChange={(e) => handleVoiceModeChange(idx, e.target.value)}
-                >
-                  <option value="quality">Quality</option>
-                  <option value="low-latency">Low-latency</option>
-                </select>
-              )}
-
-              {/* Category parent (for text/voice channels when categories exist) */}
-              {(ch.type === 'text' || ch.type === 'voice') && categories.length > 0 && (
-                <select
-                  style={templateStyles.smallSelect}
-                  value={ch.parentRef || ''}
-                  onChange={(e) => handleParentRefChange(idx, e.target.value)}
-                  title="Parent category"
-                >
-                  <option value="">No category</option>
-                  {categories.map((cat) => (
-                    <option key={cat.name} value={cat.name}>{cat.name}</option>
-                  ))}
-                </select>
-              )}
-
-              {/* Reorder arrows */}
-              {!isSystem && (
-                <>
-                  <button
-                    type="button"
-                    style={templateStyles.arrowBtn}
-                    onClick={() => handleMoveUp(idx)}
-                    disabled={idx === 0}
-                    title="Move up"
-                  >
-                    &#x25B2;
-                  </button>
-                  <button
-                    type="button"
-                    style={templateStyles.arrowBtn}
-                    onClick={() => handleMoveDown(idx)}
-                    disabled={idx === template.length - 1}
-                    title="Move down"
-                  >
-                    &#x25BC;
-                  </button>
-                </>
-              )}
-
-              {/* Remove button */}
-              {!isSystem && (
-                <button
-                  type="button"
-                  style={templateStyles.removeBtn}
-                  onClick={() => handleRemove(idx)}
-                  title="Remove channel"
-                >
-                  &#x2715;
-                </button>
+      {templates.length === 0 ? (
+        <div style={adminStyles.emptyText}>No templates yet.</div>
+      ) : (
+        <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {templates.map(tmpl => (
+            <div key={tmpl.id} style={{
+              display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px',
+              background: 'var(--hush-bg-secondary)', borderRadius: 'var(--radius-md)',
+              border: tmpl.isDefault ? '1px solid var(--hush-live)' : '1px solid transparent',
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--hush-text-primary)' }}>
+                  {tmpl.name}
+                  {tmpl.isDefault && <span style={{ fontSize: '0.72rem', color: 'var(--hush-live)', marginLeft: '6px' }}>DEFAULT</span>}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--hush-text-ghost)', marginTop: '2px' }}>
+                  {tmpl.channels.length} channel{tmpl.channels.length !== 1 ? 's' : ''}: {tmpl.channels.filter(c => c.type !== 'system').map(c => c.type === 'voice' ? `${c.name} (voice)` : `#${c.name}`).join(', ') || 'system only'}
+                </div>
+              </div>
+              <button type="button" className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                onClick={() => startEdit(tmpl)}>Edit</button>
+              {!tmpl.isDefault && (
+                <button type="button" style={{ ...templateStyles.removeBtn, fontSize: '0.85rem' }}
+                  onClick={() => handleDelete(tmpl)} title="Delete template">&#x2715;</button>
               )}
             </div>
-          );
-        })}
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginTop: '16px' }}>
+        <button type="button" className="btn btn-primary" onClick={startNew}>+ New Template</button>
       </div>
 
-      {/* Add channel form */}
-      <div style={templateStyles.addForm}>
-        <input
-          type="text"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="New channel name"
-          style={{ ...templateStyles.nameInput, flex: '1 1 120px' }}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
-        />
-        <select
-          style={templateStyles.smallSelect}
-          value={newType}
-          onChange={(e) => setNewType(e.target.value)}
-        >
-          <option value="text">Text</option>
-          <option value="voice">Voice</option>
-          <option value="category">Category</option>
-        </select>
-        {newType === 'voice' && (
-          <select
-            style={templateStyles.smallSelect}
-            value={newVoiceMode}
-            onChange={(e) => setNewVoiceMode(e.target.value)}
-          >
-            <option value="quality">Quality</option>
-            <option value="low-latency">Low-latency</option>
-          </select>
-        )}
-        <button
-          type="button"
-          className="btn btn-secondary"
-          style={{ padding: '6px 14px', fontSize: '0.8rem' }}
-          onClick={handleAdd}
-          disabled={!newName.trim()}
-        >
-          Add
-        </button>
-      </div>
-
-      {/* Toolbar: Save / Reset / Status */}
-      <div style={templateStyles.toolbar}>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={handleSave}
-          disabled={saving || !dirty}
-        >
-          {saving ? 'Saving...' : 'Save Template'}
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={handleReset}
-        >
-          Reset to default
-        </button>
-        {success && <span style={{ fontSize: '0.8rem', color: 'var(--hush-live)' }}>{success}</span>}
-        {error && <span style={adminStyles.errorText}>{error}</span>}
-      </div>
+      {success && <div style={{ fontSize: '0.8rem', color: 'var(--hush-live)', marginTop: '8px' }}>{success}</div>}
+      {error && <div style={{ ...adminStyles.errorText, marginTop: '8px' }}>{error}</div>}
     </>
   );
 }

@@ -148,13 +148,16 @@ export async function getMyGuilds(token) {
  * Create a new guild.
  * @param {string} token - JWT
  * @param {string} name - Guild name
+ * @param {string} [templateId] - Optional template UUID to use for channel creation
  * @returns {Promise<{ id: string, name: string, ownerId: string, createdAt: string }>}
  */
-export async function createGuild(token, name) {
+export async function createGuild(token, name, templateId) {
+  const body = { name };
+  if (templateId) body.templateId = templateId;
   const res = await fetchWithAuth(token, '/api/servers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -659,32 +662,62 @@ export async function updateInstanceConfig(token, updates) {
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Config update failed');
 }
 
-// ── Server Template ──────────────────────────────────────────────────────────
+// ── Server Templates ─────────────────────────────────────────────────────────
 
 /**
- * Fetch the current server template (owner only).
+ * List all server templates (owner only).
  * @param {string} token - JWT
- * @returns {Promise<Array<{ name: string, type: string, voiceMode?: string, parentRef?: string, position: number }>>}
+ * @returns {Promise<Array<{ id: string, name: string, channels: Array, isDefault: boolean, position: number }>>}
  */
-export async function getServerTemplate(token) {
-  const res = await fetchWithAuth(token, '/api/instance/server-template');
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load template');
+export async function listServerTemplates(token) {
+  const res = await fetchWithAuth(token, '/api/instance/server-templates');
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load templates');
   return res.json();
 }
 
 /**
- * Update the server template (owner only).
+ * Create a new server template (owner only).
  * @param {string} token - JWT
- * @param {Array<{ name: string, type: string, voiceMode?: string, parentRef?: string, position: number }>} template
+ * @param {{ name: string, channels: Array, isDefault: boolean }} body
+ * @returns {Promise<object>} Created template
+ */
+export async function createServerTemplate(token, body) {
+  const res = await fetchWithAuth(token, '/api/instance/server-templates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to create template');
+  return res.json();
+}
+
+/**
+ * Update a server template (owner only).
+ * @param {string} token - JWT
+ * @param {string} id - Template UUID
+ * @param {{ name: string, channels: Array, isDefault: boolean }} body
  * @returns {Promise<void>}
  */
-export async function updateServerTemplate(token, template) {
-  const res = await fetchWithAuth(token, '/api/instance/server-template', {
+export async function updateServerTemplate(token, id, body) {
+  const res = await fetchWithAuth(token, `/api/instance/server-templates/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ template }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to update template');
+}
+
+/**
+ * Delete a server template (owner only, cannot delete default).
+ * @param {string} token - JWT
+ * @param {string} id - Template UUID
+ * @returns {Promise<void>}
+ */
+export async function deleteServerTemplate(token, id) {
+  const res = await fetchWithAuth(token, `/api/instance/server-templates/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to delete template');
 }
 
 // ── Call after Go backend register/login ──────────────────────────────────────
