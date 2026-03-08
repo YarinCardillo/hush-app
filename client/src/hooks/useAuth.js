@@ -159,20 +159,22 @@ export function useAuth() {
       try {
         const res = await fetchWithAuth(stored, '/api/auth/me');
         if (cancelled) return;
-        if (!res.ok) {
+        if (res.status === 401) {
+          // Session truly invalid (expired/revoked) — clear auth
           clearSession();
           setToken(null);
           setUser(null);
           return;
         }
+        if (!res.ok) {
+          // Transient error (429 rate limit, 5xx) — keep session, use stored token
+          // User stays logged in; next navigation or visibility change will re-verify
+          return;
+        }
         const u = await res.json();
         if (!cancelled) setUser(u);
       } catch {
-        if (!cancelled) {
-          clearSession();
-          setToken(null);
-          setUser(null);
-        }
+        // Network error — keep session, don't force logout on transient failures
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -181,7 +183,9 @@ export function useAuth() {
     return () => { cancelled = true; };
   }, []);
 
-  // Re-verify session when tab regains focus (catches bans applied while tab was hidden)
+  // Re-verify session when tab regains focus (catches bans applied while tab was hidden).
+  // Only treat 401 (session revoked/expired) as a forced logout — transient 500s or
+  // network errors should not evict the user.
   useEffect(() => {
     const onVisible = async () => {
       if (document.visibilityState !== 'visible') return;
@@ -189,7 +193,7 @@ export function useAuth() {
       if (!stored) return;
       try {
         const res = await fetchWithAuth(stored, '/api/auth/me');
-        if (!res.ok) {
+        if (res.status === 401) {
           clearSession();
           window.location.href = '/';
           return;
