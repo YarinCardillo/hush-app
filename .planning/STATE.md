@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed K.4-03-PLAN.md
-last_updated: "2026-03-08T01:30:00Z"
-last_activity: 2026-03-08 — K.4-03 complete. Frontend system channel shipped -- SystemChannel.jsx, SystemMessageRow.jsx, ChannelList pinning, ServerLayout routing. Human verification approved.
+stopped_at: Completed K.5-02-PLAN.md
+last_updated: "2026-03-08T17:04:55.853Z"
+last_activity: 2026-03-08 — K.5-02 complete. Multiple named server templates with CRUD API, admin UI, template picker in guild creation, auth resilience fix.
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 21
-  completed_plans: 21
+  total_phases: 8
+  completed_phases: 8
+  total_plans: 23
+  completed_plans: 23
   percent: 100
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Every message, every call, every screen share is end-to-end encrypted by default. The server is a blind relay.
-**Current focus:** Phase K.4 complete — System Messages (all 3 plans done). Next: K.5 Default Guild Template
+**Current focus:** Phase K.5 complete — Default Guild Template (all plans complete). Next: B.7 Crypto Key Lifecycle.
 
 ## Current Position
 
-Phase: K.4 of active phases (System Messages)
-Plan: 3 of 3 (K.4-03 complete)
-Status: K.4 phase complete, ready for K.5
-Last activity: 2026-03-08 — K.4-03 complete. Frontend system channel: SystemChannel.jsx (read-only, WS real-time, pagination), SystemMessageRow.jsx (event-type-styled), ChannelList pinning, ServerLayout routing. Human verification approved.
+Phase: K.5 complete (Default Guild Template)
+Plan: 2 of 2 (all complete)
+Status: K.5 complete, next phase: B.7 Crypto Key Lifecycle
+Last activity: 2026-03-08 — K.5-02 complete. Multiple named server templates with CRUD API, admin UI, template picker in guild creation, auth resilience fix.
 
-Progress: [██████████] 100% (21 of 21 plans complete)
+Progress: [██████████] 100% (23 of 23 plans complete)
 
 ## Performance Metrics
 
@@ -70,6 +70,8 @@ Progress: [██████████] 100% (21 of 21 plans complete)
 | Phase K.4 P01 | 6 | 2 tasks | 12 files |
 | Phase K.4 P02 | 8 | 2 tasks | 7 files |
 | Phase K.4 P03 | 8 | 3 tasks | 5 files |
+| Phase K.5 P01 | 8 | 2 tasks | 10 files |
+| Phase K.5 P02 | 94 | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -142,6 +144,13 @@ From PROJECT.md Key Decisions table — decisions relevant to active phases:
 - [Phase K.4 P02]: EmitSystemMessage placed after InsertAuditLog in all handlers for consistent ordering
 - [Phase K.4 P02]: Ban/mute metadata reused from audit log (contains expires_in) -- no duplication
 - [Phase K.4 P02]: Cleanup goroutine has no shutdown signal -- process exit terminates it, 30s context timeout prevents leaked connections
+- [Phase K.5]: Template application is fire-and-forget -- writeJSON(201) sent before template loop, server creation always succeeds regardless of template failures
+- [Phase K.5]: Two-pass creation for category support -- pass 1 creates categories/top-level, builds name->UUID map; pass 2 creates child channels with resolved parentID
+- [Phase K.5]: System channel auto-prepended if missing from template -- ensures every guild always has a system channel
+- [Phase K.5]: defaultTemplate() returns 3 channels: system (position -1), general text (position 0), General voice/quality (position 1)
+- [Phase K.5 P02]: Multiple named templates with CRUD (server_templates table, migration 000012) instead of single JSONB column -- user requested during checkpoint
+- [Phase K.5 P02]: Template picker in GuildCreateModal lets user choose which template at guild creation; auto-selects if only one exists
+- [Phase K.5 P02]: Auth error classification in useAuth: 429/5xx treated as transient (no logout), only 401/403 trigger logout -- prevents mass logout on server restart
 
 ### Pending Todos
 
@@ -156,8 +165,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-08T01:30:00Z
-Stopped at: Completed K.4-03-PLAN.md
+Last session: 2026-03-08T17:04:55.836Z
+Stopped at: Completed K.5-02-PLAN.md
 Resume file: None
 Branch: phase-K.4-system-messages-identity-model-bip39
-Notes: K.4-03 complete. Frontend system channel: SystemChannel.jsx (read-only, WS real-time, pagination), SystemMessageRow.jsx (event-type colors), ChannelList pinning with shield icon, ServerLayout routing. Phase K.4 fully complete. Build clean.
+Notes: K.5 complete. Full guild template system: backend (migration 000011+000012, CRUD API, 2-pass creation) + frontend (admin template management UI, template picker in guild creation). Auth resilience fix for transient errors. 23/23 active plans complete.

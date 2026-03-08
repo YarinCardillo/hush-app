@@ -1311,7 +1311,6 @@ function ServerTemplateTab() {
   };
 
   const handleDelete = async (tmpl) => {
-    if (tmpl.isDefault) { setError('Cannot delete the default template'); return; }
     if (!window.confirm(`Delete template "${tmpl.name}"?`)) return;
     try {
       await deleteServerTemplate(token, tmpl.id);
@@ -1381,10 +1380,8 @@ function ServerTemplateTab() {
               </div>
               <button type="button" className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.78rem' }}
                 onClick={() => startEdit(tmpl)}>Edit</button>
-              {!tmpl.isDefault && (
-                <button type="button" style={{ ...templateStyles.removeBtn, fontSize: '0.85rem' }}
-                  onClick={() => handleDelete(tmpl)} title="Delete template">&#x2715;</button>
-              )}
+              <button type="button" style={{ ...templateStyles.removeBtn, fontSize: '0.85rem' }}
+                onClick={() => handleDelete(tmpl)} title="Delete template">&#x2715;</button>
             </div>
           ))}
         </div>

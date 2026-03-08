@@ -25,7 +25,7 @@ The MVP path forward: E+2 (multi-tenant restoration) → F (security hardening +
 - [x] **Phase G: Instance-Level Admin Moderation** — Instance ban across all guilds, instance admin override logging (completed 2026-03-05)
 - [x] **Phase K.1: Instance Handshake** — GET /api/handshake with capabilities, server_creation_policy, registration_mode (completed 2026-03-06; `registration_mode` will govern mnemonic generation policy after Phase J)
 - [x] **Phase K.4: System Messages** — System channel type per guild, moderation event broadcasting (completed 2026-03-08)
-- [ ] **Phase K.5: Default Guild Template** — Seed #system, #general, voice room on guild creation
+- [x] **Phase K.5: Default Guild Template** — Seed #system, #general, voice room on guild creation (completed 2026-03-08)
 - [ ] **Phase B.7: Crypto Key Lifecycle** — SPK rotation with grace period, OPK replenishment automation
 - [ ] **Phase J: BIP39 Cryptographic Identity** — Mnemonic-based registration, challenge-response auth, linked-device QR flow, recovery via 12 words
 - [ ] **Phase I: Launch Preparation** — Setup script, security audit, edge cases, documentation
@@ -163,11 +163,12 @@ Plans:
   1. When a guild is created, it is automatically populated with exactly three channels: `#system` (type=system), `#general` (type=text), and `General` (type=voice, quality mode)
   2. The template creation is idempotent — a failure mid-creation and retry does not create duplicate channels
   3. Existing guilds are not affected; the template only applies at guild creation time
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
+**Status:** Complete (2026-03-08)
 
 Plans:
-- [ ] K.5-01-PLAN.md — Backend: migration 000011 (server_template JSONB), models, Store interface, DB implementations, createServer template loop, template update API endpoint, tests
-- [ ] K.5-02-PLAN.md — Frontend: Server Template admin tab in UserSettingsModal, API client functions, human verification
+- [x] K.5-01-PLAN.md — Backend: migration 000011 (server_template JSONB), models, Store interface, DB implementations, createServer template loop, template update API endpoint, tests
+- [x] K.5-02-PLAN.md — Frontend: Multiple named server templates with CRUD API, admin UI in UserSettingsModal, template picker in GuildCreateModal, auth resilience fix
 
 ---
 
@@ -233,7 +234,7 @@ Plans:
 | G. Instance-Level Admin Moderation | 2/2 | Complete   | 2026-03-05 |
 | K.1. Instance Handshake | 1/1 | Complete    | 2026-03-06 |
 | K.4. System Messages | 3/3 | Complete    | 2026-03-08 |
-| K.5. Default Guild Template | 0/2 | Not started | - |
+| K.5. Default Guild Template | 2/2 | Complete   | 2026-03-08 |
 | B.7. Crypto Key Lifecycle | 0/TBD | Not started | - |
 | J. BIP39 Cryptographic Identity | 0/TBD | Not started | - |
 | I. Launch Preparation | 0/TBD | Not started | - |
