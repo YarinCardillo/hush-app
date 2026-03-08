@@ -10,6 +10,8 @@ import {
   instanceUnbanUser,
   getInstanceAuditLog,
   updateInstanceConfig,
+  getServerTemplate,
+  updateServerTemplate,
   fetchWithAuth,
 } from '../lib/api';
 
@@ -19,6 +21,7 @@ const TAB_AUDIO_VIDEO = 'audio-video';
 const TAB_ADMIN_USERS = 'admin-users';
 const TAB_ADMIN_AUDIT = 'admin-audit';
 const TAB_ADMIN_CONFIG = 'admin-config';
+const TAB_ADMIN_TEMPLATE = 'admin-template';
 
 const DURATION_PRESETS = [
   { label: '1 hour', value: 3600 },
@@ -1013,6 +1016,456 @@ function AdminConfigTab() {
   );
 }
 
+// ─── Admin: Server Template Tab ───────────────────────────
+
+const DEFAULT_TEMPLATE = [
+  { name: 'system', type: 'system', position: -1 },
+  { name: 'general', type: 'text', position: 0 },
+  { name: 'General', type: 'voice', voiceMode: 'quality', position: 1 },
+];
+
+const CHANNEL_TYPE_ICONS = {
+  system: '\u{1F6E1}',  // shield
+  text: '#',
+  voice: '\u{1F50A}',   // speaker
+  category: '\u{1F4C1}', // folder
+};
+
+const templateStyles = {
+  channelRow: (isSystem) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 12px',
+    background: isSystem ? 'var(--hush-elevated)' : 'var(--hush-surface)',
+    borderBottom: '1px solid var(--hush-border)',
+    opacity: isSystem ? 0.6 : 1,
+  }),
+  channelRowNested: {
+    paddingLeft: '32px',
+  },
+  typeIcon: {
+    fontSize: '0.85rem',
+    width: '20px',
+    textAlign: 'center',
+    flexShrink: 0,
+    color: 'var(--hush-text-muted)',
+  },
+  nameInput: {
+    flex: 1,
+    minWidth: 0,
+    padding: '6px 10px',
+    background: 'var(--hush-black)',
+    border: '1px solid transparent',
+    borderRadius: 0,
+    color: 'var(--hush-text)',
+    fontFamily: 'var(--font-sans)',
+    fontSize: '0.85rem',
+    outline: 'none',
+  },
+  nameLabel: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: '0.85rem',
+    color: 'var(--hush-text-muted)',
+    padding: '6px 10px',
+  },
+  smallSelect: {
+    padding: '6px 10px',
+    background: 'var(--hush-black)',
+    border: '1px solid transparent',
+    borderRadius: 0,
+    color: 'var(--hush-text)',
+    fontFamily: 'var(--font-sans)',
+    fontSize: '0.78rem',
+    outline: 'none',
+    cursor: 'pointer',
+    appearance: 'none',
+  },
+  arrowBtn: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--hush-text-secondary)',
+    cursor: 'pointer',
+    padding: '2px 4px',
+    fontSize: '0.85rem',
+    fontFamily: 'var(--font-sans)',
+    lineHeight: 1,
+    transition: 'color var(--duration-fast) var(--ease-out)',
+  },
+  removeBtn: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--hush-danger)',
+    cursor: 'pointer',
+    padding: '2px 6px',
+    fontSize: '1rem',
+    fontFamily: 'var(--font-sans)',
+    lineHeight: 1,
+    transition: 'opacity var(--duration-fast) var(--ease-out)',
+  },
+  addForm: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginTop: '12px',
+  },
+  lockIcon: {
+    fontSize: '0.72rem',
+    color: 'var(--hush-text-ghost)',
+    flexShrink: 0,
+  },
+  toolbar: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginTop: '16px',
+  },
+};
+
+function ServerTemplateTab() {
+  const { token } = useAuth();
+  const [template, setTemplate] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [dirty, setDirty] = useState(false);
+
+  // New channel form state
+  const [newName, setNewName] = useState('');
+  const [newType, setNewType] = useState('text');
+  const [newVoiceMode, setNewVoiceMode] = useState('quality');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await getServerTemplate(token);
+        if (!cancelled) {
+          setTemplate(Array.isArray(data) ? data : DEFAULT_TEMPLATE);
+        }
+      } catch {
+        if (!cancelled) {
+          setTemplate(DEFAULT_TEMPLATE);
+          setError('Could not load template, showing defaults');
+        }
+      }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const updateTemplate = (newTpl) => {
+    setTemplate(newTpl);
+    setDirty(true);
+    setError('');
+    setSuccess('');
+  };
+
+  const handleNameChange = (idx, value) => {
+    const updated = template.map((ch, i) => i === idx ? { ...ch, name: value } : ch);
+    updateTemplate(updated);
+  };
+
+  const handleVoiceModeChange = (idx, value) => {
+    const updated = template.map((ch, i) => i === idx ? { ...ch, voiceMode: value } : ch);
+    updateTemplate(updated);
+  };
+
+  const handleParentRefChange = (idx, value) => {
+    const updated = template.map((ch, i) => {
+      if (i !== idx) return ch;
+      const ch2 = { ...ch };
+      if (value === '') {
+        delete ch2.parentRef;
+      } else {
+        ch2.parentRef = value;
+      }
+      return ch2;
+    });
+    updateTemplate(updated);
+  };
+
+  const handleRemove = (idx) => {
+    if (template[idx].type === 'system') return;
+    const updated = template.filter((_, i) => i !== idx);
+    updateTemplate(updated);
+  };
+
+  const handleMoveUp = (idx) => {
+    if (idx <= 0) return;
+    // Don't swap past position -1 system channel
+    const updated = [...template];
+    [updated[idx - 1], updated[idx]] = [updated[idx], updated[idx - 1]];
+    // Recalculate positions
+    recalcPositions(updated);
+    updateTemplate(updated);
+  };
+
+  const handleMoveDown = (idx) => {
+    if (idx >= template.length - 1) return;
+    const updated = [...template];
+    [updated[idx], updated[idx + 1]] = [updated[idx + 1], updated[idx]];
+    recalcPositions(updated);
+    updateTemplate(updated);
+  };
+
+  const recalcPositions = (tpl) => {
+    // System channels keep position -1, everything else gets 0-indexed
+    let pos = 0;
+    for (let i = 0; i < tpl.length; i++) {
+      if (tpl[i].type === 'system') {
+        tpl[i].position = -1;
+      } else {
+        tpl[i].position = pos++;
+      }
+    }
+  };
+
+  const handleAdd = () => {
+    const name = newName.trim();
+    if (!name) return;
+    const maxPos = template.reduce((max, ch) => Math.max(max, ch.position), 0);
+    const entry = {
+      name,
+      type: newType,
+      position: maxPos + 1,
+    };
+    if (newType === 'voice') {
+      entry.voiceMode = newVoiceMode;
+    }
+    const updated = [...template, entry];
+    recalcPositions(updated);
+    updateTemplate(updated);
+    setNewName('');
+    setNewType('text');
+    setNewVoiceMode('quality');
+  };
+
+  const handleReset = () => {
+    updateTemplate(DEFAULT_TEMPLATE.map(ch => ({ ...ch })));
+  };
+
+  const validate = () => {
+    // All names non-empty
+    for (const ch of template) {
+      if (!ch.name || !ch.name.trim()) return 'All channel names must be non-empty';
+    }
+    // Voice channels must have voiceMode
+    for (const ch of template) {
+      if (ch.type === 'voice' && !ch.voiceMode) return 'Voice channels must have a voice mode selected';
+    }
+    // At least one system channel
+    if (!template.some(ch => ch.type === 'system')) return 'Template must include a system channel';
+    // No duplicate (name, type) pairs
+    const seen = new Set();
+    for (const ch of template) {
+      const key = `${ch.name.toLowerCase()}:${ch.type}`;
+      if (seen.has(key)) return `Duplicate channel: "${ch.name}" (${ch.type})`;
+      seen.add(key);
+    }
+    return null;
+  };
+
+  const handleSave = async () => {
+    const err = validate();
+    if (err) {
+      setError(err);
+      return;
+    }
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      await updateServerTemplate(token, template);
+      setDirty(false);
+      setSuccess('Template saved');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (e) {
+      setError(e.message);
+    }
+    setSaving(false);
+  };
+
+  const categories = template.filter(ch => ch.type === 'category');
+
+  if (loading) return <div style={adminStyles.emptyText}>Loading template...</div>;
+
+  return (
+    <>
+      <div style={styles.sectionTitle}>Server Template</div>
+
+      <div style={styles.fieldNote}>
+        Channels created automatically when a new server is made. The system channel is always included and cannot be removed.
+      </div>
+
+      <div style={{ marginTop: '16px' }}>
+        {template.map((ch, idx) => {
+          const isSystem = ch.type === 'system';
+          const isNested = ch.parentRef && categories.some(c => c.name === ch.parentRef);
+          return (
+            <div
+              key={idx}
+              style={{
+                ...templateStyles.channelRow(isSystem),
+                ...(isNested ? templateStyles.channelRowNested : {}),
+              }}
+            >
+              {/* Type icon */}
+              <span style={templateStyles.typeIcon}>
+                {CHANNEL_TYPE_ICONS[ch.type] || '?'}
+              </span>
+
+              {/* Name */}
+              {isSystem ? (
+                <span style={templateStyles.nameLabel}>
+                  {ch.name}
+                  <span style={templateStyles.lockIcon} title="Always included"> (locked)</span>
+                </span>
+              ) : (
+                <input
+                  type="text"
+                  value={ch.name}
+                  onChange={(e) => handleNameChange(idx, e.target.value)}
+                  style={templateStyles.nameInput}
+                  placeholder="Channel name"
+                />
+              )}
+
+              {/* Voice mode selector */}
+              {ch.type === 'voice' && (
+                <select
+                  style={templateStyles.smallSelect}
+                  value={ch.voiceMode || 'quality'}
+                  onChange={(e) => handleVoiceModeChange(idx, e.target.value)}
+                >
+                  <option value="quality">Quality</option>
+                  <option value="low-latency">Low-latency</option>
+                </select>
+              )}
+
+              {/* Category parent (for text/voice channels when categories exist) */}
+              {(ch.type === 'text' || ch.type === 'voice') && categories.length > 0 && (
+                <select
+                  style={templateStyles.smallSelect}
+                  value={ch.parentRef || ''}
+                  onChange={(e) => handleParentRefChange(idx, e.target.value)}
+                  title="Parent category"
+                >
+                  <option value="">No category</option>
+                  {categories.map((cat) => (
+                    <option key={cat.name} value={cat.name}>{cat.name}</option>
+                  ))}
+                </select>
+              )}
+
+              {/* Reorder arrows */}
+              {!isSystem && (
+                <>
+                  <button
+                    type="button"
+                    style={templateStyles.arrowBtn}
+                    onClick={() => handleMoveUp(idx)}
+                    disabled={idx === 0}
+                    title="Move up"
+                  >
+                    &#x25B2;
+                  </button>
+                  <button
+                    type="button"
+                    style={templateStyles.arrowBtn}
+                    onClick={() => handleMoveDown(idx)}
+                    disabled={idx === template.length - 1}
+                    title="Move down"
+                  >
+                    &#x25BC;
+                  </button>
+                </>
+              )}
+
+              {/* Remove button */}
+              {!isSystem && (
+                <button
+                  type="button"
+                  style={templateStyles.removeBtn}
+                  onClick={() => handleRemove(idx)}
+                  title="Remove channel"
+                >
+                  &#x2715;
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Add channel form */}
+      <div style={templateStyles.addForm}>
+        <input
+          type="text"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="New channel name"
+          style={{ ...templateStyles.nameInput, flex: '1 1 120px' }}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
+        />
+        <select
+          style={templateStyles.smallSelect}
+          value={newType}
+          onChange={(e) => setNewType(e.target.value)}
+        >
+          <option value="text">Text</option>
+          <option value="voice">Voice</option>
+          <option value="category">Category</option>
+        </select>
+        {newType === 'voice' && (
+          <select
+            style={templateStyles.smallSelect}
+            value={newVoiceMode}
+            onChange={(e) => setNewVoiceMode(e.target.value)}
+          >
+            <option value="quality">Quality</option>
+            <option value="low-latency">Low-latency</option>
+          </select>
+        )}
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+          onClick={handleAdd}
+          disabled={!newName.trim()}
+        >
+          Add
+        </button>
+      </div>
+
+      {/* Toolbar: Save / Reset / Status */}
+      <div style={templateStyles.toolbar}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={handleSave}
+          disabled={saving || !dirty}
+        >
+          {saving ? 'Saving...' : 'Save Template'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={handleReset}
+        >
+          Reset to default
+        </button>
+        {success && <span style={{ fontSize: '0.8rem', color: 'var(--hush-live)' }}>{success}</span>}
+        {error && <span style={adminStyles.errorText}>{error}</span>}
+      </div>
+    </>
+  );
+}
+
 // ─── Main Modal ───────────────────────────────────────────
 
 export default function UserSettingsModal({ onClose }) {
@@ -1055,6 +1508,9 @@ export default function UserSettingsModal({ onClose }) {
   }
   if (isInstanceAdmin) {
     adminTabs.push({ key: TAB_ADMIN_CONFIG, label: 'Instance Config' });
+  }
+  if (isInstanceOwner) {
+    adminTabs.push({ key: TAB_ADMIN_TEMPLATE, label: 'Server Template' });
   }
 
   const allMobileTabs = [...baseTabs, ...adminTabs];
@@ -1144,6 +1600,15 @@ export default function UserSettingsModal({ onClose }) {
                 >
                   Instance Config
                 </button>
+                {isInstanceOwner && (
+                  <button
+                    type="button"
+                    style={styles.sidebarItem(tab === TAB_ADMIN_TEMPLATE)}
+                    onClick={() => setTab(TAB_ADMIN_TEMPLATE)}
+                  >
+                    Server Template
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -1160,6 +1625,7 @@ export default function UserSettingsModal({ onClose }) {
         {tab === TAB_ADMIN_USERS && isInstanceAdmin && <AdminUsersTab />}
         {tab === TAB_ADMIN_AUDIT && isInstanceOwner && <AdminAuditLogTab />}
         {tab === TAB_ADMIN_CONFIG && isInstanceAdmin && <AdminConfigTab />}
+        {tab === TAB_ADMIN_TEMPLATE && isInstanceOwner && <ServerTemplateTab />}
       </div>
 
       <button

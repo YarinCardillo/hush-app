@@ -659,6 +659,34 @@ export async function updateInstanceConfig(token, updates) {
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Config update failed');
 }
 
+// ── Server Template ──────────────────────────────────────────────────────────
+
+/**
+ * Fetch the current server template (owner only).
+ * @param {string} token - JWT
+ * @returns {Promise<Array<{ name: string, type: string, voiceMode?: string, parentRef?: string, position: number }>>}
+ */
+export async function getServerTemplate(token) {
+  const res = await fetchWithAuth(token, '/api/instance/server-template');
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load template');
+  return res.json();
+}
+
+/**
+ * Update the server template (owner only).
+ * @param {string} token - JWT
+ * @param {Array<{ name: string, type: string, voiceMode?: string, parentRef?: string, position: number }>} template
+ * @returns {Promise<void>}
+ */
+export async function updateServerTemplate(token, template) {
+  const res = await fetchWithAuth(token, '/api/instance/server-template', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ template }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to update template');
+}
+
 // ── Call after Go backend register/login ──────────────────────────────────────
 
 /**
