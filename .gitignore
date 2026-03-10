@@ -52,3 +52,8 @@ client/src/wasm/
 
 # Signal documentation
 .signal-specs/
+
+# GSD planning docs (local-only)
+.planning/
+# Production env (secrets)
+.env.prod
