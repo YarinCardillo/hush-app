@@ -1296,6 +1296,7 @@ export default function ChannelList({
           instanceName={guildName}
           instanceData={instanceData}
           isAdmin={isAdmin}
+          myRole={myRole}
           onClose={() => setShowSettings(false)}
           showToast={showToast}
           members={members}

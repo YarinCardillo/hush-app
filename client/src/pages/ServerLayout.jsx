@@ -6,7 +6,7 @@ import MemberList from '../components/MemberList';
 import SystemChannel from './SystemChannel';
 import TextChannel from './TextChannel';
 import VoiceChannel from './VoiceChannel';
-import { getInstance, getMyGuilds, getGuildChannels, getGuildMembers } from '../lib/api';
+import { getInstance, getMyGuilds, getGuildChannels, getGuildMembers, getHandshake } from '../lib/api';
 import { createWsClient } from '../lib/ws';
 import { useAuth } from '../contexts/AuthContext';
 import { JWT_KEY, getDeviceId } from '../hooks/useAuth';
@@ -132,6 +132,7 @@ export default function ServerLayout() {
   const { token: authToken, user, logout } = useAuth();
   const breakpoint = useBreakpoint();
   const [instanceData, setInstanceData] = useState(null);
+  const [handshakeData, setHandshakeData] = useState(null);
   const [guilds, setGuilds] = useState([]);
   const [activeGuild, setActiveGuild] = useState(null);
   const [channels, setChannels] = useState([]);
@@ -215,7 +216,7 @@ export default function ServerLayout() {
     token: authToken,
     userId: currentUserId,
     deviceId: getDeviceId(),
-    opkThreshold: instanceData?.opkLowThreshold ?? null,
+    opkThreshold: handshakeData?.opk_low_threshold ?? null,
     wsClient,
   });
 
@@ -437,17 +438,27 @@ export default function ServerLayout() {
     return () => wsClient.off('member_joined', handler);
   }, [wsClient, serverId]);
 
-  // member_left: remove from list (guild-scoped)
+  // member_left: remove from list; navigate self if voluntarily left (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
     const handler = (data) => {
       if (!data.user_id) return;
       if (data.server_id && data.server_id !== serverId) return;
+      if (data.user_id === currentUserId) {
+        setGuilds((prev) => prev.filter((g) => g.id !== serverId));
+        const nextGuild = guilds.find((g) => g.id !== serverId);
+        if (nextGuild) {
+          navigateRef.current(`/servers/${nextGuild.id}/channels`, { replace: true });
+        } else {
+          navigateRef.current('/guilds', { replace: true });
+        }
+        return;
+      }
       setMembers((prev) => prev.filter((m) => (m.id ?? m.userId) !== data.user_id));
     };
     wsClient.on('member_left', handler);
     return () => wsClient.off('member_left', handler);
-  }, [wsClient, serverId]);
+  }, [wsClient, serverId, currentUserId, guilds]);
 
   // role_changed / member_role_changed: update member's role (guild-scoped)
   useEffect(() => {
@@ -477,14 +488,16 @@ export default function ServerLayout() {
     if (!authToken) return;
     const token = getToken();
     if (!token) return;
-    Promise.all([getMyGuilds(token), getInstance(token)])
-      .then(([guildList, inst]) => {
+    Promise.all([getMyGuilds(token), getInstance(token), getHandshake()])
+      .then(([guildList, inst, shake]) => {
         setGuilds(Array.isArray(guildList) ? guildList : []);
         setInstanceData(inst);
+        setHandshakeData(shake);
       })
       .catch(() => {
         setGuilds([]);
         setInstanceData(null);
+        setHandshakeData(null);
       });
   }, [authToken]);
 

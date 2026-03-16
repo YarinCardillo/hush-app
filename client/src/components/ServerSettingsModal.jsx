@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { updateInstance, getGuildMembers, listBans, listMutes, unbanUser, unmuteUser, getAuditLog } from '../lib/api';
+import { updateInstance, getGuildMembers, listBans, listMutes, unbanUser, unmuteUser, getAuditLog, leaveGuild } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 
@@ -940,12 +940,14 @@ export default function ServerSettingsModal({
   instanceName,
   instanceData,
   isAdmin,
+  myRole,
   onClose,
   showToast,
   members,
 }) {
   const [tab, setTab] = useState(isAdmin ? TAB_OVERVIEW : TAB_MEMBERS);
   const [isOpen, setIsOpen] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile';
 
@@ -963,6 +965,16 @@ export default function ServerSettingsModal({
   const handleOverlayClick = useCallback((e) => {
     if (e.target === e.currentTarget) onClose();
   }, [onClose]);
+
+  const handleLeaveServer = useCallback(async () => {
+    try {
+      await leaveGuild(getToken(), serverId);
+      onClose();
+    } catch (err) {
+      showToast?.({ message: err.message || 'Failed to leave server', variant: 'error' });
+      setShowLeaveConfirm(false);
+    }
+  }, [getToken, serverId, onClose, showToast]);
 
   const tabs = [
     ...(isAdmin ? [{ key: TAB_OVERVIEW, label: 'Overview' }] : []),
@@ -1083,7 +1095,36 @@ export default function ServerSettingsModal({
             showToast={showToast}
           />
         )}
+
+        {myRole !== 'owner' && (
+          <div style={styles.dangerZone}>
+            <div style={styles.dangerTitle}>Danger Zone</div>
+            <div style={styles.dangerAction}>
+              <span style={styles.dangerActionText}>
+                Leave this server. You will lose access to all channels.
+              </span>
+              <button
+                type="button"
+                className="btn"
+                style={{ background: 'var(--hush-danger)', color: '#fff', fontSize: '0.8rem', padding: '6px 16px' }}
+                onClick={() => setShowLeaveConfirm(true)}
+              >
+                Leave Server
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {showLeaveConfirm && (
+        <ConfirmModal
+          title="Leave Server"
+          message={`Are you sure you want to leave "${instanceName}"? You will need a new invite to rejoin.`}
+          confirmLabel="Leave"
+          onConfirm={handleLeaveServer}
+          onCancel={() => setShowLeaveConfirm(false)}
+        />
+      )}
 
       <button
         type="button"
