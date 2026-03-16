@@ -29,6 +29,7 @@ vi.mock('../lib/api', () => ({
   // Key maintenance deps — no-ops in test context
   uploadKeys: vi.fn().mockResolvedValue(undefined),
   getOPKCount: vi.fn().mockResolvedValue(100),
+  getHandshake: vi.fn().mockResolvedValue({ opk_low_threshold: 10 }),
 }));
 
 vi.mock('../hooks/useBreakpoint', () => ({

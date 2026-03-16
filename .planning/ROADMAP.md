@@ -27,7 +27,7 @@ The MVP path forward: E+2 (multi-tenant restoration) → F (security hardening +
 - [x] **Phase K.4: System Messages** — System channel type per guild, moderation event broadcasting (completed 2026-03-08)
 - [x] **Phase K.5: Default Guild Template** — Seed #system, #general, voice room on guild creation (completed 2026-03-08)
 - [x] **Phase B.7: Crypto Key Lifecycle** — SPK rotation with grace period, OPK replenishment automation (completed 2026-03-16)
-- [ ] **Phase K.6: Cross-Phase Integration Wiring** — Fix voluntary leave client path, instance_updated WS payload, unstyled system events, OPK threshold propagation
+- [x] **Phase K.6: Cross-Phase Integration Wiring** — Fix voluntary leave client path, instance_updated WS payload, unstyled system events, OPK threshold propagation (completed 2026-03-16)
 - [ ] **Phase J: BIP39 Cryptographic Identity** — Mnemonic-based registration, challenge-response auth, linked-device QR flow, recovery via 12 words
 - [ ] **Phase I: Launch Preparation** — Setup script, security audit, edge cases, documentation
 
@@ -200,7 +200,7 @@ Plans:
   2. When an instance admin updates instance config, connected clients receive an `instance_updated` WS event with the updated field values (`name`, `icon_url`, `registration_mode`) and the UI reflects changes without page reload
   3. `server_created` and `template_partial_failure` system message event types render with proper icons and styling in `SystemMessageRow`, not as unstyled grey text
   4. The client reads `opk_low_threshold` from the handshake response and uses it as the OPK replenishment trigger instead of the hardcoded `DEFAULT_OPK_THRESHOLD = 10`
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] K.6-01-PLAN.md — Backend: enrich instance_updated WS payload with config fields; Frontend: add server_created and template_partial_failure styling to SystemMessageRow
@@ -260,7 +260,7 @@ Plans:
 | K.4. System Messages | 3/3 | Complete    | 2026-03-08 |
 | K.5. Default Guild Template | 2/2 | Complete   | 2026-03-08 |
 | B.7. Crypto Key Lifecycle | 2/2 | Complete    | 2026-03-16 |
-| K.6. Cross-Phase Integration Wiring | 1/2 | In Progress|  |
+| K.6. Cross-Phase Integration Wiring | 2/2 | Complete   | 2026-03-16 |
 | J. BIP39 Cryptographic Identity | 0/TBD | Not started | - |
 | I. Launch Preparation | 0/TBD | Not started | - |
 

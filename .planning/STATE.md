@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed K.6-01-PLAN.md
-last_updated: "2026-03-16T14:20:47.320Z"
+stopped_at: Completed K.6-02-PLAN.md
+last_updated: "2026-03-16T14:23:17.860Z"
 last_activity: 2026-03-08 — K.5-02 complete. Multiple named server templates with CRUD API, admin UI, template picker in guild creation, auth resilience fix.
 progress:
   total_phases: 12
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 27
-  completed_plans: 26
+  completed_plans: 27
   percent: 100
 ---
 
@@ -75,6 +75,7 @@ Progress: [██████████] 100% (23 of 23 plans complete)
 | Phase B.7 P01 | 8 | 2 tasks | 8 files |
 | Phase B.7 P02 | 14 | 2 tasks | 6 files |
 | Phase K.6 P01 | 1 | 2 tasks | 3 files |
+| Phase K.6 P02 | 12 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -163,6 +164,10 @@ From PROJECT.md Key Decisions table — decisions relevant to active phases:
 - [Phase K.6]: newCfg fetched unconditionally after UpdateInstanceConfig so both cache and broadcast use same post-update value (K.6-01)
 - [Phase K.6]: instance_updated broadcast falls back to type-only payload when config re-fetch fails — fires rather than silently drops (K.6-01)
 - [Phase K.6]: server_created uses #d54f12 Hush orange; template_partial_failure uses #f59e0b amber (matches member_muted warning) in SystemMessageRow (K.6-01)
+- [Phase K.6]: Leave Server navigation driven by member_left WS event in ServerLayout, not the modal — consistent with kick/ban pattern
+- [Phase K.6]: No toast on self-leave (user initiated); immediate navigation with replace:true (no setTimeout delay unlike kick/ban)
+- [Phase K.6]: OPK threshold reads from handshakeData.opk_low_threshold (handshake response) not instanceData which never had the field
+- [Phase K.6]: getHandshake() uses raw fetch() with no auth header — public endpoint contract
 
 ### Pending Todos
 
@@ -177,8 +182,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-16T14:20:47.315Z
-Stopped at: Completed K.6-01-PLAN.md
+Last session: 2026-03-16T14:23:17.855Z
+Stopped at: Completed K.6-02-PLAN.md
 Resume file: None
 Branch: phase-K.4-system-messages-identity-model-bip39
 Notes: K.5 complete. Full guild template system: backend (migration 000011+000012, CRUD API, 2-pass creation) + frontend (admin template management UI, template picker in guild creation). Auth resilience fix for transient errors. 23/23 active plans complete.
