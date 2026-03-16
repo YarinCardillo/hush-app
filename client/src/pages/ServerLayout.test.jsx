@@ -26,6 +26,9 @@ vi.mock('../lib/api', () => ({
   getGuildMembers: vi.fn().mockResolvedValue([
     { id: 'u1', displayName: 'User One', role: 'member' },
   ]),
+  // Key maintenance deps — no-ops in test context
+  uploadKeys: vi.fn().mockResolvedValue(undefined),
+  getOPKCount: vi.fn().mockResolvedValue(100),
 }));
 
 vi.mock('../hooks/useBreakpoint', () => ({
