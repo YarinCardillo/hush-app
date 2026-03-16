@@ -201,7 +201,7 @@ export async function setSession(db, remoteUserId, remoteDeviceId, stateBytes, a
 
 /**
  * @param {IDBDatabase} db
- * @param {{ id: number, publicKey: number[], privateKey: number[], signature: number[] }} spk
+ * @param {{ id: number, publicKey: number[], privateKey: number[], signature: number[], createdAt?: number, supersededAt?: number|null }} spk
  */
 export async function setSignedPreKey(db, spk) {
   await put(db, STORE_SIGNED_PREKEYS, `spk-${spk.id}`, {
@@ -209,18 +209,108 @@ export async function setSignedPreKey(db, spk) {
     publicKey: spk.publicKey,
     privateKey: spk.privateKey,
     signature: spk.signature,
+    createdAt: spk.createdAt ?? Date.now(),
+    supersededAt: spk.supersededAt ?? null,
   });
 }
 
 /**
  * @param {IDBDatabase} db
  * @param {number} id
- * @returns {Promise<{ id: number, publicKey: number[], privateKey: number[], signature: number[] }|null>}
+ * @returns {Promise<{ id: number, publicKey: number[], privateKey: number[], signature: number[], createdAt: number, supersededAt: number|null }|null>}
  */
 export async function getSignedPreKey(db, id) {
   const row = await get(db, STORE_SIGNED_PREKEYS, `spk-${id}`);
   if (!row?.privateKey) return null;
-  return { id: row.id, publicKey: row.publicKey, privateKey: row.privateKey, signature: row.signature };
+  return {
+    id: row.id,
+    publicKey: row.publicKey,
+    privateKey: row.privateKey,
+    signature: row.signature,
+    createdAt: row.createdAt ?? null,
+    supersededAt: row.supersededAt ?? null,
+  };
+}
+
+/**
+ * List all signed pre-keys from IndexedDB. Used for grace-period pruning.
+ * @param {IDBDatabase} db
+ * @returns {Promise<Array<{ id: number, publicKey: number[], privateKey: number[], signature: number[], createdAt: number, supersededAt: number|null }>>}
+ */
+export function listSignedPreKeys(db) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_SIGNED_PREKEYS, 'readonly');
+    const store = tx.objectStore(STORE_SIGNED_PREKEYS);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result ?? []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Delete a signed pre-key by ID. Called after 48h grace period expires.
+ * @param {IDBDatabase} db
+ * @param {number} id
+ */
+export async function deleteSignedPreKey(db, id) {
+  await del(db, STORE_SIGNED_PREKEYS, `spk-${id}`);
+}
+
+/**
+ * Mark a signed pre-key as superseded (sets supersededAt timestamp).
+ * The private key is retained until the 48h grace period expires.
+ * @param {IDBDatabase} db
+ * @param {number} spkId
+ */
+export async function markSPKSuperseded(db, spkId) {
+  const existing = await getSignedPreKey(db, spkId);
+  if (!existing) return;
+  await setSignedPreKey(db, { ...existing, supersededAt: Date.now() });
+}
+
+// ---------------------------------------------------------------------------
+// SPK ID counters (stored in STORE_IDENTITY alongside registrationId)
+// ---------------------------------------------------------------------------
+
+const CURRENT_SPK_ID_KEY = 'currentSPKId';
+const NEXT_SPK_ID_KEY = 'nextSPKId';
+
+/**
+ * Get the ID of the currently active signed pre-key.
+ * Defaults to 1 (the initial upload ID from uploadKeysAfterAuth).
+ * @param {IDBDatabase} db
+ * @returns {Promise<number>}
+ */
+export async function getCurrentSPKId(db) {
+  const row = await get(db, STORE_IDENTITY, CURRENT_SPK_ID_KEY);
+  return row?.value ?? 1;
+}
+
+/**
+ * @param {IDBDatabase} db
+ * @param {number} id
+ */
+export async function setCurrentSPKId(db, id) {
+  await put(db, STORE_IDENTITY, CURRENT_SPK_ID_KEY, { value: id });
+}
+
+/**
+ * Get the next SPK ID to use for rotation.
+ * Defaults to 2 since the initial upload uses ID 1.
+ * @param {IDBDatabase} db
+ * @returns {Promise<number>}
+ */
+export async function getNextSPKId(db) {
+  const row = await get(db, STORE_IDENTITY, NEXT_SPK_ID_KEY);
+  return row?.value ?? 2;
+}
+
+/**
+ * @param {IDBDatabase} db
+ * @param {number} id
+ */
+export async function setNextSPKId(db, id) {
+  await put(db, STORE_IDENTITY, NEXT_SPK_ID_KEY, { value: id });
 }
 
 // ---------------------------------------------------------------------------

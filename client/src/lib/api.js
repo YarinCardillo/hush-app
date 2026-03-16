@@ -43,6 +43,22 @@ export async function uploadKeys(token, body) {
 }
 
 /**
+ * Get the current OPK count for this device from the server.
+ * Used by key maintenance to decide whether to replenish one-time pre-keys.
+ * @param {string} token - JWT
+ * @param {string} deviceId - Device ID
+ * @returns {Promise<number>}
+ */
+export async function getOPKCount(token, deviceId) {
+  const res = await fetchWithAuth(token, `/api/keys/count?deviceId=${encodeURIComponent(deviceId)}`);
+  if (!res.ok) {
+    throw new Error(`getOPKCount ${res.status}`);
+  }
+  const data = await res.json();
+  return data.count;
+}
+
+/**
  * Fetch pre-key bundle(s) for a user (all devices).
  * @param {string} token - JWT
  * @param {string} userId - Target user UUID
