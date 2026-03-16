@@ -4,14 +4,16 @@
  */
 
 const EVENT_CONFIG = {
-  member_joined:   { color: '#4ade80', label: 'joined' },
-  member_left:     { color: '#8888a0', label: 'left' },
-  member_kicked:   { color: '#ef4444', label: 'kicked' },
-  member_banned:   { color: '#ef4444', label: 'banned' },
-  member_unbanned: { color: '#4ade80', label: 'unbanned' },
-  member_muted:    { color: '#f59e0b', label: 'muted' },
-  member_unmuted:  { color: '#4ade80', label: 'unmuted' },
-  role_changed:    { color: '#3b82f6', label: 'role changed' },
+  member_joined:            { color: '#4ade80', label: 'joined' },
+  member_left:              { color: '#8888a0', label: 'left' },
+  member_kicked:            { color: '#ef4444', label: 'kicked' },
+  member_banned:            { color: '#ef4444', label: 'banned' },
+  member_unbanned:          { color: '#4ade80', label: 'unbanned' },
+  member_muted:             { color: '#f59e0b', label: 'muted' },
+  member_unmuted:           { color: '#4ade80', label: 'unmuted' },
+  role_changed:             { color: '#3b82f6', label: 'role changed' },
+  server_created:           { color: '#d54f12', label: 'server created' },
+  template_partial_failure: { color: '#f59e0b', label: 'setup warning' },
 };
 
 const DEFAULT_CONFIG = { color: 'var(--hush-text-muted)', label: 'event' };
@@ -57,6 +59,10 @@ function buildMessageText(message, members) {
       const newRole = message.metadata?.new_role ?? 'unknown';
       return `${actor} changed ${target}'s role from ${oldRole} to ${newRole}`;
     }
+    case 'server_created':
+      return `${actor} created the server`;
+    case 'template_partial_failure':
+      return `Server setup: some default channels could not be created`;
     default:
       return `${actor} performed ${message.eventType}`;
   }
