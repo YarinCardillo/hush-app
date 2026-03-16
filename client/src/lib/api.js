@@ -144,6 +144,19 @@ export async function updateInstance(token, body) {
   }
 }
 
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch server handshake data (no auth required).
+ * Returns server version, API version, OPK low threshold, and other instance metadata.
+ * @returns {Promise<{ server_version: string, api_version: string, min_client_version: string, opk_low_threshold: number }>}
+ */
+export async function getHandshake() {
+  const res = await fetch('/api/handshake');
+  if (!res.ok) throw new Error(`handshake failed: ${res.status}`);
+  return res.json();
+}
+
 // ── Guild API ─────────────────────────────────────────────────────────────────
 
 /**
@@ -180,6 +193,22 @@ export async function createGuild(token, name, templateId) {
     throw new Error(err.error || `create guild ${res.status}`);
   }
   return res.json();
+}
+
+/**
+ * Voluntarily leave a guild (non-owner members only).
+ * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
+ * @returns {Promise<void>}
+ */
+export async function leaveGuild(token, serverId) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/leave`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `leave guild failed: ${res.status}`);
+  }
 }
 
 /**

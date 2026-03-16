@@ -1,9 +1,106 @@
 /**
- * Tests for uploadKeysAfterAuth (pure logic; no WASM/signalStore imports here).
+ * Tests for api.js client functions and uploadKeysAfterAuth.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { uploadKeysAfterAuth } from './uploadKeysAfterAuth';
+import { leaveGuild, getHandshake } from './api';
+
+// ── leaveGuild ────────────────────────────────────────────────────────────────
+
+describe('leaveGuild', () => {
+  const TOKEN = 'test-jwt';
+  const SERVER_ID = 'server-uuid-123';
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('calls POST /api/servers/:id/leave with auth header', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await leaveGuild(TOKEN, SERVER_ID);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe(`/api/servers/${SERVER_ID}/leave`);
+    expect(opts.method).toBe('POST');
+    expect(opts.headers.get('Authorization')).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('throws on non-ok response with server error message', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({ error: 'guild owner cannot leave' }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await expect(leaveGuild(TOKEN, SERVER_ID)).rejects.toThrow('guild owner cannot leave');
+  });
+
+  it('throws fallback message when error response has no error field', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({}),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await expect(leaveGuild(TOKEN, SERVER_ID)).rejects.toThrow('leave guild failed: 500');
+  });
+});
+
+// ── getHandshake ──────────────────────────────────────────────────────────────
+
+describe('getHandshake', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('calls GET /api/handshake without Authorization header', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ opk_low_threshold: 10 }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await getHandshake();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe('/api/handshake');
+    // getHandshake uses raw fetch with no opts — no Authorization header
+    expect(opts).toBeUndefined();
+  });
+
+  it('returns parsed JSON from the handshake endpoint', async () => {
+    const payload = {
+      server_version: '1.0.0',
+      api_version: 'v1',
+      min_client_version: '0.9.0',
+      opk_low_threshold: 5,
+    };
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(payload),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await getHandshake();
+
+    expect(result).toEqual(payload);
+    expect(result.opk_low_threshold).toBe(5);
+  });
+
+  it('throws when handshake endpoint returns non-ok status', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 503 });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await expect(getHandshake()).rejects.toThrow('handshake failed: 503');
+  });
+});
 
 describe('uploadKeysAfterAuth', () => {
   const token = 'jwt-token';
