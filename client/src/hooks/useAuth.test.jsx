@@ -6,7 +6,7 @@ import { JWT_KEY } from './useAuth';
 
 vi.mock('../lib/api', () => ({
   fetchWithAuth: vi.fn(),
-  uploadKeysAfterAuth: vi.fn().mockResolvedValue(undefined),
+  uploadKeyPackagesAfterAuth: vi.fn().mockResolvedValue(undefined),
 }));
 
 function mockFetchOk(body) {

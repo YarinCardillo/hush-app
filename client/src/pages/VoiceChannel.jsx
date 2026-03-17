@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getDeviceId } from '../hooks/useAuth';
-import { useSignal } from '../hooks/useSignal';
-import * as signalStore from '../lib/signalStore';
+import { useMLS } from '../hooks/useMLS';
+import * as mlsStore from '../lib/mlsStore';
 import { useRoom } from '../hooks/useRoom';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDevices } from '../hooks/useDevices';
@@ -200,10 +200,10 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   const isLowLatency = channel.voiceMode === 'low-latency';
 
   const getStore = useCallback(
-    () => signalStore.openStore(user?.id ?? '', getDeviceId()),
+    () => mlsStore.openStore(user?.id ?? '', getDeviceId()),
     [user?.id],
   );
-  const { encryptForUser, decryptFromUser } = useSignal({
+  const { encryptForUser, decryptFromUser } = useMLS({
     getStore,
     getToken: getToken ?? (() => null),
   });

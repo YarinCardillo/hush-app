@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { getDeviceId } from '../hooks/useAuth';
-import * as signalStore from '../lib/signalStore';
+import * as mlsStore from '../lib/mlsStore';
 import Chat from '../components/Chat';
 
 const styles = {
@@ -74,7 +74,7 @@ export default function TextChannel({
   const { user } = useAuth();
   const currentUserId = user?.id ?? '';
   const getStore = useCallback(() => {
-    return signalStore.openStore(user?.id ?? '', getDeviceId());
+    return mlsStore.openStore(user?.id ?? '', getDeviceId());
   }, [user?.id]);
 
   return (

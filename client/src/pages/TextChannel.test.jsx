@@ -5,7 +5,7 @@ import TextChannel from './TextChannel';
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: vi.fn(),
 }));
-vi.mock('../lib/signalStore', () => ({
+vi.mock('../lib/mlsStore', () => ({
   openStore: vi.fn(() => Promise.resolve(null)),
 }));
 vi.mock('../components/Chat', () => ({

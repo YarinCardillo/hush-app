@@ -10,7 +10,7 @@ import { getInstance, getMyGuilds, getGuildChannels, getGuildMembers, getHandsha
 import { createWsClient } from '../lib/ws';
 import { useAuth } from '../contexts/AuthContext';
 import { JWT_KEY, getDeviceId } from '../hooks/useAuth';
-import { useKeyMaintenance } from '../hooks/useKeyMaintenance';
+import { useKeyPackageMaintenance } from '../hooks/useKeyPackageMaintenance';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useSidebarResize } from '../hooks/useSidebarResize';
 import ConfirmModal from '../components/ConfirmModal';
@@ -210,13 +210,12 @@ export default function ServerLayout() {
     };
   }, [authToken]);
 
-  // Key lifecycle maintenance: SPK rotation (7-day) and OPK replenishment (threshold-based).
-  // Triggered on startup, every 6h, and by keys.low / keys.spk_stale WS events.
-  useKeyMaintenance({
+  // MLS KeyPackage maintenance: replenishes on startup, every 6h, and key_packages.low WS event.
+  useKeyPackageMaintenance({
     token: authToken,
     userId: currentUserId,
     deviceId: getDeviceId(),
-    opkThreshold: handshakeData?.opk_low_threshold ?? null,
+    threshold: handshakeData?.key_package_low_threshold ?? null,
     wsClient,
   });
 

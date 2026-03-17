@@ -22,8 +22,8 @@ const mockDisconnectRoom = vi.fn(() => Promise.resolve());
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: vi.fn(),
 }));
-vi.mock('../hooks/useSignal', () => ({
-  useSignal: vi.fn(() => ({
+vi.mock('../hooks/useMLS', () => ({
+  useMLS: vi.fn(() => ({
     encryptForUser: vi.fn(),
     decryptFromUser: vi.fn(),
     getCachedMessage: vi.fn(() => Promise.resolve(null)),
@@ -49,7 +49,7 @@ vi.mock('../hooks/useDevices', () => ({
     requestPermission: vi.fn(),
   })),
 }));
-vi.mock('../lib/signalStore', () => ({
+vi.mock('../lib/mlsStore', () => ({
   openStore: vi.fn(() => Promise.resolve(null)),
 }));
 

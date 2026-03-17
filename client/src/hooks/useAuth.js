@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { fetchWithAuth, uploadKeysAfterAuth } from '../lib/api';
+import { fetchWithAuth, uploadKeyPackagesAfterAuth } from '../lib/api';
 
 export const JWT_KEY = 'hush_jwt';
 export const GUEST_SESSION_KEY = 'hush_guest_session';
@@ -42,7 +42,7 @@ export function clearSession() {
 }
 
 /**
- * After successful auth: upload Signal keys, then persist token.
+ * After successful auth: upload MLS KeyPackages, then persist token.
  * Token is written to sessionStorage ONLY after key upload succeeds,
  * so a failed upload never leaves a stale JWT behind.
  * @param {{ token: string, user: { id: string } }} data
@@ -52,7 +52,7 @@ async function finishAuth(data) {
   const { token, user } = data;
   if (!token || !user?.id) throw new Error('invalid auth response');
   const deviceId = getDeviceId();
-  await uploadKeysAfterAuth(token, user.id, deviceId);
+  await uploadKeyPackagesAfterAuth(token, user.id, deviceId);
   sessionStorage.setItem(JWT_KEY, token);
   return { token, user };
 }

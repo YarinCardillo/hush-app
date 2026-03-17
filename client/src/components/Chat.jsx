@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as api from '../lib/api';
-import { useSignal } from '../hooks/useSignal';
+import { useMLS } from '../hooks/useMLS';
 
 const DEFAULT_DEVICE_ID = 'default';
 
@@ -289,7 +289,7 @@ export default function Chat({
     return map;
   }, [members]);
 
-  const { encryptForUser, decryptFromUser, getCachedMessage, setCachedMessage } = useSignal({
+  const { encryptForUser, decryptFromUser, getCachedMessage, setCachedMessage } = useMLS({
     getStore: getStore ?? (() => Promise.resolve(null)),
     getToken: getToken ?? (() => null),
   });
