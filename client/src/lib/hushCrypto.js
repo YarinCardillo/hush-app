@@ -4,6 +4,10 @@
  *
  * All WASM functions return structured JS objects via serde_wasm_bindgen.
  * Vec<u8> fields arrive as Uint8Array; u32 fields as JS numbers.
+ *
+ * Exports MLS credential and KeyPackage generation.
+ * Signal Protocol functions (generateIdentity, generatePreKeyBundle,
+ * performX3DH, encrypt, decrypt) have been removed — superseded by MLS (Phase M.2+).
  */
 
 let module = null;
@@ -27,99 +31,39 @@ export async function init() {
 }
 
 /**
- * @returns {Promise<{ publicKey: Uint8Array, privateKey: Uint8Array, registrationId: number }>}
+ * Generates an MLS credential (BasicCredential + signing keypair).
+ * The credential must be uploaded to /api/mls/credentials (public material only).
+ * The signing private key must be stored locally in mlsStore for KeyPackage generation.
+ *
+ * @param {string} identity - Opaque identity string (format: "${userId}:${deviceId}")
+ * @returns {Promise<{ signingPublicKey: Uint8Array, signingPrivateKey: Uint8Array, credentialBytes: Uint8Array }>}
  */
-export async function generateIdentity() {
+export async function generateCredential(identity) {
   await init();
-  const out = module.generateIdentity();
+  const out = module.generateCredential(identity);
   return {
-    publicKey: new Uint8Array(out.public_key),
-    privateKey: new Uint8Array(out.private_key),
-    registrationId: out.registration_id,
+    signingPublicKey: new Uint8Array(out.signing_public_key),
+    signingPrivateKey: new Uint8Array(out.signing_private_key),
+    credentialBytes: new Uint8Array(out.credential_bytes),
   };
 }
 
 /**
- * Generates a pre-key bundle including private keys for local storage.
- * Only PUBLIC keys should be uploaded to the server.
- * @param {Uint8Array} identityPublic
- * @param {Uint8Array} identityPrivate
- * @param {number} registrationId
- * @param {number} numOneTime
- * @returns {Promise<object>}
+ * Generates a single MLS KeyPackage for the given credential.
+ * Only keyPackageBytes should be uploaded to the server.
+ * privateKeyBytes must be stored locally in mlsStore keyed by hex(hashRefBytes).
+ *
+ * @param {Uint8Array} signingPrivateKey - From generateCredential (64 bytes: seed||public)
+ * @param {Uint8Array} signingPublicKey - From generateCredential
+ * @param {Uint8Array} credentialBytes - From generateCredential
+ * @returns {Promise<{ keyPackageBytes: Uint8Array, privateKeyBytes: Uint8Array, hashRefBytes: Uint8Array }>}
  */
-export async function generatePreKeyBundle(identityPublic, identityPrivate, registrationId, numOneTime) {
+export async function generateKeyPackage(signingPrivateKey, signingPublicKey, credentialBytes) {
   await init();
-  return module.generatePreKeyBundle(identityPublic, identityPrivate, registrationId, numOneTime);
-}
-
-/**
- * X3DH initiator (Alice). Returns session state + ephemeral public key for the initial message.
- * @param {string} remoteBundleJson - JSON from GET /api/keys/:userId/:deviceId
- * @param {Uint8Array} identityPrivate
- * @returns {Promise<{ stateBytes: Uint8Array, ephemeralPublic: Uint8Array }>}
- */
-export async function performX3DH(remoteBundleJson, identityPrivate) {
-  await init();
-  const out = module.performX3DH(remoteBundleJson, identityPrivate);
+  const out = module.generateKeyPackage(signingPrivateKey, signingPublicKey, credentialBytes);
   return {
-    stateBytes: new Uint8Array(out.state_bytes),
-    ephemeralPublic: new Uint8Array(out.ephemeral_public),
-  };
-}
-
-/**
- * X3DH responder (Bob). Takes Alice's initial message keys and Bob's private keys.
- * @param {Uint8Array} identityPrivate - Bob's identity private key (32 bytes)
- * @param {Uint8Array} spkPrivate - Bob's signed pre-key private (32 bytes)
- * @param {Uint8Array} spkPublic - Bob's signed pre-key public (33 bytes)
- * @param {Uint8Array|null} opkPrivate - Bob's one-time pre-key private (32 bytes, or null)
- * @param {Uint8Array} aliceIdentityPublic - Alice's identity public (33 bytes)
- * @param {Uint8Array} aliceEphemeralPublic - Alice's ephemeral public (33 bytes)
- * @returns {Promise<Uint8Array>} Session state bytes
- */
-export async function performX3DHResponder(
-  identityPrivate, spkPrivate, spkPublic, opkPrivate,
-  aliceIdentityPublic, aliceEphemeralPublic,
-) {
-  await init();
-  const out = module.performX3DHResponder(
-    identityPrivate,
-    spkPrivate,
-    spkPublic,
-    opkPrivate ?? new Uint8Array(0),
-    aliceIdentityPublic,
-    aliceEphemeralPublic,
-  );
-  return new Uint8Array(out.state_bytes);
-}
-
-/**
- * @param {Uint8Array} stateBytes
- * @param {Uint8Array} plaintext
- * @param {Uint8Array} associatedData
- * @returns {Promise<{ ciphertext: Uint8Array, updatedState: Uint8Array }>}
- */
-export async function encrypt(stateBytes, plaintext, associatedData) {
-  await init();
-  const out = module.encrypt(stateBytes, plaintext, associatedData ?? new Uint8Array(0));
-  return {
-    ciphertext: new Uint8Array(out.ciphertext),
-    updatedState: new Uint8Array(out.updated_state),
-  };
-}
-
-/**
- * @param {Uint8Array} stateBytes
- * @param {Uint8Array} ciphertextWithHeader
- * @param {Uint8Array} associatedData
- * @returns {Promise<{ plaintext: Uint8Array, updatedState: Uint8Array }>}
- */
-export async function decrypt(stateBytes, ciphertextWithHeader, associatedData) {
-  await init();
-  const out = module.decrypt(stateBytes, ciphertextWithHeader, associatedData ?? new Uint8Array(0));
-  return {
-    plaintext: new Uint8Array(out.plaintext),
-    updatedState: new Uint8Array(out.updated_state),
+    keyPackageBytes: new Uint8Array(out.key_package_bytes),
+    privateKeyBytes: new Uint8Array(out.private_key_bytes),
+    hashRefBytes: new Uint8Array(out.hash_ref_bytes),
   };
 }

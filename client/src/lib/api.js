@@ -3,9 +3,9 @@
  * Assumes auth token is passed per-request or set elsewhere.
  */
 
-import * as signalStore from './signalStore';
+import * as mlsStore from './mlsStore';
 import * as hushCrypto from './hushCrypto';
-import { uploadKeysAfterAuth as uploadKeysAfterAuthImpl } from './uploadKeysAfterAuth';
+import { uploadKeyPackagesAfterAuth as uploadKeyPackagesAfterAuthImpl } from './uploadKeyPackages';
 
 const defaultBase = '';
 
@@ -25,34 +25,53 @@ export async function fetchWithAuth(token, path, opts = {}) {
 }
 
 /**
- * Upload pre-keys to the server.
+ * Upload MLS credential (public material only) to the server.
  * @param {string} token - JWT
- * @param {object} body - PreKeyUploadRequest (deviceId, identityKey, signedPreKey, signedPreKeySignature, registrationId, oneTimePreKeys)
+ * @param {{ deviceId: string, credentialBytes: number[], signingPublicKey: number[] }} body
  * @returns {Promise<void>}
  */
-export async function uploadKeys(token, body) {
-  const res = await fetchWithAuth(token, '/api/keys/upload', {
+export async function uploadMLSCredential(token, body) {
+  const res = await fetchWithAuth(token, '/api/mls/credentials', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `upload keys ${res.status}`);
+    throw new Error(err.error || `upload MLS credential ${res.status}`);
   }
 }
 
 /**
- * Get the current OPK count for this device from the server.
- * Used by key maintenance to decide whether to replenish one-time pre-keys.
+ * Upload a batch of MLS KeyPackages to the server.
+ * @param {string} token - JWT
+ * @param {{ deviceId: string, keyPackages: number[][], expiresAt?: string, lastResort?: boolean }} body
+ * @returns {Promise<void>}
+ */
+export async function uploadMLSKeyPackages(token, body) {
+  const res = await fetchWithAuth(token, '/api/mls/key-packages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `upload MLS key packages ${res.status}`);
+  }
+}
+
+/**
+ * Get the current KeyPackage count for this device from the server.
+ * Used by key maintenance to decide whether to replenish KeyPackages.
  * @param {string} token - JWT
  * @param {string} deviceId - Device ID
  * @returns {Promise<number>}
  */
-export async function getOPKCount(token, deviceId) {
-  const res = await fetchWithAuth(token, `/api/keys/count?deviceId=${encodeURIComponent(deviceId)}`);
+export async function getKeyPackageCount(token, deviceId) {
+  const res = await fetchWithAuth(token, `/api/mls/key-packages/count?deviceId=${encodeURIComponent(deviceId)}`);
   if (!res.ok) {
-    throw new Error(`getOPKCount ${res.status}`);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `getKeyPackageCount ${res.status}`);
   }
   const data = await res.json();
   return data.count;
@@ -148,8 +167,8 @@ export async function updateInstance(token, body) {
 
 /**
  * Fetch server handshake data (no auth required).
- * Returns server version, API version, OPK low threshold, and other instance metadata.
- * @returns {Promise<{ server_version: string, api_version: string, min_client_version: string, opk_low_threshold: number }>}
+ * Returns server version, API version, KeyPackage low threshold, and other instance metadata.
+ * @returns {Promise<{ server_version: string, api_version: string, min_client_version: string, key_package_low_threshold: number }>}
  */
 export async function getHandshake() {
   const res = await fetch('/api/handshake');
@@ -768,17 +787,18 @@ export async function deleteServerTemplate(token, id) {
 // ── Call after Go backend register/login ──────────────────────────────────────
 
 /**
- * Call after Go backend register/login. Ensures identity exists in IndexedDB and uploads keys.
- * When using Go auth (Phase E), call this after successful login/register with token, userId, and a stable deviceId (e.g. from localStorage).
+ * Call after Go backend register/login. Generates MLS credential + KeyPackages,
+ * persists private keys locally, and uploads public material to the server.
  * @param {string} token - JWT from auth response
  * @param {string} userId - Current user UUID
  * @param {string} deviceId - Stable device ID (e.g. from localStorage or generated once)
- * @param {object} [deps] - Optional: { store, crypto, uploadKeys } for testing
+ * @param {object} [deps] - Optional deps for testing: { mlsStore, crypto, uploadCredential, uploadKeyPackages }
  */
-export async function uploadKeysAfterAuth(token, userId, deviceId, deps = {}) {
-  await uploadKeysAfterAuthImpl(token, userId, deviceId, {
-    store: deps.store ?? signalStore,
+export async function uploadKeyPackagesAfterAuth(token, userId, deviceId, deps = {}) {
+  await uploadKeyPackagesAfterAuthImpl(token, userId, deviceId, {
+    mlsStore: deps.mlsStore ?? mlsStore,
     crypto: deps.crypto ?? hushCrypto,
-    uploadKeys: deps.uploadKeys ?? uploadKeys,
+    uploadCredential: deps.uploadCredential ?? uploadMLSCredential.bind(null),
+    uploadKeyPackages: deps.uploadKeyPackages ?? uploadMLSKeyPackages.bind(null),
   });
 }
