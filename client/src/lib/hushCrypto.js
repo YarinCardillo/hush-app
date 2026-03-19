@@ -42,9 +42,9 @@ export async function generateCredential(identity) {
   await init();
   const out = module.generateCredential(identity);
   return {
-    signingPublicKey: new Uint8Array(out.signing_public_key),
-    signingPrivateKey: new Uint8Array(out.signing_private_key),
-    credentialBytes: new Uint8Array(out.credential_bytes),
+    signingPublicKey: new Uint8Array(out.signingPublicKey),
+    signingPrivateKey: new Uint8Array(out.signingPrivateKey),
+    credentialBytes: new Uint8Array(out.credentialBytes),
   };
 }
 
@@ -62,8 +62,8 @@ export async function generateKeyPackage(signingPrivateKey, signingPublicKey, cr
   await init();
   const out = module.generateKeyPackage(signingPrivateKey, signingPublicKey, credentialBytes);
   return {
-    keyPackageBytes: new Uint8Array(out.key_package_bytes),
-    privateKeyBytes: new Uint8Array(out.private_key_bytes),
-    hashRefBytes: new Uint8Array(out.hash_ref_bytes),
+    keyPackageBytes: new Uint8Array(out.keyPackageBytes),
+    privateKeyBytes: new Uint8Array(out.privateKeyBytes),
+    hashRefBytes: new Uint8Array(out.hashRefBytes),
   };
 }
