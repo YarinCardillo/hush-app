@@ -2,8 +2,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as api from '../lib/api';
 import { useMLS } from '../hooks/useMLS';
 
-const DEFAULT_DEVICE_ID = 'default';
-
 function base64ToUint8Array(base64) {
   const bin = atob(base64);
   const arr = new Uint8Array(bin.length);
@@ -48,22 +46,22 @@ function consumePendingSend(channelId, senderId, serverTimestamp) {
   return match.content;
 }
 
-async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedMessage, setCachedMessage }) {
+async function decryptMessageRow(m, currentUserId, { decryptFromChannel, getCachedMessage, setCachedMessage }) {
   const ts = new Date(m.timestamp).getTime();
   if (typeof getCachedMessage === 'function') {
     const cached = await getCachedMessage(m.id);
     if (cached) {
       return {
         id: m.id,
-        sender: cached.senderId,
+        sender: cached.senderId ?? m.senderId,
         content: cached.content,
         timestamp: cached.timestamp,
         decryptionFailed: false,
       };
     }
   }
-  // Sender's own messages are encrypted for recipients, not for self.
-  // Try the module-level pending sends cache (populated at send time).
+  // MLS: own sent messages are encrypted for other group members, not for self.
+  // Recover from the module-level pending sends cache (populated at send time).
   if (m.senderId === currentUserId) {
     const pendingContent = consumePendingSend(m.channelId, m.senderId, ts);
     if (pendingContent !== null) {
@@ -72,14 +70,20 @@ async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedM
       }
       return { id: m.id, sender: m.senderId, content: pendingContent, timestamp: ts, decryptionFailed: false };
     }
-    return { id: m.id, sender: m.senderId, content: null, timestamp: ts, decryptionFailed: true };
+    // Own message from another device — content not available on this device per CONTEXT.md.
+    return {
+      id: m.id,
+      sender: m.senderId,
+      content: '[sent from another device, content not available here]',
+      timestamp: ts,
+      decryptionFailed: false,
+    };
   }
   let content = null;
   let decryptionFailed = false;
   try {
     const ct = base64ToUint8Array(m.ciphertext);
-    const pt = await decryptFromUser(m.senderId, DEFAULT_DEVICE_ID, ct);
-    content = new TextDecoder().decode(pt);
+    content = await decryptFromChannel(ct);
     if (typeof setCachedMessage === 'function') {
       await setCachedMessage(m.id, { content, senderId: m.senderId, timestamp: ts });
     }
@@ -96,34 +100,22 @@ async function decryptMessageRow(m, currentUserId, { decryptFromUser, getCachedM
   };
 }
 
-async function encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, plaintext, encryptForUser) {
-  const others = recipientUserIds.filter((uid) => uid !== currentUserId);
-  const encoded = new TextEncoder().encode(plaintext);
-
-  if (others.length === 0) {
-    // Solo: encrypt for self so message persists on server.
-    const ciphertext = await encryptForUser(currentUserId, encoded);
-    wsClient.send('message.send', {
-      channel_id: channelId,
-      ciphertext: uint8ArrayToBase64(ciphertext),
-    });
-  } else if (others.length === 1) {
-    const ciphertext = await encryptForUser(others[0], encoded);
-    wsClient.send('message.send', {
-      channel_id: channelId,
-      ciphertext: uint8ArrayToBase64(ciphertext),
-    });
-  } else {
-    const ciphertextByRecipient = {};
-    for (const uid of others) {
-      const ct = await encryptForUser(uid, encoded);
-      ciphertextByRecipient[uid] = uint8ArrayToBase64(ct);
-    }
-    wsClient.send('message.send', {
-      channel_id: channelId,
-      ciphertext_by_recipient: ciphertextByRecipient,
-    });
-  }
+/**
+ * Encrypt and send a single-ciphertext MLS message for the channel group.
+ * No fan-out — MLS produces one ciphertext for all group members.
+ *
+ * @param {object} wsClient
+ * @param {string} channelId
+ * @param {string} plaintext
+ * @param {Function} encryptForChannel
+ * @returns {Promise<void>}
+ */
+async function encryptAndSendMLS(wsClient, channelId, plaintext, encryptForChannel) {
+  const { ciphertext } = await encryptForChannel(plaintext);
+  wsClient.send('message.send', {
+    channel_id: channelId,
+    ciphertext: uint8ArrayToBase64(ciphertext),
+  });
 }
 
 const styles = {
@@ -261,7 +253,6 @@ export default function Chat({
   getToken,
   getStore,
   wsClient: wsClientProp,
-  recipientUserIds = [],
   members = [],
   onNewMessage,
 }) {
@@ -289,15 +280,16 @@ export default function Chat({
     return map;
   }, [members]);
 
-  const { encryptForUser, decryptFromUser, getCachedMessage, setCachedMessage } = useMLS({
+  const { encryptForChannel, decryptFromChannel, getCachedMessage, setCachedMessage } = useMLS({
     getStore: getStore ?? (() => Promise.resolve(null)),
     getToken: getToken ?? (() => null),
+    channelId,
   });
 
-  const decryptFromUserRef = useRef(decryptFromUser);
-  decryptFromUserRef.current = decryptFromUser;
-  const encryptForUserRef = useRef(encryptForUser);
-  encryptForUserRef.current = encryptForUser;
+  const decryptFromChannelRef = useRef(decryptFromChannel);
+  decryptFromChannelRef.current = decryptFromChannel;
+  const encryptForChannelRef = useRef(encryptForChannel);
+  encryptForChannelRef.current = encryptForChannel;
   const getCachedMessageRef = useRef(getCachedMessage);
   getCachedMessageRef.current = getCachedMessage;
   const setCachedMessageRef = useRef(setCachedMessage);
@@ -327,7 +319,7 @@ export default function Chat({
           const m = list[i];
           decrypted.push(
             await decryptMessageRow(m, currentUserId, {
-              decryptFromUser: decryptFromUserRef.current,
+              decryptFromChannel: decryptFromChannelRef.current,
               getCachedMessage: getCachedMessageRef.current,
               setCachedMessage: setCachedMessageRef.current,
             })
@@ -372,7 +364,7 @@ export default function Chat({
         knownMessageIdsRef.current.add(m.id);
         older.push(
           await decryptMessageRow(m, currentUserId, {
-            decryptFromUser: decryptFromUserRef.current,
+            decryptFromChannel: decryptFromChannelRef.current,
             getCachedMessage: getCachedMessageRef.current,
             setCachedMessage: setCachedMessageRef.current,
           })
@@ -433,15 +425,12 @@ export default function Chat({
 
       let content = null;
       let decryptionFailed = false;
-      let ciphertext = data.ciphertext;
-      if (data.ciphertext_by_recipient && data.ciphertext_by_recipient[currentUserId]) {
-        ciphertext = data.ciphertext_by_recipient[currentUserId];
-      }
+      // MLS: single ciphertext for all group members. No ciphertext_by_recipient.
+      const ciphertext = data.ciphertext;
       if (ciphertext) {
         try {
           const ct = base64ToUint8Array(ciphertext);
-          const pt = await decryptFromUserRef.current(senderId, DEFAULT_DEVICE_ID, ct);
-          content = new TextDecoder().decode(pt);
+          content = await decryptFromChannelRef.current(ct);
           if (setCachedMessageRef.current) {
             setCachedMessageRef.current(id, { content, senderId, timestamp: ts });
           }
@@ -512,7 +501,7 @@ export default function Chat({
     addPendingSend(channelId, trimmed, currentUserId);
 
     try {
-      await encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, trimmed, encryptForUserRef.current);
+      await encryptAndSendMLS(wsClient, channelId, trimmed, encryptForChannelRef.current);
     } catch (err) {
       console.error('[chat] Send failed:', err?.message ?? err);
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
@@ -529,7 +518,7 @@ export default function Chat({
     const tempId = msg.id;
     setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: false, pending: true } : m)));
     try {
-      await encryptAndSend(wsClient, channelId, currentUserId, recipientUserIds, trimmed, encryptForUserRef.current);
+      await encryptAndSendMLS(wsClient, channelId, trimmed, encryptForChannelRef.current);
     } catch (err) {
       console.error('[chat] Retry send failed:', err.message);
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
@@ -612,8 +601,8 @@ export default function Chat({
                   </div>
                   <div style={styles.messageText}>
                     {msg.decryptionFailed ? (
-                      <span style={{ color: 'var(--hush-danger)', fontStyle: 'italic' }}>
-                        Unable to decrypt message
+                      <span style={{ color: 'var(--hush-text-muted)', fontStyle: 'italic' }}>
+                        [Could not decrypt]
                       </span>
                     ) : (
                       msg.content
