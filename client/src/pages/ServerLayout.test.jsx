@@ -3,6 +3,73 @@ import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ServerLayout from './ServerLayout';
 
+vi.mock('../lib/mlsStore', () => ({
+  openStore: vi.fn().mockReturnValue(Promise.resolve({})),
+  preloadGroupState: vi.fn().mockResolvedValue(undefined),
+  flushStorageCache: vi.fn().mockResolvedValue(undefined),
+  getCredential: vi.fn().mockResolvedValue({
+    signingPublicKey: new Uint8Array(32),
+    signingPrivateKey: new Uint8Array(64),
+    credentialBytes: new Uint8Array(16),
+  }),
+  setCredential: vi.fn().mockResolvedValue(undefined),
+  getGroupEpoch: vi.fn().mockResolvedValue(null),
+  setGroupEpoch: vi.fn().mockResolvedValue(undefined),
+  deleteGroupEpoch: vi.fn().mockResolvedValue(undefined),
+  listAllGroupEpochs: vi.fn().mockResolvedValue([]),
+  getKeyPackage: vi.fn().mockResolvedValue(null),
+  setKeyPackage: vi.fn().mockResolvedValue(undefined),
+  deleteKeyPackage: vi.fn().mockResolvedValue(undefined),
+  listAllKeyPackages: vi.fn().mockResolvedValue([]),
+  getLastResort: vi.fn().mockResolvedValue(null),
+  setLastResort: vi.fn().mockResolvedValue(undefined),
+  getLocalPlaintext: vi.fn().mockResolvedValue(null),
+  setLocalPlaintext: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../lib/mlsGroup', () => ({
+  createChannelGroup: vi.fn().mockResolvedValue({ groupInfoBytes: new Uint8Array(0), epoch: 0 }),
+  joinChannelGroup: vi.fn().mockResolvedValue(undefined),
+  joinAllChannelGroups: vi.fn().mockResolvedValue(undefined),
+  addMemberToChannel: vi.fn().mockResolvedValue({ welcomeBytes: new Uint8Array(0) }),
+  removeMemberFromChannel: vi.fn().mockResolvedValue(undefined),
+  encryptMessage: vi.fn().mockResolvedValue({ messageBytes: new Uint8Array(0), localId: 'test' }),
+  decryptMessage: vi.fn().mockResolvedValue({ plaintext: 'test', senderIdentity: null }),
+  processCommit: vi.fn().mockResolvedValue(undefined),
+  catchupCommits: vi.fn().mockResolvedValue(undefined),
+  leaveChannelGroup: vi.fn().mockResolvedValue(undefined),
+  leaveAllChannelGroups: vi.fn().mockResolvedValue(undefined),
+  performSelfUpdate: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../lib/hushCrypto', () => ({
+  init: vi.fn().mockResolvedValue(undefined),
+  generateCredential: vi.fn().mockResolvedValue({
+    signingPublicKey: new Uint8Array(32),
+    signingPrivateKey: new Uint8Array(64),
+    credentialBytes: new Uint8Array(16),
+  }),
+  generateKeyPackage: vi.fn().mockResolvedValue({
+    keyPackageBytes: new Uint8Array(0),
+    privateKeyBytes: new Uint8Array(0),
+    hashRefBytes: new Uint8Array(0),
+  }),
+  createGroup: vi.fn().mockResolvedValue({ groupInfoBytes: new Uint8Array(0), epoch: 0 }),
+  joinGroupExternal: vi.fn().mockResolvedValue({ commitBytes: new Uint8Array(0), epoch: 0 }),
+  addMembers: vi.fn().mockResolvedValue({ commitBytes: new Uint8Array(0), welcomeBytes: new Uint8Array(0), groupInfoBytes: new Uint8Array(0), epoch: 0 }),
+  createMessage: vi.fn().mockResolvedValue({ messageBytes: new Uint8Array(0) }),
+  processMessage: vi.fn().mockResolvedValue({ type: 'application', plaintext: new Uint8Array(0), epoch: 0 }),
+  removeMembers: vi.fn().mockResolvedValue({ commitBytes: new Uint8Array(0), groupInfoBytes: new Uint8Array(0), epoch: 0 }),
+  selfUpdate: vi.fn().mockResolvedValue({ commitBytes: new Uint8Array(0), groupInfoBytes: new Uint8Array(0), epoch: 0 }),
+  leaveGroup: vi.fn().mockResolvedValue({ proposalBytes: new Uint8Array(0) }),
+  mergePendingCommit: vi.fn().mockResolvedValue({ groupInfoBytes: new Uint8Array(0), epoch: 0 }),
+  exportGroupInfoBytes: vi.fn().mockResolvedValue({ groupInfoBytes: new Uint8Array(0) }),
+}));
+
+vi.mock('../hooks/useKeyPackageMaintenance', () => ({
+  useKeyPackageMaintenance: vi.fn(),
+}));
+
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: vi.fn(() => ({
     token: 'test-token',
@@ -93,8 +160,12 @@ vi.mock('./VoiceChannel', () => ({
   },
 }));
 
+// Stable mock: show must be the same reference across renders to avoid
+// triggering effects that list showToast as a dependency on every re-render.
+// vi.hoisted() runs before vi.mock() hoisting so the reference is available.
+const { mockShow } = vi.hoisted(() => ({ mockShow: vi.fn() }));
 vi.mock('../hooks/useToast', () => ({
-  useToast: vi.fn(() => ({ toasts: [], show: vi.fn() })),
+  useToast: vi.fn(() => ({ toasts: [], show: mockShow })),
 }));
 
 import { getGuildChannels, getGuildMembers } from '../lib/api';
