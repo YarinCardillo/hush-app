@@ -1,22 +1,196 @@
 /**
- * MLS Protocol state in IndexedDB.
+ * MLS Protocol state in IndexedDB (v2).
  * Store prefix: hush-mls-${userId}-${deviceId} (one DB per local user+device).
- * Stores: credential (MLS signing keys + credential bytes),
- *         keyPackages (KeyPackage private key blobs keyed by hashRefHex),
- *         lastResort (last-resort KeyPackage, read-only fallback).
+ *
+ * v1 stores: credential, keyPackages, lastResort
+ * v2 adds: StorageProvider bridge stores (7) + localPlaintext + groupEpoch
+ *
+ * window.mlsStorageBridge is initialised after openStore() so the WASM
+ * StorageProvider callbacks are available before any group operation.
  */
 
 const DB_NAME_PREFIX = 'hush-mls-';
 const STORE_CREDENTIAL = 'credential';
 const STORE_KEY_PACKAGES = 'keyPackages';
 const STORE_LAST_RESORT = 'lastResort';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const CREDENTIAL_KEY = 'credential';
 const LAST_RESORT_KEY = 'lastResort';
 
+// ---------------------------------------------------------------------------
+// StorageProvider bridge stores
+// Names must match the constants in hush-crypto/src/storage_bridge.rs.
+// ---------------------------------------------------------------------------
+
+const STORAGE_PROVIDER_STORES = [
+  'mls_groups',
+  'mls_key_packages',
+  'mls_epoch_secrets',
+  'mls_proposals',
+  'mls_encryption_keys',
+  'mls_psk',
+  'mls_tree_sync',
+];
+
+// Synchronous Map cache backed by IndexedDB. WASM reads/writes happen synchronously
+// against this cache. The cache is populated by preloadGroupState() before WASM calls
+// and flushed back to IDB by writeBytes() fire-and-forget writes.
+const storageCache = new Map(); // key: `${storeName}:${hexKey}`, value: Uint8Array
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts a Uint8Array (or iterable of bytes) to a lowercase hex string.
+ * @param {Uint8Array|number[]} bytes
+ * @returns {string}
+ */
+function bytesToHex(bytes) {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+// ---------------------------------------------------------------------------
+// StorageProvider bridge — initialised once after openStore()
+// ---------------------------------------------------------------------------
+
+/**
+ * Initialises window.mlsStorageBridge with synchronous read/write/delete
+ * operations backed by the in-memory storageCache. Each write is also
+ * fire-and-forget persisted to IndexedDB.
+ *
+ * Called internally by openStore() after the DB is open.
+ *
+ * @param {IDBDatabase} db
+ */
+function initStorageBridge(db) {
+  window.mlsStorageBridge = {
+    /**
+     * Write bytes for a key in a named store.
+     * @param {string} storeName
+     * @param {Uint8Array} keyBytes
+     * @param {Uint8Array} valueBytes
+     */
+    writeBytes(storeName, keyBytes, valueBytes) {
+      const hexKey = bytesToHex(keyBytes);
+      const cacheKey = `${storeName}:${hexKey}`;
+      storageCache.set(cacheKey, new Uint8Array(valueBytes));
+      // Fire-and-forget persistence — correctness relies on preloadGroupState before WASM calls.
+      try {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).put({ key: hexKey, value: Array.from(valueBytes) });
+      } catch (err) {
+        console.warn('[mlsStore] writeBytes IDB write failed for', storeName, hexKey, err);
+      }
+    },
+
+    /**
+     * Read bytes for a key. Returns Uint8Array from cache or null if not found.
+     * Synchronous — preloadGroupState() must be called first.
+     * @param {string} storeName
+     * @param {Uint8Array} keyBytes
+     * @returns {Uint8Array|null}
+     */
+    readBytes(storeName, keyBytes) {
+      const hexKey = bytesToHex(keyBytes);
+      const cacheKey = `${storeName}:${hexKey}`;
+      return storageCache.get(cacheKey) ?? null;
+    },
+
+    /**
+     * Delete a key from the store.
+     * @param {string} storeName
+     * @param {Uint8Array} keyBytes
+     */
+    deleteBytes(storeName, keyBytes) {
+      const hexKey = bytesToHex(keyBytes);
+      const cacheKey = `${storeName}:${hexKey}`;
+      storageCache.delete(cacheKey);
+      try {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).delete(hexKey);
+      } catch (err) {
+        console.warn('[mlsStore] deleteBytes IDB delete failed for', storeName, hexKey, err);
+      }
+    },
+
+    /**
+     * Read a list of byte blobs stored under a key.
+     * Returns an array of Uint8Arrays (may be empty).
+     * @param {string} storeName
+     * @param {Uint8Array} keyBytes
+     * @returns {Uint8Array[]}
+     */
+    readList(storeName, keyBytes) {
+      const hexKey = bytesToHex(keyBytes);
+      const listCacheKey = `${storeName}:list:${hexKey}`;
+      const raw = storageCache.get(listCacheKey);
+      if (!raw) return [];
+      try {
+        const parsed = JSON.parse(new TextDecoder().decode(raw));
+        return parsed.map((item) => new Uint8Array(item));
+      } catch {
+        return [];
+      }
+    },
+
+    /**
+     * Append a byte blob to a list stored under a key.
+     * @param {string} storeName
+     * @param {Uint8Array} keyBytes
+     * @param {Uint8Array} valueBytes
+     */
+    appendToList(storeName, keyBytes, valueBytes) {
+      const hexKey = bytesToHex(keyBytes);
+      const listCacheKey = `${storeName}:list:${hexKey}`;
+      const existing = window.mlsStorageBridge.readList(storeName, keyBytes);
+      existing.push(new Uint8Array(valueBytes));
+      const encoded = new TextEncoder().encode(JSON.stringify(existing.map((u8) => Array.from(u8))));
+      storageCache.set(listCacheKey, encoded);
+      try {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).put({ key: `list:${hexKey}`, value: Array.from(encoded) });
+      } catch (err) {
+        console.warn('[mlsStore] appendToList IDB write failed for', storeName, hexKey, err);
+      }
+    },
+
+    /**
+     * Remove a specific byte blob from a list stored under a key.
+     * @param {string} storeName
+     * @param {Uint8Array} keyBytes
+     * @param {Uint8Array} valueBytes
+     */
+    removeFromList(storeName, keyBytes, valueBytes) {
+      const hexKey = bytesToHex(keyBytes);
+      const listCacheKey = `${storeName}:list:${hexKey}`;
+      const existing = window.mlsStorageBridge.readList(storeName, keyBytes);
+      const targetHex = bytesToHex(valueBytes);
+      const filtered = existing.filter((u8) => bytesToHex(u8) !== targetHex);
+      const encoded = new TextEncoder().encode(JSON.stringify(filtered.map((u8) => Array.from(u8))));
+      storageCache.set(listCacheKey, encoded);
+      try {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).put({ key: `list:${hexKey}`, value: Array.from(encoded) });
+      } catch (err) {
+        console.warn('[mlsStore] removeFromList IDB write failed for', storeName, hexKey, err);
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// DB open / upgrade
+// ---------------------------------------------------------------------------
+
 /**
  * Opens the MLS store for the given user and device.
+ * Upgrades from v1 -> v2 by adding new object stores without recreating v1 stores.
+ * Initialises window.mlsStorageBridge after the DB is open.
+ *
  * @param {string} userId - Local user ID (UUID)
  * @param {string} deviceId - Local device ID
  * @returns {Promise<IDBDatabase>}
@@ -26,9 +200,15 @@ export function openStore(userId, deviceId) {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(dbName, DB_VERSION);
     req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      initStorageBridge(db);
+      resolve(db);
+    };
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
+
+      // v1 stores — create only if absent (handles fresh installs and upgrades).
       if (!db.objectStoreNames.contains(STORE_CREDENTIAL)) {
         db.createObjectStore(STORE_CREDENTIAL, { keyPath: 'key' });
       }
@@ -37,6 +217,19 @@ export function openStore(userId, deviceId) {
       }
       if (!db.objectStoreNames.contains(STORE_LAST_RESORT)) {
         db.createObjectStore(STORE_LAST_RESORT, { keyPath: 'key' });
+      }
+
+      // v2 stores — added in version 2.
+      for (const storeName of STORAGE_PROVIDER_STORES) {
+        if (!db.objectStoreNames.contains(storeName)) {
+          db.createObjectStore(storeName, { keyPath: 'key' });
+        }
+      }
+      if (!db.objectStoreNames.contains('localPlaintext')) {
+        db.createObjectStore('localPlaintext', { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains('groupEpoch')) {
+        db.createObjectStore('groupEpoch', { keyPath: 'key' });
       }
     };
   });
@@ -93,6 +286,69 @@ function del(db, storeName, key) {
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
+}
+
+/**
+ * Returns all records from an object store.
+ * @param {IDBDatabase} db
+ * @param {string} storeName
+ * @returns {Promise<Array<{ key: string, value: number[] }>>}
+ */
+function getAll(db, storeName) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readonly');
+    const store = tx.objectStore(storeName);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result ?? []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// StorageProvider cache management
+// ---------------------------------------------------------------------------
+
+/**
+ * Preloads all StorageProvider store entries from IndexedDB into the sync cache.
+ * Must be called before any WASM group operation to ensure synchronous reads succeed.
+ *
+ * @param {IDBDatabase} db
+ * @returns {Promise<void>}
+ */
+export async function preloadGroupState(db) {
+  for (const storeName of STORAGE_PROVIDER_STORES) {
+    const rows = await getAll(db, storeName);
+    for (const row of rows) {
+      const cacheKey = `${storeName}:${row.key}`;
+      storageCache.set(cacheKey, new Uint8Array(row.value));
+    }
+  }
+}
+
+/**
+ * Flush the entire sync cache back to IndexedDB for all StorageProvider stores.
+ * Called after WASM operations to ensure durability before the next page load.
+ *
+ * In normal operation the fire-and-forget writes in writeBytes() handle durability.
+ * This explicit flush is a belt-and-suspenders call after operations that mutate state.
+ *
+ * @param {IDBDatabase} db
+ * @returns {Promise<void>}
+ */
+export async function flushStorageCache(db) {
+  for (const [cacheKey, value] of storageCache) {
+    const colonIdx = cacheKey.indexOf(':');
+    if (colonIdx < 0) continue;
+    const storeName = cacheKey.slice(0, colonIdx);
+    const hexKey = cacheKey.slice(colonIdx + 1);
+    if (!STORAGE_PROVIDER_STORES.includes(storeName)) continue;
+    try {
+      const tx = db.transaction(storeName, 'readwrite');
+      tx.objectStore(storeName).put({ key: hexKey, value: Array.from(value) });
+    } catch {
+      // Best-effort — individual store may not exist for older DBs during upgrade.
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -179,13 +435,7 @@ export async function deleteKeyPackage(db, hashRefHex) {
  * @returns {Promise<Array<object>>}
  */
 export function listAllKeyPackages(db) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_KEY_PACKAGES, 'readonly');
-    const store = tx.objectStore(STORE_KEY_PACKAGES);
-    const req = store.getAll();
-    req.onsuccess = () => resolve(req.result ?? []);
-    req.onerror = () => reject(req.error);
-  });
+  return getAll(db, STORE_KEY_PACKAGES);
 }
 
 // ---------------------------------------------------------------------------
@@ -221,4 +471,87 @@ export async function setLastResort(db, payload) {
     privateKeyBytes: Array.from(payload.privateKeyBytes),
     hashRefHex: payload.hashRefHex,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Local plaintext cache — self-sent messages
+// ---------------------------------------------------------------------------
+
+/**
+ * Retrieve a cached plaintext entry for a message.
+ * Used to recover own sent messages (which are MLS-encrypted for others, not self).
+ *
+ * @param {IDBDatabase} db
+ * @param {string} messageId - Server-assigned message UUID
+ * @returns {Promise<{ plaintext: string, timestamp: number }|null>}
+ */
+export async function getLocalPlaintext(db, messageId) {
+  const row = await get(db, 'localPlaintext', messageId);
+  if (!row?.plaintext) return null;
+  return { plaintext: row.plaintext, timestamp: row.timestamp ?? 0 };
+}
+
+/**
+ * Store a plaintext entry for a self-sent message.
+ * @param {IDBDatabase} db
+ * @param {string} messageId
+ * @param {{ plaintext: string, timestamp: number }} payload
+ * @returns {Promise<void>}
+ */
+export async function setLocalPlaintext(db, messageId, payload) {
+  await put(db, 'localPlaintext', messageId, {
+    plaintext: payload.plaintext,
+    timestamp: payload.timestamp ?? Date.now(),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Group epoch tracking — catchup on reconnect
+// ---------------------------------------------------------------------------
+
+/**
+ * Get the last known epoch for a channel's MLS group.
+ * Returns null if the group has not been joined yet.
+ *
+ * @param {IDBDatabase} db
+ * @param {string} channelId - Channel UUID
+ * @returns {Promise<number|null>}
+ */
+export async function getGroupEpoch(db, channelId) {
+  const row = await get(db, 'groupEpoch', channelId);
+  if (row == null || row.epoch == null) return null;
+  return row.epoch;
+}
+
+/**
+ * Update the last known epoch for a channel's MLS group.
+ * @param {IDBDatabase} db
+ * @param {string} channelId
+ * @param {number} epoch
+ * @returns {Promise<void>}
+ */
+export async function setGroupEpoch(db, channelId, epoch) {
+  await put(db, 'groupEpoch', channelId, { epoch });
+}
+
+/**
+ * Delete the epoch record for a channel (used when leaving a group).
+ * @param {IDBDatabase} db
+ * @param {string} channelId
+ * @returns {Promise<void>}
+ */
+export async function deleteGroupEpoch(db, channelId) {
+  await del(db, 'groupEpoch', channelId);
+}
+
+/**
+ * List all tracked channel epoch records.
+ * Returns array of { key: channelId, epoch: number }.
+ * Used by the self-update timer to iterate all joined groups.
+ *
+ * @param {IDBDatabase} db
+ * @returns {Promise<Array<{ key: string, epoch: number }>>}
+ */
+export async function listAllGroupEpochs(db) {
+  return getAll(db, 'groupEpoch');
 }

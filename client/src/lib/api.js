@@ -802,3 +802,127 @@ export async function uploadKeyPackagesAfterAuth(token, userId, deviceId, deps =
     uploadKeyPackages: deps.uploadKeyPackages ?? uploadMLSKeyPackages.bind(null),
   });
 }
+
+// ── MLS Group API ─────────────────────────────────────────────────────────────
+
+/**
+ * Get the current GroupInfo for a channel's MLS group.
+ * Returns null if no group has been created for this channel yet.
+ *
+ * @param {string} token - JWT
+ * @param {string} channelId - Channel UUID
+ * @returns {Promise<{ groupInfo: string, epoch: number }|null>}
+ */
+export async function getMLSGroupInfo(token, channelId) {
+  const res = await fetchWithAuth(token, `/api/mls/groups/${encodeURIComponent(channelId)}/info`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `getMLSGroupInfo ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Upsert the GroupInfo for a channel's MLS group.
+ * Called after creating a group or advancing its epoch.
+ *
+ * @param {string} token - JWT
+ * @param {string} channelId - Channel UUID
+ * @param {string} groupInfoBase64 - Base64-encoded serialised GroupInfo
+ * @param {number} epoch - Current group epoch
+ * @returns {Promise<void>}
+ */
+export async function putMLSGroupInfo(token, channelId, groupInfoBase64, epoch) {
+  const res = await fetchWithAuth(token, `/api/mls/groups/${encodeURIComponent(channelId)}/info`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ groupInfo: groupInfoBase64, epoch }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `putMLSGroupInfo ${res.status}`);
+  }
+}
+
+/**
+ * Post a Commit to the server for distribution to channel members.
+ * Also upserts the current GroupInfo so new joiners can catch up.
+ *
+ * @param {string} token - JWT
+ * @param {string} channelId - Channel UUID
+ * @param {string} commitBytesBase64 - Base64-encoded commit bytes
+ * @param {string} groupInfoBase64 - Base64-encoded updated GroupInfo bytes
+ * @param {number} epoch - Epoch after this commit
+ * @returns {Promise<void>}
+ */
+export async function postMLSCommit(token, channelId, commitBytesBase64, groupInfoBase64, epoch) {
+  const res = await fetchWithAuth(token, `/api/mls/groups/${encodeURIComponent(channelId)}/commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ commitBytes: commitBytesBase64, groupInfo: groupInfoBase64, epoch }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `postMLSCommit ${res.status}`);
+  }
+}
+
+/**
+ * Fetch Commits that occurred after a given epoch (for catch-up on reconnect).
+ *
+ * @param {string} token - JWT
+ * @param {string} channelId - Channel UUID
+ * @param {number} sinceEpoch - Only return commits with epoch > sinceEpoch
+ * @param {number} [limit=100] - Max commits to return
+ * @returns {Promise<{ commits: Array<{ epoch: number, commitBytes: string, senderId: string }> }>}
+ */
+export async function getMLSCommitsSinceEpoch(token, channelId, sinceEpoch, limit = 100) {
+  const params = new URLSearchParams({
+    since_epoch: String(sinceEpoch),
+    limit: String(limit),
+  });
+  const res = await fetchWithAuth(
+    token,
+    `/api/mls/groups/${encodeURIComponent(channelId)}/commits?${params.toString()}`
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `getMLSCommitsSinceEpoch ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Fetch pending Welcome messages addressed to the current user.
+ * Returns Welcomes that have not yet been acknowledged (processed).
+ *
+ * @param {string} token - JWT
+ * @returns {Promise<{ welcomes: Array<{ id: string, channelId: string, welcomeBytes: string, senderId: string, epoch: number }> }>}
+ */
+export async function getMLSPendingWelcomes(token) {
+  const res = await fetchWithAuth(token, '/api/mls/pending-welcomes');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `getMLSPendingWelcomes ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Acknowledge (delete) a pending Welcome after processing it locally.
+ * This prevents re-delivery on the next connection.
+ *
+ * @param {string} token - JWT
+ * @param {string} welcomeId - UUID of the pending Welcome record
+ * @returns {Promise<void>}
+ */
+export async function deleteMLSPendingWelcome(token, welcomeId) {
+  const res = await fetchWithAuth(token, `/api/mls/pending-welcomes/${encodeURIComponent(welcomeId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok && res.status !== 404) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `deleteMLSPendingWelcome ${res.status}`);
+  }
+}
