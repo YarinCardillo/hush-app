@@ -7,16 +7,32 @@ import SystemChannel from './SystemChannel';
 import TextChannel from './TextChannel';
 import VoiceChannel from './VoiceChannel';
 import { getInstance, getMyGuilds, getGuildChannels, getGuildMembers, getHandshake } from '../lib/api';
+import * as api from '../lib/api';
 import { createWsClient } from '../lib/ws';
 import { useAuth } from '../contexts/AuthContext';
 import { JWT_KEY, getDeviceId } from '../hooks/useAuth';
 import { useKeyPackageMaintenance } from '../hooks/useKeyPackageMaintenance';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useSidebarResize } from '../hooks/useSidebarResize';
+import * as mlsStoreLib from '../lib/mlsStore';
+import * as hushCryptoLib from '../lib/hushCrypto';
+import * as mlsGroup from '../lib/mlsGroup';
 import ConfirmModal from '../components/ConfirmModal';
 import Vesper from '../components/Vesper';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
+
+/**
+ * Decode a base64 string to Uint8Array.
+ * @param {string} b64
+ * @returns {Uint8Array}
+ */
+function base64ToUint8ArraySL(b64) {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
 
 const layoutStyles = {
   root: {
@@ -341,10 +357,21 @@ export default function ServerLayout() {
   // member_kicked: remove from list; toast + navigate self if kicked (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
-    const handler = (data) => {
+    const handler = async (data) => {
       if (!data.user_id) return;
       if (data.server_id && data.server_id !== serverId) return;
       if (data.user_id === currentUserId) {
+        // Clean up MLS group state for all text channels.
+        try {
+          const textChannelIds = channels.filter((c) => c.type === 'text').map((c) => c.id);
+          if (textChannelIds.length) {
+            const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+            const deps = { db, mlsStore: mlsStoreLib };
+            await mlsGroup.leaveAllChannelGroups(deps, textChannelIds);
+          }
+        } catch (err) {
+          console.warn('[mls] Failed to clean up MLS groups on kick:', err);
+        }
         const serverName = activeGuild?.name || 'the server';
         showToast({ message: `You were removed from ${serverName}`, variant: 'error' });
         setGuilds((prev) => prev.filter((g) => g.id !== serverId));
@@ -362,15 +389,27 @@ export default function ServerLayout() {
     };
     wsClient.on('member_kicked', handler);
     return () => wsClient.off('member_kicked', handler);
-  }, [wsClient, currentUserId, serverId, guilds, activeGuild, showToast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsClient, currentUserId, serverId, guilds, activeGuild, channels, showToast]);
 
   // member_banned: remove from list; toast + navigate self if banned (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
-    const handler = (data) => {
+    const handler = async (data) => {
       if (!data.user_id) return;
       if (data.server_id && data.server_id !== serverId) return;
       if (data.user_id === currentUserId) {
+        // Clean up MLS group state for all text channels.
+        try {
+          const textChannelIds = channels.filter((c) => c.type === 'text').map((c) => c.id);
+          if (textChannelIds.length) {
+            const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+            const deps = { db, mlsStore: mlsStoreLib };
+            await mlsGroup.leaveAllChannelGroups(deps, textChannelIds);
+          }
+        } catch (err) {
+          console.warn('[mls] Failed to clean up MLS groups on ban:', err);
+        }
         const serverName = activeGuild?.name || 'the server';
         showToast({ message: `You were banned from ${serverName}`, variant: 'error' });
         setGuilds((prev) => prev.filter((g) => g.id !== serverId));
@@ -388,7 +427,8 @@ export default function ServerLayout() {
     };
     wsClient.on('member_banned', handler);
     return () => wsClient.off('member_banned', handler);
-  }, [wsClient, currentUserId, serverId, guilds, activeGuild, showToast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsClient, currentUserId, serverId, guilds, activeGuild, channels, showToast]);
 
   // instance_banned: clear session + hard reload to login
   useEffect(() => {
@@ -438,12 +478,24 @@ export default function ServerLayout() {
   }, [wsClient, serverId]);
 
   // member_left: remove from list; navigate self if voluntarily left (guild-scoped)
+  // Also cleans up local MLS group state when self leaves.
   useEffect(() => {
     if (!wsClient) return;
-    const handler = (data) => {
+    const handler = async (data) => {
       if (!data.user_id) return;
       if (data.server_id && data.server_id !== serverId) return;
       if (data.user_id === currentUserId) {
+        // Clean up MLS group state for all text channels in this guild.
+        try {
+          const textChannelIds = channels.filter((c) => c.type === 'text').map((c) => c.id);
+          if (textChannelIds.length && currentUserId) {
+            const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+            const deps = { db, mlsStore: mlsStoreLib };
+            await mlsGroup.leaveAllChannelGroups(deps, textChannelIds);
+          }
+        } catch (err) {
+          console.warn('[mls] Failed to clean up MLS groups on leave:', err);
+        }
         setGuilds((prev) => prev.filter((g) => g.id !== serverId));
         const nextGuild = guilds.find((g) => g.id !== serverId);
         if (nextGuild) {
@@ -457,7 +509,150 @@ export default function ServerLayout() {
     };
     wsClient.on('member_left', handler);
     return () => wsClient.off('member_left', handler);
-  }, [wsClient, serverId, currentUserId, guilds]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsClient, serverId, currentUserId, guilds, channels]);
+
+  // ---------------------------------------------------------------------------
+  // MLS group lifecycle — mls.commit and mls.add_request WS events
+  // ---------------------------------------------------------------------------
+
+  // mls.commit: advance local group epoch when another member sends a commit.
+  useEffect(() => {
+    if (!wsClient || !currentUserId) return;
+
+    const handler = async (data) => {
+      // We sent this commit; our epoch was already advanced locally.
+      if (data.sender_id === currentUserId) return;
+      if (!data.channel_id || !data.commit_bytes) return;
+
+      const token = getToken();
+      if (!token) return;
+
+      try {
+        const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+        const credential = await mlsStoreLib.getCredential(db);
+        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+        const commitBytes = base64ToUint8ArraySL(data.commit_bytes);
+        await mlsGroup.processCommit(deps, data.channel_id, commitBytes);
+      } catch (err) {
+        console.warn('[mls] Failed to process commit for channel', data.channel_id, err);
+        // If processing fails, attempt catchup from server.
+        try {
+          const token2 = getToken();
+          if (!token2) return;
+          const db2 = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+          const credential2 = await mlsStoreLib.getCredential(db2);
+          const deps2 = { db: db2, token: token2, credential: credential2, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+          await mlsGroup.catchupCommits(deps2, data.channel_id);
+        } catch (catchupErr) {
+          console.warn('[mls] Catchup also failed for channel', data.channel_id, catchupErr);
+        }
+      }
+    };
+
+    wsClient.on('mls.commit', handler);
+    return () => wsClient.off('mls.commit', handler);
+  }, [wsClient, currentUserId]);
+
+  // mls.add_request: commit the leave proposal when another member is removing themselves.
+  useEffect(() => {
+    if (!wsClient || !currentUserId) return;
+
+    const handler = async (data) => {
+      if (data.action !== 'remove') return;
+      // Don't process our own removal request.
+      if (data.requester_id === currentUserId) return;
+      if (!data.channel_id || !data.requester_id) return;
+
+      const token = getToken();
+      if (!token) return;
+
+      try {
+        const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+        const credential = await mlsStoreLib.getCredential(db);
+        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+        await mlsGroup.removeMemberFromChannel(deps, data.channel_id, data.requester_id);
+      } catch (err) {
+        // Another member may have already committed the removal — not an error.
+        console.warn('[mls] Failed to commit remove for', data.requester_id, 'in channel', data.channel_id, err);
+      }
+    };
+
+    wsClient.on('mls.add_request', handler);
+    return () => wsClient.off('mls.add_request', handler);
+  }, [wsClient, currentUserId]);
+
+  // ---------------------------------------------------------------------------
+  // MLS group joins: join all text channel groups when entering a guild.
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!channels.length || !currentUserId || !authToken) return;
+
+    const textChannelIds = channels.filter((c) => c.type === 'text').map((c) => c.id);
+    if (!textChannelIds.length) return;
+
+    const token = getToken();
+    if (!token) return;
+
+    const joinMissingGroups = async () => {
+      try {
+        const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+        const credential = await mlsStoreLib.getCredential(db);
+        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+
+        for (const chId of textChannelIds) {
+          const epoch = await mlsStoreLib.getGroupEpoch(db, chId);
+          if (epoch == null) {
+            try {
+              await mlsGroup.joinChannelGroup(deps, chId);
+            } catch (err) {
+              console.warn('[mls] Failed to join group for channel', chId, err);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[mls] joinMissingGroups failed:', err);
+      }
+    };
+
+    joinMissingGroups();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channels, currentUserId, authToken]);
+
+  // ---------------------------------------------------------------------------
+  // MLS self-update timer: rotate leaf node key material every 24h.
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!currentUserId || !authToken) return;
+
+    const runSelfUpdates = async () => {
+      const token = getToken();
+      if (!token) return;
+      try {
+        const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+        const credential = await mlsStoreLib.getCredential(db);
+        if (!credential) return;
+        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+        const allEpochs = await mlsStoreLib.listAllGroupEpochs(db);
+        for (const { key: channelId } of allEpochs) {
+          try {
+            await mlsGroup.performSelfUpdate(deps, channelId);
+          } catch (err) {
+            console.warn('[mls] Self-update failed for channel', channelId, err);
+          }
+        }
+      } catch (err) {
+        console.warn('[mls] Self-update timer failed:', err);
+      }
+    };
+
+    const interval = setInterval(runSelfUpdates, 24 * 60 * 60 * 1000); // 24h
+    return () => clearInterval(interval);
+  }, [currentUserId, authToken]);
+
+  // ---------------------------------------------------------------------------
 
   // role_changed / member_role_changed: update member's role (guild-scoped)
   useEffect(() => {
@@ -757,7 +952,6 @@ export default function ServerLayout() {
                   serverId={serverId}
                   getToken={getToken}
                   wsClient={wsClient}
-                  recipientUserIds={memberIds}
                   members={members}
                   showMembers={showMembers}
                   onToggleMembers={() => togglePanel('members')}

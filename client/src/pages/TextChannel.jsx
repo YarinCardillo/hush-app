@@ -64,7 +64,6 @@ export default function TextChannel({
   serverId,
   getToken,
   wsClient,
-  recipientUserIds = [],
   members = [],
   showMembers = false,
   onToggleMembers,
@@ -121,7 +120,6 @@ export default function TextChannel({
             getToken={getToken}
             getStore={getStore}
             wsClient={wsClient}
-            recipientUserIds={recipientUserIds}
             members={members}
           />
         </div>
