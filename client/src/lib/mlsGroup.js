@@ -28,6 +28,18 @@ function channelIdToBytes(channelId) {
 }
 
 /**
+ * Encodes a channel UUID to the UTF-8 bytes used as the voice MLS group ID.
+ * The "voice:" prefix namespaces voice groups away from text channel groups
+ * in StorageProvider/IndexedDB to prevent key collisions.
+ *
+ * @param {string} channelId
+ * @returns {Uint8Array}
+ */
+export function voiceChannelIdToBytes(channelId) {
+  return new TextEncoder().encode(`voice:${channelId}`);
+}
+
+/**
  * Converts a Uint8Array to a base64 string.
  * @param {Uint8Array} u8
  * @returns {string}
@@ -432,4 +444,184 @@ export async function performSelfUpdate(deps, channelId) {
   const mergeResult = await hushCrypto.mergePendingCommit(channelIdBytes, sigPriv, sigPub, credBytes);
   await mlsStore.flushStorageCache(db);
   await mlsStore.setGroupEpoch(db, channelId, mergeResult.epoch);
+}
+
+// ---------------------------------------------------------------------------
+// Voice group lifecycle
+// Voice groups are independent of text channel groups. They use the same MLS
+// group machinery but with "voice:{channelId}" as the group ID and voice-specific
+// API endpoints (?type=voice). Local state is destroyed when leaving voice.
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a new MLS voice group for a channel.
+ * Called by the first participant entering a voice channel.
+ * Stores GroupInfo on the server for subsequent joiners.
+ *
+ * @param {object} deps
+ * @param {string} channelId
+ * @returns {Promise<{ epoch: number }>}
+ */
+export async function createVoiceGroup(deps, channelId) {
+  const { db, token, mlsStore, hushCrypto, api } = deps;
+  const { sigPriv, sigPub, credBytes } = getCredFields(deps);
+  const groupIdBytes = voiceChannelIdToBytes(channelId);
+
+  await mlsStore.preloadGroupState(db);
+  const result = await hushCrypto.createGroup(groupIdBytes, sigPriv, sigPub, credBytes);
+  await mlsStore.flushStorageCache(db);
+
+  await api.putMLSVoiceGroupInfo(token, channelId, toBase64(result.groupInfoBytes), result.epoch);
+  await mlsStore.setGroupEpoch(db, `voice:${channelId}`, result.epoch);
+
+  return { epoch: result.epoch };
+}
+
+/**
+ * Join an existing voice MLS group via External Commit.
+ * Called by subsequent participants entering a voice channel.
+ * Posts the commit to the server so existing members can advance their epoch.
+ *
+ * @param {object} deps
+ * @param {string} channelId
+ * @returns {Promise<{ epoch: number }>}
+ */
+export async function joinVoiceGroup(deps, channelId) {
+  const { db, token, mlsStore, hushCrypto, api } = deps;
+  const { sigPriv, sigPub, credBytes } = getCredFields(deps);
+  const groupIdBytes = voiceChannelIdToBytes(channelId);
+
+  const serverInfo = await api.getMLSVoiceGroupInfo(token, channelId);
+  if (!serverInfo?.groupInfo) {
+    // No voice group yet — become the first participant.
+    return createVoiceGroup(deps, channelId);
+  }
+
+  const groupInfoBytes = fromBase64(serverInfo.groupInfo);
+
+  await mlsStore.preloadGroupState(db);
+  const joinResult = await hushCrypto.joinGroupExternal(groupInfoBytes, sigPriv, sigPub, credBytes);
+  await mlsStore.flushStorageCache(db);
+
+  // POST the External Commit so existing members advance their epoch.
+  await api.postMLSVoiceCommit(
+    token,
+    channelId,
+    toBase64(joinResult.commitBytes),
+    joinResult.epoch,
+  );
+
+  // Merge the pending commit to obtain the updated GroupInfo.
+  await mlsStore.preloadGroupState(db);
+  const mergeResult = await hushCrypto.mergePendingCommit(groupIdBytes, sigPriv, sigPub, credBytes);
+  await mlsStore.flushStorageCache(db);
+
+  // Update GroupInfo on server so the next joiner sees the latest state.
+  await api.putMLSVoiceGroupInfo(
+    token,
+    channelId,
+    toBase64(mergeResult.groupInfoBytes),
+    mergeResult.epoch,
+  );
+  await mlsStore.setGroupEpoch(db, `voice:${channelId}`, mergeResult.epoch);
+
+  return { epoch: mergeResult.epoch };
+}
+
+/**
+ * Export a 32-byte voice frame key from the current epoch.
+ * Read-only — does not mutate group state.
+ *
+ * @param {object} deps
+ * @param {string} channelId
+ * @returns {Promise<{ frameKeyBytes: Uint8Array, epoch: number }>}
+ */
+export async function exportVoiceFrameKey(deps, channelId) {
+  const { db, mlsStore, hushCrypto } = deps;
+  const { sigPriv, sigPub, credBytes } = getCredFields(deps);
+  const groupIdBytes = voiceChannelIdToBytes(channelId);
+
+  await mlsStore.preloadGroupState(db);
+  const result = await hushCrypto.exportVoiceFrameKey(groupIdBytes, sigPriv, sigPub, credBytes);
+  // No flush — export_secret is read-only (no state mutation).
+
+  return { frameKeyBytes: result.frameKeyBytes, epoch: result.epoch };
+}
+
+/**
+ * Process a received MLS commit for the voice group (from mls.commit WS event with group_type=voice).
+ * Advances the local voice group epoch and persists the updated state.
+ *
+ * @param {object} deps
+ * @param {string} channelId
+ * @param {Uint8Array} commitBytes
+ * @returns {Promise<{ type: string, epoch: number }>}
+ */
+export async function processVoiceCommit(deps, channelId, commitBytes) {
+  const { db, mlsStore, hushCrypto } = deps;
+  const { sigPriv, sigPub, credBytes } = getCredFields(deps);
+  const groupIdBytes = voiceChannelIdToBytes(channelId);
+
+  await mlsStore.preloadGroupState(db);
+  const result = await hushCrypto.processMessage(groupIdBytes, sigPriv, sigPub, credBytes, commitBytes);
+  await mlsStore.flushStorageCache(db);
+
+  await mlsStore.setGroupEpoch(db, `voice:${channelId}`, result.epoch);
+
+  return { type: result.type, epoch: result.epoch };
+}
+
+/**
+ * Perform a self-update on the voice MLS group to rotate leaf node key material.
+ * Should be called on the voice_key_rotation_hours cadence.
+ *
+ * @param {object} deps
+ * @param {string} channelId
+ * @returns {Promise<{ epoch: number }>}
+ */
+export async function performVoiceSelfUpdate(deps, channelId) {
+  const { db, token, mlsStore, hushCrypto, api } = deps;
+  const { sigPriv, sigPub, credBytes } = getCredFields(deps);
+  const groupIdBytes = voiceChannelIdToBytes(channelId);
+
+  await mlsStore.preloadGroupState(db);
+  const result = await hushCrypto.selfUpdate(groupIdBytes, sigPriv, sigPub, credBytes);
+  await mlsStore.flushStorageCache(db);
+
+  await api.postMLSVoiceCommit(
+    token,
+    channelId,
+    toBase64(result.commitBytes),
+    result.epoch,
+    toBase64(result.groupInfoBytes),
+  );
+
+  // Merge the pending commit into the group state.
+  await mlsStore.preloadGroupState(db);
+  const mergeResult = await hushCrypto.mergePendingCommit(groupIdBytes, sigPriv, sigPub, credBytes);
+  await mlsStore.flushStorageCache(db);
+
+  await api.putMLSVoiceGroupInfo(
+    token,
+    channelId,
+    toBase64(mergeResult.groupInfoBytes),
+    mergeResult.epoch,
+  );
+  await mlsStore.setGroupEpoch(db, `voice:${channelId}`, mergeResult.epoch);
+
+  return { epoch: mergeResult.epoch };
+}
+
+/**
+ * Destroy local voice MLS group state when leaving a voice channel.
+ * Does NOT call a server delete — the server handles cleanup via the LiveKit
+ * webhook when the last participant leaves (voice_group_destroyed WS event).
+ *
+ * @param {object} deps
+ * @param {string} channelId
+ * @returns {Promise<void>}
+ */
+export async function destroyVoiceGroup(deps, channelId) {
+  const { db, mlsStore } = deps;
+  await mlsStore.deleteGroupEpoch(db, `voice:${channelId}`);
 }

@@ -203,7 +203,9 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     () => mlsStore.openStore(user?.id ?? '', getDeviceId()),
     [user?.id],
   );
-  const { encryptForUser, decryptFromUser } = useMLS({
+  // useMLS provides channel-centric API only (encryptForUser/decryptFromUser removed in M.3-02).
+  // VoiceChannel no longer destructures user-centric stubs — Plan M.3-03 wires MLS voice groups.
+  useMLS({
     getStore,
     getToken: getToken ?? (() => null),
   });
@@ -234,8 +236,6 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     wsClient,
     getToken,
     currentUserId,
-    encryptForUser,
-    decryptFromUser,
   });
 
   // idle = connecting; waiting = alone; activating = others in room

@@ -4,13 +4,51 @@ import { Room, RoomEvent, Track, ExternalE2EEKeyProvider } from 'livekit-client'
 // Import E2EE worker for LiveKit encryption
 // @ts-ignore - Vite will resolve this URL correctly
 import E2EEWorker from 'livekit-client/e2ee-worker?worker';
-import {
-  getPlaceholderKey,
-  setupMediaKeyListener,
-  handleParticipantConnected as e2eeOnParticipantConnected,
-  handleParticipantDisconnected as e2eeOnParticipantDisconnected,
-  setCreatorKey,
-} from '../lib/e2eeKeyManager';
+
+// ---------------------------------------------------------------------------
+// E2EE placeholder helpers
+// e2eeKeyManager.js has been deleted (Phase M.3-02). Signal-based key
+// exchange is superseded by MLS voice groups. Plan M.3-03 will wire in
+// createVoiceGroup/joinVoiceGroup/exportVoiceFrameKey from mlsGroup.js.
+// Until then, these stubs keep existing VoiceChannel tests and UI working.
+// ---------------------------------------------------------------------------
+
+/** Returns a 32-byte zero placeholder key for the key provider. */
+function getPlaceholderKey() {
+  return new Uint8Array(32);
+}
+
+/**
+ * No-op stub — media.key WS handler removed in M.3-01.
+ * Voice frame keys are now derived via MLS export_secret (M.3-03).
+ */
+function setupMediaKeyListener(_wsClient, _decryptFromUser, _refs, _setE2eeKey, _setUnsub) {
+  // No-op: Plan M.3-03 wires MLS voice group key derivation here.
+}
+
+/**
+ * No-op stub — Signal-based per-participant key exchange removed.
+ * Plan M.3-03 implements MLS-based frame key re-derivation on participant events.
+ */
+async function e2eeOnParticipantConnected() {
+  // No-op: Plan M.3-03 wires MLS joinVoiceGroup/exportVoiceFrameKey here.
+}
+
+/**
+ * No-op stub — Signal-based rekey removed.
+ * Plan M.3-03 implements MLS-based performVoiceSelfUpdate on participant leave.
+ */
+async function e2eeOnParticipantDisconnected() {
+  // No-op: Plan M.3-03 wires MLS performVoiceSelfUpdate here.
+}
+
+/**
+ * No-op stub — creator random key generation removed.
+ * Plan M.3-03 implements createVoiceGroup + exportVoiceFrameKey here.
+ */
+async function setCreatorKey(_keyProvider, _refs, _setE2eeKey) {
+  // No-op: Plan M.3-03 wires MLS createVoiceGroup here.
+}
 import {
   attachRemoteTrackListeners,
   preloadNoiseGateWorklet,
@@ -31,10 +69,13 @@ import { DEFAULT_QUALITY } from '../utils/constants';
  * LiveKit-based room connection hook.
  * Replaces mediasoup-based useMediasoup hook with LiveKit SFU.
  *
- * @param {{ wsClient: { send: (type: string, payload: object) => void, on: Function, off: Function }, getToken: () => string|null, currentUserId: string, encryptForUser: Function, decryptFromUser: Function }} deps
+ * NOTE: encryptForUser/decryptFromUser removed in M.3-02 (Signal-based key exchange deleted).
+ * Voice E2EE uses MLS voice groups (createVoiceGroup, exportVoiceFrameKey) — wired in M.3-03.
+ *
+ * @param {{ wsClient: { send: (type: string, payload: object) => void, on: Function, off: Function }, getToken: () => string|null, currentUserId: string }} deps
  * @returns {Object} Room state and media controls
  */
-export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, decryptFromUser }) {
+export function useRoom({ wsClient, getToken, currentUserId }) {
   // ─── Connection State ─────────────────────────────────
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState(null);
@@ -434,7 +475,7 @@ export function useRoom({ wsClient, getToken, currentUserId, encryptForUser, dec
         setError(err.message);
       }
     },
-    [scheduleRemoteTracksUpdate, scheduleScreensUpdate, syncParticipantsFromRoom, wsClient, encryptForUser, decryptFromUser, currentUserId, getToken],
+    [scheduleRemoteTracksUpdate, scheduleScreensUpdate, syncParticipantsFromRoom, wsClient, currentUserId, getToken],
   );
 
   // ─── Disconnect from Room ─────────────────────────────

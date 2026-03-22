@@ -1,19 +1,15 @@
 /**
- * MLS session hook — Phase M.2 real encryption.
+ * MLS session hook — Phase M.3 channel-centric API only.
  *
- * Provides two crypto APIs:
- *
- * 1. Channel-centric (text chat, MLS group):
- *    encryptForChannel(plaintext) -> { ciphertext: Uint8Array }
+ * Provides the channel-centric crypto API (MLS group):
+ *    encryptForChannel(plaintext) -> { ciphertext: Uint8Array, localId: string }
  *    decryptFromChannel(messageBytes) -> string
  *    getCachedMessage(messageId) -> { content, senderId, timestamp } | null
  *    setCachedMessage(messageId, payload) -> void
  *
- * 2. User-centric (voice E2EE key exchange, legacy passthrough):
- *    encryptForUser(remoteUserId, plaintext) -> { ciphertext: Uint8Array, updatedState: Uint8Array }
- *    decryptFromUser(remoteUserId, remoteDeviceId, ciphertext) -> Uint8Array
- *    These remain as passthrough stubs — voice E2EE key exchange is handled separately
- *    via the LiveKit media layer, not MLS group encryption.
+ * User-centric passthrough stubs (encryptForUser, decryptFromUser) have been removed.
+ * Voice E2EE uses MLS voice groups — see mlsGroup.js (createVoiceGroup, joinVoiceGroup,
+ * exportVoiceFrameKey, performVoiceSelfUpdate, destroyVoiceGroup).
  */
 
 import * as mlsGroupLib from '../lib/mlsGroup';
@@ -32,8 +28,6 @@ import * as apiLib from '../lib/api';
  *   decryptFromChannel: Function,
  *   getCachedMessage: Function,
  *   setCachedMessage: Function,
- *   encryptForUser: Function,
- *   decryptFromUser: Function,
  * }}
  */
 export function useMLS({ getStore, getToken, channelId, _deps }) {
@@ -131,47 +125,10 @@ export function useMLS({ getStore, getToken, channelId, _deps }) {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // User-centric API (voice E2EE key exchange — passthrough)
-  // These remain as passthrough stubs. Voice E2EE key exchange uses the same
-  // function signatures but operates on per-user ephemeral key material, not
-  // MLS group messages. Migrating voice to MLS is a separate plan.
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Passthrough encrypt for voice E2EE key exchange.
-   * @param {string} _remoteUserId
-   * @param {Uint8Array} plaintext
-   * @returns {Promise<{ ciphertext: Uint8Array, updatedState: Uint8Array }>}
-   */
-  async function encryptForUser(_remoteUserId, plaintext) {
-    const content = new TextDecoder().decode(plaintext);
-    const envelope = JSON.stringify({ plaintext: true, content });
-    return {
-      ciphertext: new TextEncoder().encode(envelope),
-      updatedState: new Uint8Array(0),
-    };
-  }
-
-  /**
-   * Passthrough decrypt for voice E2EE key exchange.
-   * @param {string} _remoteUserId
-   * @param {string} _remoteDeviceId
-   * @param {Uint8Array} ciphertext
-   * @returns {Promise<Uint8Array>}
-   */
-  async function decryptFromUser(_remoteUserId, _remoteDeviceId, ciphertext) {
-    const raw = new TextDecoder().decode(ciphertext);
-    const parsed = JSON.parse(raw);
-    return new TextEncoder().encode(parsed.content);
-  }
-
   return {
     encryptForChannel,
     decryptFromChannel,
     getCachedMessage,
     setCachedMessage,
-    encryptForUser,
-    decryptFromUser,
   };
 }
