@@ -5,50 +5,11 @@ import { Room, RoomEvent, Track, ExternalE2EEKeyProvider } from 'livekit-client'
 // @ts-ignore - Vite will resolve this URL correctly
 import E2EEWorker from 'livekit-client/e2ee-worker?worker';
 
-// ---------------------------------------------------------------------------
-// E2EE placeholder helpers
-// e2eeKeyManager.js has been deleted (Phase M.3-02). Signal-based key
-// exchange is superseded by MLS voice groups. Plan M.3-03 will wire in
-// createVoiceGroup/joinVoiceGroup/exportVoiceFrameKey from mlsGroup.js.
-// Until then, these stubs keep existing VoiceChannel tests and UI working.
-// ---------------------------------------------------------------------------
+import * as mlsGroupLib from '../lib/mlsGroup';
+import * as mlsStoreLib from '../lib/mlsStore';
+import * as hushCryptoLib from '../lib/hushCrypto';
+import * as apiLib from '../lib/api';
 
-/** Returns a 32-byte zero placeholder key for the key provider. */
-function getPlaceholderKey() {
-  return new Uint8Array(32);
-}
-
-/**
- * No-op stub — media.key WS handler removed in M.3-01.
- * Voice frame keys are now derived via MLS export_secret (M.3-03).
- */
-function setupMediaKeyListener(_wsClient, _decryptFromUser, _refs, _setE2eeKey, _setUnsub) {
-  // No-op: Plan M.3-03 wires MLS voice group key derivation here.
-}
-
-/**
- * No-op stub — Signal-based per-participant key exchange removed.
- * Plan M.3-03 implements MLS-based frame key re-derivation on participant events.
- */
-async function e2eeOnParticipantConnected() {
-  // No-op: Plan M.3-03 wires MLS joinVoiceGroup/exportVoiceFrameKey here.
-}
-
-/**
- * No-op stub — Signal-based rekey removed.
- * Plan M.3-03 implements MLS-based performVoiceSelfUpdate on participant leave.
- */
-async function e2eeOnParticipantDisconnected() {
-  // No-op: Plan M.3-03 wires MLS performVoiceSelfUpdate here.
-}
-
-/**
- * No-op stub — creator random key generation removed.
- * Plan M.3-03 implements createVoiceGroup + exportVoiceFrameKey here.
- */
-async function setCreatorKey(_keyProvider, _refs, _setE2eeKey) {
-  // No-op: Plan M.3-03 wires MLS createVoiceGroup here.
-}
 import {
   attachRemoteTrackListeners,
   preloadNoiseGateWorklet,
@@ -66,16 +27,26 @@ import {
 import { DEFAULT_QUALITY } from '../utils/constants';
 
 /**
+ * Decode a base64 string to a Uint8Array.
+ * @param {string} b64
+ * @returns {Uint8Array}
+ */
+function fromBase64(b64) {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+
+/**
  * LiveKit-based room connection hook.
- * Replaces mediasoup-based useMediasoup hook with LiveKit SFU.
+ * Voice E2EE is fully MLS-based: frame keys are derived via MLS export_secret
+ * (RFC 9420 §8.4) and applied to LiveKit ExternalE2EEKeyProvider.
  *
- * NOTE: encryptForUser/decryptFromUser removed in M.3-02 (Signal-based key exchange deleted).
- * Voice E2EE uses MLS voice groups (createVoiceGroup, exportVoiceFrameKey) — wired in M.3-03.
- *
- * @param {{ wsClient: { send: (type: string, payload: object) => void, on: Function, off: Function }, getToken: () => string|null, currentUserId: string }} deps
+ * @param {{ wsClient: object, getToken: () => string|null, currentUserId: string, getStore: () => Promise<IDBDatabase>, voiceKeyRotationHours?: number }} deps
  * @returns {Object} Room state and media controls
  */
-export function useRoom({ wsClient, getToken, currentUserId }) {
+export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyRotationHours }) {
   // ─── Connection State ─────────────────────────────────
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState(null);
@@ -83,9 +54,8 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
   const [remoteTracks, setRemoteTracks] = useState(new Map());
   const [participants, setParticipants] = useState([]);
   const [isE2EEEnabled, setIsE2EEEnabled] = useState(false);
-  const [e2eeKey, setE2eeKey] = useState(null);
-  const [mediaE2EEUnavailable, setMediaE2EEUnavailable] = useState(false);
-  const [keyExchangeMessage, setKeyExchangeMessage] = useState(null);
+  const [voiceEpoch, setVoiceEpoch] = useState(null);
+  const [isVoiceReconnecting, setIsVoiceReconnecting] = useState(false);
 
   // ─── Click-to-Watch Screen Shares ─────────────────────
   const [availableScreens, setAvailableScreens] = useState(new Map());
@@ -100,12 +70,11 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
   const watchedScreensRef = useRef(new Set());
   const loadingScreensRef = useRef(new Set());
   const e2eeKeyProviderRef = useRef(null);
-  const keyBytesRef = useRef(null);
-  const keyRotationCounterRef = useRef(0);
+  const voiceEpochRef = useRef(null);
+  const voiceSelfUpdateTimerRef = useRef(null);
+  const voiceWsUnsubscribeRef = useRef(null);
   const roomNameRef = useRef(null);
   const channelIdRef = useRef(null);
-  const currentKeyIndexRef = useRef(0);
-  const mediaKeyUnsubscribeRef = useRef(null);
   const connectionEpochRef = useRef(0);
 
   // ─── Noise Gate Refs ──────────────────────────────────
@@ -190,18 +159,22 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
         setError('WebSocket not connected. Please try again.');
         return;
       }
-      // Clear any error from a previous session so VoiceChannel doesn't
-      // render the error UI while this new connection is in-progress.
       setError(null);
       try {
         if (roomRef.current) {
           roomRef.current.disconnect();
           roomRef.current = null;
         }
-        if (mediaKeyUnsubscribeRef.current) {
-          mediaKeyUnsubscribeRef.current();
-          mediaKeyUnsubscribeRef.current = null;
+        // Cancel any in-flight voice WS listeners from a previous session
+        if (voiceWsUnsubscribeRef.current) {
+          voiceWsUnsubscribeRef.current();
+          voiceWsUnsubscribeRef.current = null;
         }
+        if (voiceSelfUpdateTimerRef.current) {
+          clearInterval(voiceSelfUpdateTimerRef.current);
+          voiceSelfUpdateTimerRef.current = null;
+        }
+
         localTracksRef.current.clear();
         remoteTracksRef.current.clear();
         availableScreensRef.current.clear();
@@ -213,13 +186,10 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
         setParticipants([]);
         setIsReady(false);
         setIsE2EEEnabled(false);
-        setE2eeKey(null);
-        keyBytesRef.current = null;
-        keyRotationCounterRef.current = 0;
-        currentKeyIndexRef.current = 0;
+        setVoiceEpoch(null);
+        voiceEpochRef.current = null;
         roomNameRef.current = roomName;
         channelIdRef.current = channelId || null;
-        setMediaE2EEUnavailable(false);
 
         const accessToken = getToken?.();
         if (!accessToken) {
@@ -253,7 +223,12 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
         const { token } = await response.json();
         if (isStale()) return;
 
-        // ─── E2EE: keyProvider + worker; key distribution via e2eeKeyManager ───
+        // ─── MLS Voice Group Setup ────────────────────────────────────────────
+        // Signal state: "Reconnecting..." indicator is shown during the async
+        // MLS group join/create flow. Audio is blocked until a valid frame key
+        // is derived and applied. No unencrypted audio ever flows.
+        setIsVoiceReconnecting(true);
+
         let keyProvider = null;
         let worker = null;
 
@@ -262,56 +237,65 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
           e2eeKeyProviderRef.current = keyProvider;
           worker = new E2EEWorker();
 
-          const e2eeRefs = {
-            channelIdRef,
-            e2eeKeyProviderRef,
-            keyBytesRef,
-            currentKeyIndexRef,
+          // Build MLS dependency bundle for this session
+          const db = await getStore();
+          const credential = await mlsStoreLib.getCredential(db);
+          const mlsDeps = {
+            db,
+            token: accessToken,
+            credential,
+            mlsStore: mlsStoreLib,
+            hushCrypto: hushCryptoLib,
+            api: apiLib,
           };
-          setupMediaKeyListener(wsClient, decryptFromUser, e2eeRefs, setE2eeKey, (fn) => {
-            mediaKeyUnsubscribeRef.current = fn;
-          });
-          const placeholderKey = getPlaceholderKey();
-          await keyProvider.setKey(placeholderKey, 0);
-          keyBytesRef.current = placeholderKey;
-        } catch (e2eeErr) {
-          console.error('[livekit] E2EE initialization failed:', e2eeErr);
-          setMediaE2EEUnavailable(true);
-          if (mediaKeyUnsubscribeRef.current) {
-            mediaKeyUnsubscribeRef.current();
-            mediaKeyUnsubscribeRef.current = null;
+
+          // Determine whether to create or join: 404 from server = first participant
+          const existingGroup = await apiLib.getMLSVoiceGroupInfo(accessToken, channelId).catch(() => null);
+          if (existingGroup) {
+            await mlsGroupLib.joinVoiceGroup(mlsDeps, channelId);
+          } else {
+            await mlsGroupLib.createVoiceGroup(mlsDeps, channelId);
           }
+
+          // Derive frame key from MLS export_secret and apply to LiveKit key provider
+          const { frameKeyBytes, epoch: initialEpoch } = await mlsGroupLib.exportVoiceFrameKey(mlsDeps, channelId);
+          await keyProvider.setKey(new Uint8Array(frameKeyBytes), initialEpoch % 256);
+
+          setVoiceEpoch(initialEpoch);
+          voiceEpochRef.current = initialEpoch;
+          setIsE2EEEnabled(true);
+          setIsVoiceReconnecting(false);
+        } catch (mlsErr) {
+          console.error('[livekit] MLS voice group setup failed:', mlsErr);
+          setIsVoiceReconnecting(false);
           keyProvider = null;
           worker = null;
         }
 
         if (!keyProvider || !worker) {
-          throw new Error('Media encryption unavailable. Cannot join voice channel.');
+          throw new Error('Could not establish encrypted voice. Please try again.');
         }
         if (isStale()) return;
 
-        // Create LiveKit room with dynacast, adaptive streaming, and E2EE
+        // ─── LiveKit Room Options ─────────────────────────────────────────────
         const roomOptions = {
           dynacast: true,
           adaptiveStream: true,
-        };
-
-        // Add E2EE options if initialized successfully
-        if (keyProvider && worker) {
-          roomOptions.e2ee = {
+          e2ee: {
             keyProvider,
             worker,
-          };
-        }
+          },
+        };
 
         const room = new Room(roomOptions);
 
-        // ParticipantConnected: update list and send E2EE key via e2eeKeyManager
-        room.on(RoomEvent.ParticipantConnected, async (participant) => {
+        // ParticipantConnected: update participant list.
+        // In MLS, no per-user key exchange is needed. The new participant joins
+        // the MLS group independently via External Commit. The mls.commit WS
+        // event (handled below) triggers frame key re-derivation.
+        room.on(RoomEvent.ParticipantConnected, (participant) => {
           if (isStale()) return;
-          console.log(
-            `[livekit] Participant connected: ${participant.identity}`,
-          );
+          console.log(`[livekit] Participant connected: ${participant.identity}`);
           setParticipants((prev) => {
             if (prev.some((p) => p.id === participant.identity)) return prev;
             return [
@@ -323,29 +307,14 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
             ];
           });
           queueMicrotask(syncParticipantsFromRoom);
-          const e2eeRefs = {
-            channelIdRef,
-            e2eeKeyProviderRef,
-            keyBytesRef,
-            currentKeyIndexRef,
-          };
-          await e2eeOnParticipantConnected(
-            participant,
-            room,
-            wsClient,
-            encryptForUser,
-            currentUserId,
-            e2eeRefs,
-            setKeyExchangeMessage,
-          );
         });
 
-        // ParticipantDisconnected: update list, clean tracks/screens, rekey via e2eeKeyManager
-        room.on(RoomEvent.ParticipantDisconnected, async (participant) => {
+        // ParticipantDisconnected: update list and clean tracks/screens.
+        // Frame key rotates automatically via epoch advancement on leave
+        // (triggered by the mls.commit from remaining participants).
+        room.on(RoomEvent.ParticipantDisconnected, (participant) => {
           if (isStale()) return;
-          console.log(
-            `[livekit] Participant disconnected: ${participant.identity}`,
-          );
+          console.log(`[livekit] Participant disconnected: ${participant.identity}`);
           setParticipants((prev) =>
             prev.filter((p) => p.id !== participant.identity),
           );
@@ -363,25 +332,6 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
             }
           }
           scheduleRemoteTracksUpdate();
-          const r = roomRef.current;
-          if (r) {
-            const e2eeRefs = {
-              channelIdRef,
-              e2eeKeyProviderRef,
-              keyBytesRef,
-              currentKeyIndexRef,
-            };
-            await e2eeOnParticipantDisconnected(
-              participant,
-              r,
-              wsClient,
-              encryptForUser,
-              currentUserId,
-              e2eeRefs,
-              setE2eeKey,
-              setKeyExchangeMessage,
-            );
-          }
         });
 
         const trackRefs = {
@@ -391,21 +341,13 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
         };
         attachRemoteTrackListeners(room, trackRefs, scheduleRemoteTracksUpdate, scheduleScreensUpdate);
 
-        // Connected: set creator E2EE key only after connection is fully established,
-        // so setKey does not trigger renegotiation on a not-yet-ready peer connection.
-        // Connected fires synchronously during room.connect(), before roomRef is set.
-        // Use the local `room` variable from the closure, not roomRef.current.
-        room.on(RoomEvent.Connected, async () => {
+        // Connected: E2EE key is already applied before room.connect() — no
+        // additional setKey call needed here. setIsE2EEEnabled was already set
+        // above after MLS key derivation succeeded.
+        room.on(RoomEvent.Connected, () => {
           if (isStale()) return;
-          if (!keyProvider || !channelIdRef.current) return;
-          if (room.remoteParticipants.size === 0) {
-            await setCreatorKey(keyProvider, { keyBytesRef, currentKeyIndexRef }, setE2eeKey);
-          }
-          setIsE2EEEnabled(true);
-          if (keyBytesRef.current) setE2eeKey(keyBytesRef.current);
         });
 
-        // Disconnected
         room.on(RoomEvent.Disconnected, () => {
           if (isStale()) return;
           console.log('[livekit] Disconnected from room');
@@ -415,11 +357,8 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
 
         const livekitUrl =
           import.meta.env.VITE_LIVEKIT_URL || 'ws://localhost:7880';
-        // autoSubscribe:false so screen shares go through click-to-watch.
-        // Non-screen tracks are manually subscribed in TrackPublished handler.
         await room.connect(livekitUrl, token, { autoSubscribe: false });
 
-        // If superseded during connect (e.g. StrictMode remount), discard this room
         if (isStale()) {
           room.disconnect();
           return;
@@ -427,28 +366,102 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
 
         roomRef.current = room;
 
-        if (keyProvider) {
-          if (room.remoteParticipants.size > 0) {
-            setIsE2EEEnabled(true);
-            setE2eeKey(keyBytesRef.current);
+        // ─── Voice MLS WS Listeners ──────────────────────────────────────────
+        // Re-derive frame key when a voice commit advances the epoch.
+        const handleVoiceCommit = async (data) => {
+          if (data.group_type !== 'voice' || data.channel_id !== channelIdRef.current) return;
+          // Own commits are already applied locally when we sent them
+          if (data.sender_id === currentUserId) return;
+          try {
+            const db = await getStore();
+            const credential = await mlsStoreLib.getCredential(db);
+            const tok = getToken();
+            const mlsDeps = {
+              db,
+              token: tok,
+              credential,
+              mlsStore: mlsStoreLib,
+              hushCrypto: hushCryptoLib,
+              api: apiLib,
+            };
+            const commitBytes = fromBase64(data.commit_bytes);
+            await mlsGroupLib.processVoiceCommit(mlsDeps, data.channel_id, commitBytes);
+            const { frameKeyBytes, epoch } = await mlsGroupLib.exportVoiceFrameKey(mlsDeps, data.channel_id);
+            if (e2eeKeyProviderRef.current) {
+              await e2eeKeyProviderRef.current.setKey(new Uint8Array(frameKeyBytes), epoch % 256);
+            }
+            setVoiceEpoch(epoch);
+            voiceEpochRef.current = epoch;
+          } catch (err) {
+            console.error('[livekit] Failed to process voice MLS commit:', err);
           }
-          // Creator path: E2EE key is set in RoomEvent.Connected handler
-        } else {
-          setIsE2EEEnabled(false);
-        }
+        };
 
-        // Populate initial participants and subscribe to their existing tracks
+        // Clean up local state when the server signals the voice group is gone
+        // (last participant left and webhook fired DeleteMLSGroupInfo).
+        const handleVoiceGroupDestroyed = async (data) => {
+          if (data.channel_id !== channelIdRef.current) return;
+          try {
+            const db = await getStore();
+            const credential = await mlsStoreLib.getCredential(db);
+            const mlsDeps = {
+              db,
+              token: getToken(),
+              credential,
+              mlsStore: mlsStoreLib,
+              hushCrypto: hushCryptoLib,
+              api: apiLib,
+            };
+            await mlsGroupLib.destroyVoiceGroup(mlsDeps, data.channel_id);
+          } catch (err) {
+            console.warn('[livekit] voice_group_destroyed cleanup failed:', err);
+          }
+        };
+
+        wsClient.on('mls.commit', handleVoiceCommit);
+        wsClient.on('voice_group_destroyed', handleVoiceGroupDestroyed);
+        voiceWsUnsubscribeRef.current = () => {
+          wsClient.off('mls.commit', handleVoiceCommit);
+          wsClient.off('voice_group_destroyed', handleVoiceGroupDestroyed);
+        };
+
+        // ─── Periodic Self-Update (key rotation) ─────────────────────────────
+        const rotationMs = (voiceKeyRotationHours ?? 2) * 3600000;
+        voiceSelfUpdateTimerRef.current = setInterval(async () => {
+          try {
+            const db = await getStore();
+            const credential = await mlsStoreLib.getCredential(db);
+            const tok = getToken();
+            const mlsDeps = {
+              db,
+              token: tok,
+              credential,
+              mlsStore: mlsStoreLib,
+              hushCrypto: hushCryptoLib,
+              api: apiLib,
+            };
+            await mlsGroupLib.performVoiceSelfUpdate(mlsDeps, channelIdRef.current);
+            const { frameKeyBytes, epoch } = await mlsGroupLib.exportVoiceFrameKey(mlsDeps, channelIdRef.current);
+            if (e2eeKeyProviderRef.current) {
+              await e2eeKeyProviderRef.current.setKey(new Uint8Array(frameKeyBytes), epoch % 256);
+            }
+            setVoiceEpoch(epoch);
+            voiceEpochRef.current = epoch;
+          } catch (err) {
+            console.warn('[livekit] Periodic voice key rotation failed:', err);
+          }
+        }, rotationMs);
+
+        // ─── Initial Participants ─────────────────────────────────────────────
         const initialParticipants = [];
         for (const p of room.remoteParticipants.values()) {
           initialParticipants.push({
             id: p.identity,
             displayName: p.name || p.identity,
           });
-          // With autoSubscribe:false, manually handle existing publications
           for (const [, pub] of p.trackPublications) {
             if (!pub.trackSid) continue;
             if (pub.source === Track.Source.ScreenShare && pub.kind === Track.Kind.Video) {
-              // Screen share → click-to-watch
               availableScreensRef.current.set(pub.trackSid, {
                 trackSid: pub.trackSid,
                 participantId: p.identity,
@@ -458,7 +471,6 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
                 publication: pub,
               });
             } else if (pub.source !== Track.Source.ScreenShareAudio) {
-              // Webcam, mic → auto-subscribe
               pub.setSubscribed(true);
             }
           }
@@ -475,19 +487,49 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
         setError(err.message);
       }
     },
-    [scheduleRemoteTracksUpdate, scheduleScreensUpdate, syncParticipantsFromRoom, wsClient, currentUserId, getToken],
+    [scheduleRemoteTracksUpdate, scheduleScreensUpdate, syncParticipantsFromRoom, wsClient, currentUserId, getToken, getStore, voiceKeyRotationHours],
   );
 
   // ─── Disconnect from Room ─────────────────────────────
   const disconnectRoom = useCallback(async () => {
     connectionEpochRef.current++;
     setError(null);
-    setKeyExchangeMessage(null);
-    if (mediaKeyUnsubscribeRef.current) {
-      mediaKeyUnsubscribeRef.current();
-      mediaKeyUnsubscribeRef.current = null;
+
+    // Stop periodic key rotation
+    if (voiceSelfUpdateTimerRef.current) {
+      clearInterval(voiceSelfUpdateTimerRef.current);
+      voiceSelfUpdateTimerRef.current = null;
     }
-    if (!roomRef.current) return;
+
+    // Remove voice MLS WS listeners
+    if (voiceWsUnsubscribeRef.current) {
+      voiceWsUnsubscribeRef.current();
+      voiceWsUnsubscribeRef.current = null;
+    }
+
+    if (!roomRef.current) {
+      // Still clean up MLS state even if room already gone
+      const chId = channelIdRef.current;
+      if (chId) {
+        try {
+          const db = await getStore();
+          const credential = await mlsStoreLib.getCredential(db);
+          const mlsDeps = {
+            db,
+            token: getToken(),
+            credential,
+            mlsStore: mlsStoreLib,
+            hushCrypto: hushCryptoLib,
+            api: apiLib,
+          };
+          await mlsGroupLib.destroyVoiceGroup(mlsDeps, chId);
+        } catch { /* fire-and-forget */ }
+      }
+      voiceEpochRef.current = null;
+      setVoiceEpoch(null);
+      setIsVoiceReconnecting(false);
+      return;
+    }
 
     try {
       const localTracksMap = localTracksRef.current;
@@ -501,12 +543,29 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
 
       cleanupMicPipeline();
 
+      // Destroy local voice group state (fire-and-forget — server handles group
+      // deletion when the last participant leaves via the LiveKit webhook)
+      const chId = channelIdRef.current;
+      if (chId) {
+        try {
+          const db = await getStore();
+          const credential = await mlsStoreLib.getCredential(db);
+          const mlsDeps = {
+            db,
+            token: getToken(),
+            credential,
+            mlsStore: mlsStoreLib,
+            hushCrypto: hushCryptoLib,
+            api: apiLib,
+          };
+          await mlsGroupLib.destroyVoiceGroup(mlsDeps, chId);
+        } catch { /* fire-and-forget */ }
+      }
+
       await roomRef.current.disconnect();
       roomRef.current = null;
       e2eeKeyProviderRef.current = null;
-      keyBytesRef.current = null;
-      keyRotationCounterRef.current = 0;
-      currentKeyIndexRef.current = 0;
+      voiceEpochRef.current = null;
       roomNameRef.current = null;
       channelIdRef.current = null;
 
@@ -522,13 +581,14 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
       setParticipants([]);
       setIsReady(false);
       setIsE2EEEnabled(false);
-      setE2eeKey(null);
+      setVoiceEpoch(null);
+      setIsVoiceReconnecting(false);
 
       console.log('[livekit] Disconnected from room');
     } catch (err) {
       console.error('[livekit] Disconnect error:', err);
     }
-  }, [cleanupMicPipeline]);
+  }, [cleanupMicPipeline, getStore, getToken]);
 
   // ─── Unpublish Screen Share ───────────────────────────
   const unpublishScreen = useCallback(async () => {
@@ -658,12 +718,10 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
   const unwatchScreen = useCallback(
     async (trackSid) => {
       if (!roomRef.current) return;
-      // Immediately remove from UI so the stream disappears without a resize flash
       remoteTracksRef.current.delete(trackSid);
       watchedScreensRef.current.delete(trackSid);
       scheduleRemoteTracksUpdate();
       scheduleScreensUpdate();
-      // Then async unsubscribe in the background
       try {
         await trackUnwatchScreen(roomRef.current, {
           availableScreensRef,
@@ -676,8 +734,8 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
     [scheduleRemoteTracksUpdate, scheduleScreensUpdate],
   );
 
-  // ─── Periodic + visibility sync for participants. This is a safety net for
-  // missed SDK events (e.g. browser throttling/background tabs).
+  // ─── Periodic + visibility sync for participants ──────
+  // Safety net for missed SDK events (browser throttling/background tabs).
   useEffect(() => {
     const intervalId = setInterval(() => {
       syncParticipantsFromRoom();
@@ -696,15 +754,17 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
   // ─── Cleanup on Unmount ───────────────────────────────
   useEffect(() => {
     return () => {
-      if (mediaKeyUnsubscribeRef.current) {
-        mediaKeyUnsubscribeRef.current();
-        mediaKeyUnsubscribeRef.current = null;
+      if (voiceWsUnsubscribeRef.current) {
+        voiceWsUnsubscribeRef.current();
+        voiceWsUnsubscribeRef.current = null;
+      }
+      if (voiceSelfUpdateTimerRef.current) {
+        clearInterval(voiceSelfUpdateTimerRef.current);
+        voiceSelfUpdateTimerRef.current = null;
       }
       const room = roomRef.current;
       const localTracksMap = localTracksRef.current;
       if (room) {
-        // Increment epoch before disconnecting so the RoomEvent.Disconnected
-        // handler treats this as stale and does not set the error state.
         connectionEpochRef.current++;
         if (localTracksMap && typeof localTracksMap.forEach === 'function') {
           localTracksMap.forEach((info) => {
@@ -728,9 +788,8 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
     remoteTracks,
     participants,
     isE2EEEnabled,
-    e2eeKey,
-    mediaE2EEUnavailable,
-    keyExchangeMessage,
+    voiceEpoch,
+    isVoiceReconnecting,
     // Room connection
     connectRoom,
     disconnectRoom,
@@ -742,7 +801,7 @@ export function useRoom({ wsClient, getToken, currentUserId }) {
     // Webcam
     publishWebcam,
     unpublishWebcam,
-    // Microphone (raw audio - noise gate in B2.2)
+    // Microphone
     publishMic,
     unpublishMic,
     // Click-to-watch

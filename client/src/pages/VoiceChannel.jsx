@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getDeviceId } from '../hooks/useAuth';
-import { useMLS } from '../hooks/useMLS';
 import * as mlsStore from '../lib/mlsStore';
 import { useRoom } from '../hooks/useRoom';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -203,13 +202,6 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     () => mlsStore.openStore(user?.id ?? '', getDeviceId()),
     [user?.id],
   );
-  // useMLS provides channel-centric API only (encryptForUser/decryptFromUser removed in M.3-02).
-  // VoiceChannel no longer destructures user-centric stubs — Plan M.3-03 wires MLS voice groups.
-  useMLS({
-    getStore,
-    getToken: getToken ?? (() => null),
-  });
-
   const {
     isReady,
     error,
@@ -230,12 +222,15 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     loadingScreens,
     watchScreen,
     unwatchScreen,
-    mediaE2EEUnavailable,
-    keyExchangeMessage,
+    isE2EEEnabled,
+    voiceEpoch,
+    isVoiceReconnecting,
   } = useRoom({
     wsClient,
     getToken,
     currentUserId,
+    getStore,
+    voiceKeyRotationHours: undefined, // uses server handshake default (2h) when undefined
   });
 
   // idle = connecting; waiting = alone; activating = others in room
@@ -506,6 +501,40 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <span style={styles.roomTitle}>#{channel.name}</span>
+          {isE2EEEnabled && !isVoiceReconnecting && (
+            <span
+              title={`Encrypted${voiceEpoch != null ? ` \u00b7 Epoch ${voiceEpoch}` : ''}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                cursor: 'default',
+                color: 'var(--hush-success, #22c55e)',
+                marginLeft: '4px',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </span>
+          )}
+          {isVoiceReconnecting && (
+            <div
+              role="status"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 12px',
+                backgroundColor: 'var(--hush-warning-bg, rgba(234, 179, 8, 0.1))',
+                color: 'var(--hush-warning, #eab308)',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+              }}
+            >
+              Reconnecting...
+            </div>
+          )}
           <span style={styles.headerBadge}>
             <span className="live-dot" />
             Live
@@ -598,7 +627,6 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
             isWebcamOn={isWebcamOn}
             quality={quality}
             isMobile={isMobile}
-            mediaE2EEUnavailable={mediaE2EEUnavailable}
             showScreenShare={!isLowLatency}
             showWebcam={!isLowLatency}
             showQualityPicker={!isLowLatency}
@@ -753,11 +781,6 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
         />
       )}
 
-      {keyExchangeMessage && (
-        <div className="toast" role="alert">
-          {keyExchangeMessage}
-        </div>
-      )}
       {qualityChangeError && (
         <div className="toast" role="alert">
           {qualityChangeError}

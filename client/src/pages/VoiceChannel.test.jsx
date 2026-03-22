@@ -22,14 +22,6 @@ const mockDisconnectRoom = vi.fn(() => Promise.resolve());
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: vi.fn(),
 }));
-vi.mock('../hooks/useMLS', () => ({
-  useMLS: vi.fn(() => ({
-    encryptForUser: vi.fn(),
-    decryptFromUser: vi.fn(),
-    getCachedMessage: vi.fn(() => Promise.resolve(null)),
-    setCachedMessage: vi.fn(() => Promise.resolve()),
-  })),
-}));
 vi.mock('../hooks/useRoom', () => ({
   useRoom: vi.fn(),
 }));
@@ -102,8 +94,9 @@ describe('VoiceChannel', () => {
       loadingScreens: new Set(),
       watchScreen: vi.fn(),
       unwatchScreen: vi.fn(),
-      mediaE2EEUnavailable: false,
-      keyExchangeMessage: null,
+      isE2EEEnabled: false,
+      voiceEpoch: null,
+      isVoiceReconnecting: false,
     });
     ControlsProps = null;
     mockConnectRoom.mockClear();
