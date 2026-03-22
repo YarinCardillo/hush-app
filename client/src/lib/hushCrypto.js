@@ -267,3 +267,23 @@ export async function exportGroupInfoBytes(groupIdBytes, sigPriv, sigPub, credBy
     groupInfoBytes: new Uint8Array(out.groupInfoBytes),
   };
 }
+
+/**
+ * Export a 32-byte voice frame key from the current MLS epoch.
+ * Uses MLS export_secret with label "hush-voice-frame-key" (RFC 9420 §8.4).
+ * Pure derivation — no group state mutation.
+ *
+ * @param {Uint8Array} groupIdBytes - Voice group ID bytes (e.g. "voice:{channelId}" as UTF-8)
+ * @param {Uint8Array} sigPriv - Signing private key
+ * @param {Uint8Array} sigPub - Signing public key
+ * @param {Uint8Array} credBytes - Credential bytes
+ * @returns {Promise<{ frameKeyBytes: Uint8Array, epoch: number }>}
+ */
+export async function exportVoiceFrameKey(groupIdBytes, sigPriv, sigPub, credBytes) {
+  await init();
+  const out = await module.exportVoiceFrameKey(groupIdBytes, sigPriv, sigPub, credBytes);
+  return {
+    frameKeyBytes: new Uint8Array(out.frameKeyBytes),
+    epoch: out.epoch,
+  };
+}

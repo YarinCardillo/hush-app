@@ -868,6 +868,82 @@ export async function postMLSCommit(token, channelId, commitBytesBase64, groupIn
   }
 }
 
+// ── MLS Voice Group API ────────────────────────────────────────────────────────
+
+/**
+ * Get GroupInfo for a channel's voice MLS group.
+ * Returns null if no voice group exists for this channel yet.
+ *
+ * @param {string} token - JWT
+ * @param {string} channelId - Channel UUID
+ * @returns {Promise<{ groupInfo: string, epoch: number }|null>}
+ */
+export async function getMLSVoiceGroupInfo(token, channelId) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/mls/groups/${encodeURIComponent(channelId)}/info?type=voice`,
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `getMLSVoiceGroupInfo ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Upsert the GroupInfo for a channel's voice MLS group.
+ * Called after creating or advancing the voice group epoch.
+ *
+ * @param {string} token - JWT
+ * @param {string} channelId - Channel UUID
+ * @param {string} groupInfoBase64 - Base64-encoded serialised GroupInfo
+ * @param {number} epoch - Current group epoch
+ * @returns {Promise<void>}
+ */
+export async function putMLSVoiceGroupInfo(token, channelId, groupInfoBase64, epoch) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/mls/groups/${encodeURIComponent(channelId)}/info?type=voice`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupInfo: groupInfoBase64, epoch }),
+    },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `putMLSVoiceGroupInfo ${res.status}`);
+  }
+}
+
+/**
+ * Post a Commit to the server for distribution to voice channel participants.
+ * Also upserts the current GroupInfo so new joiners can catch up.
+ *
+ * @param {string} token - JWT
+ * @param {string} channelId - Channel UUID
+ * @param {string} commitBytesBase64 - Base64-encoded commit bytes
+ * @param {number} epoch - Epoch after this commit
+ * @param {string} [groupInfoBase64] - Optional Base64-encoded updated GroupInfo
+ * @returns {Promise<void>}
+ */
+export async function postMLSVoiceCommit(token, channelId, commitBytesBase64, epoch, groupInfoBase64) {
+  const res = await fetchWithAuth(
+    token,
+    `/api/mls/groups/${encodeURIComponent(channelId)}/commit?type=voice`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commitBytes: commitBytesBase64, groupInfo: groupInfoBase64 ?? '', epoch }),
+    },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `postMLSVoiceCommit ${res.status}`);
+  }
+}
+
 /**
  * Fetch Commits that occurred after a given epoch (for catch-up on reconnect).
  *
