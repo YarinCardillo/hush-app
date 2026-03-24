@@ -163,6 +163,140 @@ export async function updateInstance(token, body) {
   }
 }
 
+// ── BIP39 Auth API ────────────────────────────────────────────────────────────
+
+/**
+ * Request a challenge nonce for a given public key.
+ * The server issues a nonce that must be signed with the matching private key.
+ *
+ * @param {string} publicKeyBase64 - Base64-encoded 32-byte Ed25519 public key.
+ * @returns {Promise<{ nonce: string }>} Hex-encoded nonce.
+ */
+export async function requestChallenge(publicKeyBase64) {
+  const res = await fetch(`${defaultBase}/api/auth/challenge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ publicKey: publicKeyBase64 }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `requestChallenge ${res.status}`);
+  return data;
+}
+
+/**
+ * Verify a signed challenge nonce and receive a JWT session token.
+ *
+ * @param {string} publicKeyBase64 - Base64-encoded Ed25519 public key.
+ * @param {string} nonce - Hex nonce from requestChallenge.
+ * @param {string} signatureBase64 - Base64-encoded 64-byte Ed25519 signature.
+ * @param {string} deviceId - Stable per-device identifier (UUID).
+ * @returns {Promise<{ token: string, user: object }>}
+ */
+export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, deviceId) {
+  const res = await fetch(`${defaultBase}/api/auth/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ publicKey: publicKeyBase64, nonce, signature: signatureBase64, deviceId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `verifyChallenge ${res.status}`);
+  return data;
+}
+
+/**
+ * Register a new account with a BIP39-derived public key.
+ *
+ * @param {string} username - Unique username.
+ * @param {string} displayName - Display name.
+ * @param {string} publicKeyBase64 - Base64-encoded Ed25519 public key.
+ * @param {string} deviceId - Stable per-device identifier (UUID).
+ * @param {string} [inviteCode] - Optional invite code for invite_only registration mode.
+ * @returns {Promise<{ token: string, user: object }>}
+ */
+export async function registerWithPublicKey(username, displayName, publicKeyBase64, deviceId, inviteCode) {
+  const body = { username, displayName, publicKey: publicKeyBase64, deviceId };
+  if (inviteCode) body.inviteCode = inviteCode;
+  const res = await fetch(`${defaultBase}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `registerWithPublicKey ${res.status}`);
+  return data;
+}
+
+/**
+ * Authenticate as a guest (ephemeral, no mnemonic required).
+ * Optionally accepts a joinCode to join a specific guild as a guest.
+ *
+ * @param {string} [joinCode] - Optional join/invite code.
+ * @returns {Promise<{ token: string, user: object }>}
+ */
+export async function loginGuest(joinCode) {
+  const body = joinCode ? { joinCode } : {};
+  const res = await fetch(`${defaultBase}/api/auth/guest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `loginGuest ${res.status}`);
+  return data;
+}
+
+/**
+ * List all registered device keys for the authenticated user.
+ *
+ * @param {string} token - JWT
+ * @returns {Promise<Array<{ deviceId: string, publicKey: string, createdAt: string, lastSeenAt: string }>>}
+ */
+export async function listDeviceKeys(token) {
+  const res = await fetchWithAuth(token, '/api/auth/devices');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `listDeviceKeys ${res.status}`);
+  return data;
+}
+
+/**
+ * Revoke a registered device key. The device can no longer authenticate.
+ *
+ * @param {string} token - JWT
+ * @param {string} deviceId - Device ID to revoke.
+ * @returns {Promise<void>}
+ */
+export async function revokeDeviceKey(token, deviceId) {
+  const res = await fetchWithAuth(token, `/api/auth/devices/${encodeURIComponent(deviceId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `revokeDeviceKey ${res.status}`);
+  }
+}
+
+/**
+ * Register a new device key certified by an existing authenticated device.
+ * Used in the multi-device linking flow (Plan 05).
+ *
+ * @param {string} token - JWT of the certifying device.
+ * @param {string} newDevicePublicKeyBase64 - Base64-encoded Ed25519 public key of the new device.
+ * @param {string} certificate - Base64-encoded signature: Sign(IK_existing_priv, IK_new_pub).
+ * @param {string} deviceId - Device ID for the new device.
+ * @returns {Promise<void>}
+ */
+export async function certifyNewDevice(token, newDevicePublicKeyBase64, certificate, deviceId) {
+  const res = await fetchWithAuth(token, '/api/auth/devices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ devicePublicKey: newDevicePublicKeyBase64, certificate, deviceId }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `certifyNewDevice ${res.status}`);
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
