@@ -13,10 +13,11 @@ const defaultBase = '';
  * @param {string} token - JWT
  * @param {string} path - e.g. /api/keys/upload
  * @param {RequestInit} [opts]
+ * @param {string} [baseUrl] - Optional base URL for cross-instance calls (e.g. 'https://other.instance.com'). Defaults to '' (relative URL).
  * @returns {Promise<Response>}
  */
-export async function fetchWithAuth(token, path, opts = {}) {
-  const url = path.startsWith('http') ? path : `${defaultBase}${path}`;
+export async function fetchWithAuth(token, path, opts = {}, baseUrl = '') {
+  const url = path.startsWith('http') ? path : `${baseUrl}${path}`;
   const headers = new Headers(opts.headers);
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
@@ -30,12 +31,12 @@ export async function fetchWithAuth(token, path, opts = {}) {
  * @param {{ deviceId: string, credentialBytes: number[], signingPublicKey: number[] }} body
  * @returns {Promise<void>}
  */
-export async function uploadMLSCredential(token, body) {
+export async function uploadMLSCredential(token, body, baseUrl = '') {
   const res = await fetchWithAuth(token, '/api/mls/credentials', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `upload MLS credential ${res.status}`);
@@ -48,12 +49,12 @@ export async function uploadMLSCredential(token, body) {
  * @param {{ deviceId: string, keyPackages: number[][], expiresAt?: string, lastResort?: boolean }} body
  * @returns {Promise<void>}
  */
-export async function uploadMLSKeyPackages(token, body) {
+export async function uploadMLSKeyPackages(token, body, baseUrl = '') {
   const res = await fetchWithAuth(token, '/api/mls/key-packages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `upload MLS key packages ${res.status}`);
@@ -67,8 +68,8 @@ export async function uploadMLSKeyPackages(token, body) {
  * @param {string} deviceId - Device ID
  * @returns {Promise<number>}
  */
-export async function getKeyPackageCount(token, deviceId) {
-  const res = await fetchWithAuth(token, `/api/mls/key-packages/count?deviceId=${encodeURIComponent(deviceId)}`);
+export async function getKeyPackageCount(token, deviceId, baseUrl = '') {
+  const res = await fetchWithAuth(token, `/api/mls/key-packages/count?deviceId=${encodeURIComponent(deviceId)}`, {}, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `getKeyPackageCount ${res.status}`);
@@ -83,8 +84,8 @@ export async function getKeyPackageCount(token, deviceId) {
  * @param {string} userId - Target user UUID
  * @returns {Promise<Array<object>>}
  */
-export async function getPreKeyBundle(token, userId) {
-  const res = await fetchWithAuth(token, `/api/keys/${userId}`);
+export async function getPreKeyBundle(token, userId, baseUrl = '') {
+  const res = await fetchWithAuth(token, `/api/keys/${userId}`, {}, baseUrl);
   if (!res.ok) {
     if (res.status === 404) return [];
     const err = await res.json().catch(() => ({}));
@@ -100,8 +101,8 @@ export async function getPreKeyBundle(token, userId) {
  * @param {string} deviceId - Target device ID
  * @returns {Promise<object>}
  */
-export async function getPreKeyBundleByDevice(token, userId, deviceId) {
-  const res = await fetchWithAuth(token, `/api/keys/${userId}/${encodeURIComponent(deviceId)}`);
+export async function getPreKeyBundleByDevice(token, userId, deviceId, baseUrl = '') {
+  const res = await fetchWithAuth(token, `/api/keys/${userId}/${encodeURIComponent(deviceId)}`, {}, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `get prekey bundle ${res.status}`);
@@ -117,13 +118,13 @@ export async function getPreKeyBundleByDevice(token, userId, deviceId) {
  * @param {{ before?: string, limit?: number }} [opts] - before: RFC3339 cursor; limit: default 50, max 50
  * @returns {Promise<Array<{ id: string, channelId: string, senderId: string, ciphertext: string, timestamp: string }>>}
  */
-export async function getChannelMessages(token, serverId, channelId, opts = {}) {
+export async function getChannelMessages(token, serverId, channelId, opts = {}, baseUrl = '') {
   const params = new URLSearchParams();
   if (opts.before) params.set('before', opts.before);
   if (opts.limit != null) params.set('limit', String(opts.limit));
   const qs = params.toString();
   const path = `/api/servers/${encodeURIComponent(serverId)}/channels/${encodeURIComponent(channelId)}/messages${qs ? `?${qs}` : ''}`;
-  const res = await fetchWithAuth(token, path);
+  const res = await fetchWithAuth(token, path, {}, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `get messages ${res.status}`);
@@ -136,8 +137,8 @@ export async function getChannelMessages(token, serverId, channelId, opts = {}) 
  * @param {string} token - JWT
  * @returns {Promise<{ id: string, name: string, iconUrl?: string, ownerId: string, registrationMode: string, serverCreationPolicy: string, createdAt: string, bootstrapped: boolean }>}
  */
-export async function getInstance(token) {
-  const res = await fetchWithAuth(token, '/api/instance');
+export async function getInstance(token, baseUrl = '') {
+  const res = await fetchWithAuth(token, '/api/instance', {}, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `get instance ${res.status}`);
@@ -151,12 +152,12 @@ export async function getInstance(token) {
  * @param {{ name?: string, iconUrl?: string, registrationMode?: string }} body
  * @returns {Promise<void>}
  */
-export async function updateInstance(token, body) {
+export async function updateInstance(token, body, baseUrl = '') {
   const res = await fetchWithAuth(token, '/api/instance', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `update instance ${res.status}`);
@@ -172,8 +173,8 @@ export async function updateInstance(token, body) {
  * @param {string} publicKeyBase64 - Base64-encoded 32-byte Ed25519 public key.
  * @returns {Promise<{ nonce: string }>} Hex-encoded nonce.
  */
-export async function requestChallenge(publicKeyBase64) {
-  const res = await fetch(`${defaultBase}/api/auth/challenge`, {
+export async function requestChallenge(publicKeyBase64, baseUrl = '') {
+  const res = await fetch(`${baseUrl}/api/auth/challenge`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ publicKey: publicKeyBase64 }),
@@ -192,8 +193,8 @@ export async function requestChallenge(publicKeyBase64) {
  * @param {string} deviceId - Stable per-device identifier (UUID).
  * @returns {Promise<{ token: string, user: object }>}
  */
-export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, deviceId) {
-  const res = await fetch(`${defaultBase}/api/auth/verify`, {
+export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, deviceId, baseUrl = '') {
+  const res = await fetch(`${baseUrl}/api/auth/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ publicKey: publicKeyBase64, nonce, signature: signatureBase64, deviceId }),
@@ -213,10 +214,10 @@ export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, d
  * @param {string} [inviteCode] - Optional invite code for invite_only registration mode.
  * @returns {Promise<{ token: string, user: object }>}
  */
-export async function registerWithPublicKey(username, displayName, publicKeyBase64, deviceId, inviteCode) {
+export async function registerWithPublicKey(username, displayName, publicKeyBase64, deviceId, inviteCode, baseUrl = '') {
   const body = { username, displayName, publicKey: publicKeyBase64, deviceId };
   if (inviteCode) body.inviteCode = inviteCode;
-  const res = await fetch(`${defaultBase}/api/auth/register`, {
+  const res = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -233,9 +234,9 @@ export async function registerWithPublicKey(username, displayName, publicKeyBase
  * @param {string} [joinCode] - Optional join/invite code.
  * @returns {Promise<{ token: string, user: object }>}
  */
-export async function loginGuest(joinCode) {
+export async function loginGuest(joinCode, baseUrl = '') {
   const body = joinCode ? { joinCode } : {};
-  const res = await fetch(`${defaultBase}/api/auth/guest`, {
+  const res = await fetch(`${baseUrl}/api/auth/guest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -251,8 +252,8 @@ export async function loginGuest(joinCode) {
  * @param {string} token - JWT
  * @returns {Promise<Array<{ deviceId: string, publicKey: string, createdAt: string, lastSeenAt: string }>>}
  */
-export async function listDeviceKeys(token) {
-  const res = await fetchWithAuth(token, '/api/auth/devices');
+export async function listDeviceKeys(token, baseUrl = '') {
+  const res = await fetchWithAuth(token, '/api/auth/devices', {}, baseUrl);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `listDeviceKeys ${res.status}`);
   return data;
@@ -265,10 +266,10 @@ export async function listDeviceKeys(token) {
  * @param {string} deviceId - Device ID to revoke.
  * @returns {Promise<void>}
  */
-export async function revokeDeviceKey(token, deviceId) {
+export async function revokeDeviceKey(token, deviceId, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/auth/devices/${encodeURIComponent(deviceId)}`, {
     method: 'DELETE',
-  });
+  }, baseUrl);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || `revokeDeviceKey ${res.status}`);
@@ -297,7 +298,7 @@ export async function revokeDeviceKey(token, deviceId) {
  * @param {string} [label] - Optional human-readable label for the new device.
  * @returns {Promise<void>}
  */
-export async function certifyNewDevice(token, newDevicePublicKeyBase64, certificate, deviceId, signingDeviceId, label) {
+export async function certifyNewDevice(token, newDevicePublicKeyBase64, certificate, deviceId, signingDeviceId, label, baseUrl = '') {
   const res = await fetchWithAuth(token, '/api/auth/devices', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -308,7 +309,7 @@ export async function certifyNewDevice(token, newDevicePublicKeyBase64, certific
       signingDeviceId,
       label,
     }),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || `certifyNewDevice ${res.status}`);
@@ -322,8 +323,8 @@ export async function certifyNewDevice(token, newDevicePublicKeyBase64, certific
  * Returns server version, API version, KeyPackage low threshold, and other instance metadata.
  * @returns {Promise<{ server_version: string, api_version: string, min_client_version: string, key_package_low_threshold: number }>}
  */
-export async function getHandshake() {
-  const res = await fetch('/api/handshake');
+export async function getHandshake(baseUrl = '') {
+  const res = await fetch(`${baseUrl}/api/handshake`);
   if (!res.ok) throw new Error(`handshake failed: ${res.status}`);
   return res.json();
 }
@@ -335,8 +336,8 @@ export async function getHandshake() {
  * @param {string} token - JWT
  * @returns {Promise<Array<{ id: string, name: string, ownerId: string, createdAt: string }>>}
  */
-export async function getMyGuilds(token) {
-  const res = await fetchWithAuth(token, '/api/servers');
+export async function getMyGuilds(token, baseUrl = '') {
+  const res = await fetchWithAuth(token, '/api/servers', {}, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `get guilds ${res.status}`);
@@ -351,7 +352,7 @@ export async function getMyGuilds(token) {
  * @param {string} [templateId] - Optional template UUID to use for channel creation
  * @returns {Promise<{ id: string, encryptedMetadata: string|null, permissionLevel: number, createdAt: string }>}
  */
-export async function createGuild(token, encryptedMetadata, templateId) {
+export async function createGuild(token, encryptedMetadata, templateId, baseUrl = '') {
   const body = {};
   if (encryptedMetadata != null) body.encryptedMetadata = encryptedMetadata;
   if (templateId) body.templateId = templateId;
@@ -359,7 +360,7 @@ export async function createGuild(token, encryptedMetadata, templateId) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `create guild ${res.status}`);
@@ -374,12 +375,12 @@ export async function createGuild(token, encryptedMetadata, templateId) {
  * @param {string} encryptedMetadata - Base64-encoded AES-GCM blob
  * @returns {Promise<void>}
  */
-export async function updateGuildMetadata(token, serverId, encryptedMetadata) {
+export async function updateGuildMetadata(token, serverId, encryptedMetadata, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ encryptedMetadata }),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `update guild metadata ${res.status}`);
@@ -392,10 +393,10 @@ export async function updateGuildMetadata(token, serverId, encryptedMetadata) {
  * @param {string} serverId - Guild UUID
  * @returns {Promise<void>}
  */
-export async function leaveGuild(token, serverId) {
+export async function leaveGuild(token, serverId, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/leave`, {
     method: 'POST',
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `leave guild failed: ${res.status}`);
@@ -408,10 +409,10 @@ export async function leaveGuild(token, serverId) {
  * @param {string} serverId - Guild UUID
  * @returns {Promise<void>}
  */
-export async function deleteGuild(token, serverId) {
+export async function deleteGuild(token, serverId, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`, {
     method: 'DELETE',
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `delete guild ${res.status}`);
@@ -424,8 +425,8 @@ export async function deleteGuild(token, serverId) {
  * @param {string} serverId - Guild UUID
  * @returns {Promise<Array<{ id: string, name: string, type: string, voiceMode?: string, parentId?: string, position: number, createdAt: string }>>}
  */
-export async function getGuildChannels(token, serverId) {
-  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/channels`);
+export async function getGuildChannels(token, serverId, baseUrl = '') {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/channels`, {}, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     const e = new Error(err.error || `get channels ${res.status}`);
@@ -442,12 +443,12 @@ export async function getGuildChannels(token, serverId) {
  * @param {{ name: string, type: 'text'|'voice', voiceMode?: string, parentId?: string, position?: number }} body
  * @returns {Promise<object>} Created channel
  */
-export async function createGuildChannel(token, serverId, body) {
+export async function createGuildChannel(token, serverId, body, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/channels`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `create channel ${res.status}`);
@@ -462,11 +463,12 @@ export async function createGuildChannel(token, serverId, body) {
  * @param {string} channelId - Channel UUID
  * @returns {Promise<void>}
  */
-export async function deleteGuildChannel(token, serverId, channelId) {
+export async function deleteGuildChannel(token, serverId, channelId, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/channels/${encodeURIComponent(channelId)}`,
     { method: 'DELETE' },
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -482,7 +484,7 @@ export async function deleteGuildChannel(token, serverId, channelId) {
  * @param {{ parentId?: string|null, position: number }} body
  * @returns {Promise<void>}
  */
-export async function moveChannel(token, serverId, channelId, body) {
+export async function moveChannel(token, serverId, channelId, body, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/channels/${encodeURIComponent(channelId)}/move`,
@@ -491,6 +493,7 @@ export async function moveChannel(token, serverId, channelId, body) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     },
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -504,8 +507,8 @@ export async function moveChannel(token, serverId, channelId, body) {
  * @param {string} serverId - Guild UUID
  * @returns {Promise<Array<{ id: string, username: string, displayName: string, role: string, createdAt: string }>>}
  */
-export async function getGuildMembers(token, serverId) {
-  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/members`);
+export async function getGuildMembers(token, serverId, baseUrl = '') {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/members`, {}, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     const e = new Error(err.error || `get members ${res.status}`);
@@ -522,12 +525,12 @@ export async function getGuildMembers(token, serverId) {
  * @param {{ maxUses?: number, expiresInHours?: number }} [opts]
  * @returns {Promise<{ code: string, createdBy: string, maxUses: number, expiresAt: string }>}
  */
-export async function createGuildInvite(token, serverId, opts = {}) {
+export async function createGuildInvite(token, serverId, opts = {}, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/invites`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(opts),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `create invite ${res.status}`);
@@ -541,8 +544,8 @@ export async function createGuildInvite(token, serverId, opts = {}) {
  * @param {string} code - Invite code
  * @returns {Promise<{ code: string, serverId: string, memberCount: number, expiresAt: string }>}
  */
-export async function getInviteInfo(code) {
-  const res = await fetch(`${defaultBase}/api/invites/${encodeURIComponent(code)}`);
+export async function getInviteInfo(code, baseUrl = '') {
+  const res = await fetch(`${baseUrl}/api/invites/${encodeURIComponent(code)}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `invite lookup ${res.status}`);
@@ -557,12 +560,12 @@ export async function getInviteInfo(code) {
  * @param {string} code - Invite code
  * @returns {Promise<{ serverId: string }>}
  */
-export async function claimInvite(token, code) {
+export async function claimInvite(token, code, baseUrl = '') {
   const res = await fetchWithAuth(token, '/api/invites/claim', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `claim invite ${res.status}`);
@@ -580,7 +583,7 @@ export async function claimInvite(token, code) {
  * @param {string} reason - Required reason string
  * @returns {Promise<void>}
  */
-export async function kickUser(token, serverId, userId, reason) {
+export async function kickUser(token, serverId, userId, reason, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/moderation/kick`,
@@ -589,6 +592,7 @@ export async function kickUser(token, serverId, userId, reason) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, reason }),
     },
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -605,7 +609,7 @@ export async function kickUser(token, serverId, userId, reason) {
  * @param {number|null} [expiresIn] - Duration in seconds; null = permanent
  * @returns {Promise<void>}
  */
-export async function banUser(token, serverId, userId, reason, expiresIn) {
+export async function banUser(token, serverId, userId, reason, expiresIn, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/moderation/ban`,
@@ -614,6 +618,7 @@ export async function banUser(token, serverId, userId, reason, expiresIn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, reason, expiresIn: expiresIn ?? null }),
     },
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -630,7 +635,7 @@ export async function banUser(token, serverId, userId, reason, expiresIn) {
  * @param {number|null} [expiresIn] - Duration in seconds; null = permanent
  * @returns {Promise<void>}
  */
-export async function muteUser(token, serverId, userId, reason, expiresIn) {
+export async function muteUser(token, serverId, userId, reason, expiresIn, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/moderation/mute`,
@@ -639,6 +644,7 @@ export async function muteUser(token, serverId, userId, reason, expiresIn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, reason, expiresIn: expiresIn ?? null }),
     },
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -654,7 +660,7 @@ export async function muteUser(token, serverId, userId, reason, expiresIn) {
  * @param {string} reason - Required reason string
  * @returns {Promise<void>}
  */
-export async function unbanUser(token, serverId, userId, reason) {
+export async function unbanUser(token, serverId, userId, reason, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/moderation/unban`,
@@ -663,6 +669,7 @@ export async function unbanUser(token, serverId, userId, reason) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, reason }),
     },
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -678,7 +685,7 @@ export async function unbanUser(token, serverId, userId, reason) {
  * @param {string} reason - Required reason string
  * @returns {Promise<void>}
  */
-export async function unmuteUser(token, serverId, userId, reason) {
+export async function unmuteUser(token, serverId, userId, reason, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/moderation/unmute`,
@@ -687,6 +694,7 @@ export async function unmuteUser(token, serverId, userId, reason) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, reason }),
     },
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -700,10 +708,12 @@ export async function unmuteUser(token, serverId, userId, reason) {
  * @param {string} serverId - Guild UUID
  * @returns {Promise<Array<{ id: string, userId: string, actorId: string, reason: string, createdAt: string, expiresAt?: string }>>}
  */
-export async function listBans(token, serverId) {
+export async function listBans(token, serverId, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/moderation/bans`,
+    {},
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -718,10 +728,12 @@ export async function listBans(token, serverId) {
  * @param {string} serverId - Guild UUID
  * @returns {Promise<Array<{ id: string, userId: string, actorId: string, reason: string, createdAt: string, expiresAt?: string }>>}
  */
-export async function listMutes(token, serverId) {
+export async function listMutes(token, serverId, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/moderation/mutes`,
+    {},
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -738,7 +750,7 @@ export async function listMutes(token, serverId) {
  * @param {number} permissionLevel - Integer: 0=member, 1=mod, 2=admin, 3=owner
  * @returns {Promise<void>}
  */
-export async function changePermissionLevel(token, serverId, userId, permissionLevel) {
+export async function changePermissionLevel(token, serverId, userId, permissionLevel, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/members/${encodeURIComponent(userId)}/level`,
@@ -747,6 +759,7 @@ export async function changePermissionLevel(token, serverId, userId, permissionL
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ permissionLevel }),
     },
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -772,11 +785,12 @@ export async function changeUserRole(token, serverId, userId, newRole) {
  * @param {string} messageId - Message UUID
  * @returns {Promise<void>}
  */
-export async function deleteMessage(token, serverId, messageId) {
+export async function deleteMessage(token, serverId, messageId, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/moderation/messages/${encodeURIComponent(messageId)}`,
     { method: 'DELETE' },
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -791,7 +805,7 @@ export async function deleteMessage(token, serverId, messageId) {
  * @param {{ limit?: number, offset?: number, action?: string, actorId?: string, targetId?: string }} [opts]
  * @returns {Promise<Array<{ id: string, actorId: string, targetId?: string, action: string, reason: string, metadata?: object, createdAt: string }>>}
  */
-export async function getAuditLog(token, serverId, opts = {}) {
+export async function getAuditLog(token, serverId, opts = {}, baseUrl = '') {
   const params = new URLSearchParams();
   if (opts.limit != null) params.set('limit', String(opts.limit));
   if (opts.offset != null) params.set('offset', String(opts.offset));
@@ -802,6 +816,8 @@ export async function getAuditLog(token, serverId, opts = {}) {
   const res = await fetchWithAuth(
     token,
     `/api/servers/${encodeURIComponent(serverId)}/moderation/audit-log${qs ? '?' + qs : ''}`,
+    {},
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -819,13 +835,13 @@ export async function getAuditLog(token, serverId, opts = {}) {
  * @param {{ before?: string, limit?: number }} [opts] - before: RFC3339 cursor; limit: default 50
  * @returns {Promise<Array<{ id: string, serverId: string, eventType: string, actorId: string, targetId?: string, reason?: string, metadata?: object, createdAt: string }>>}
  */
-export async function getSystemMessages(token, serverId, opts = {}) {
+export async function getSystemMessages(token, serverId, opts = {}, baseUrl = '') {
   const params = new URLSearchParams();
   if (opts.before) params.set('before', opts.before);
   if (opts.limit != null) params.set('limit', String(opts.limit));
   const qs = params.toString();
   const path = `/api/servers/${encodeURIComponent(serverId)}/system-messages${qs ? '?' + qs : ''}`;
-  const res = await fetchWithAuth(token, path);
+  const res = await fetchWithAuth(token, path, {}, baseUrl);
   if (!res.ok) throw new Error(`getSystemMessages: ${res.status}`);
   return res.json();
 }
@@ -838,8 +854,8 @@ export async function getSystemMessages(token, serverId, opts = {}) {
  * @param {string} query - Username prefix to search
  * @returns {Promise<Array<{ id: string, username: string, displayName: string, role: string, createdAt: string, isBanned: boolean, banReason?: string, banExpiresAt?: string }>>}
  */
-export async function searchInstanceUsers(token, query) {
-  const res = await fetchWithAuth(token, `/api/instance/users?q=${encodeURIComponent(query)}`);
+export async function searchInstanceUsers(token, query, baseUrl = '') {
+  const res = await fetchWithAuth(token, `/api/instance/users?q=${encodeURIComponent(query)}`, {}, baseUrl);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Search failed');
   return res.json();
 }
@@ -852,12 +868,12 @@ export async function searchInstanceUsers(token, query) {
  * @param {number|null} [expiresIn] - Duration in seconds; null = permanent
  * @returns {Promise<void>}
  */
-export async function instanceBanUser(token, userId, reason, expiresIn) {
+export async function instanceBanUser(token, userId, reason, expiresIn, baseUrl = '') {
   const res = await fetchWithAuth(token, '/api/instance/bans', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, reason, expiresIn: expiresIn ?? null }),
-  });
+  }, baseUrl);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Ban failed');
 }
 
@@ -868,12 +884,12 @@ export async function instanceBanUser(token, userId, reason, expiresIn) {
  * @param {string} reason - Unban reason (required)
  * @returns {Promise<void>}
  */
-export async function instanceUnbanUser(token, userId, reason) {
+export async function instanceUnbanUser(token, userId, reason, baseUrl = '') {
   const res = await fetchWithAuth(token, '/api/instance/unban', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, reason }),
-  });
+  }, baseUrl);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Unban failed');
 }
 
@@ -883,14 +899,14 @@ export async function instanceUnbanUser(token, userId, reason) {
  * @param {{ limit?: number, offset?: number, action?: string, targetId?: string }} [opts]
  * @returns {Promise<Array<{ id: string, actorId: string, targetId?: string, action: string, reason: string, metadata?: object, createdAt: string }>>}
  */
-export async function getInstanceAuditLog(token, opts = {}) {
+export async function getInstanceAuditLog(token, opts = {}, baseUrl = '') {
   const params = new URLSearchParams();
   if (opts.limit != null) params.set('limit', String(opts.limit));
   if (opts.offset != null) params.set('offset', String(opts.offset));
   if (opts.action) params.set('action', opts.action);
   if (opts.targetId) params.set('target_id', opts.targetId);
   const qs = params.toString();
-  const res = await fetchWithAuth(token, `/api/instance/audit-log${qs ? '?' + qs : ''}`);
+  const res = await fetchWithAuth(token, `/api/instance/audit-log${qs ? '?' + qs : ''}`, {}, baseUrl);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load audit log');
   return res.json();
 }
@@ -901,12 +917,12 @@ export async function getInstanceAuditLog(token, opts = {}) {
  * @param {{ registrationMode?: string, serverCreationPolicy?: string }} updates
  * @returns {Promise<void>}
  */
-export async function updateInstanceConfig(token, updates) {
+export async function updateInstanceConfig(token, updates, baseUrl = '') {
   const res = await fetchWithAuth(token, '/api/instance', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
-  });
+  }, baseUrl);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Config update failed');
 }
 
@@ -917,8 +933,8 @@ export async function updateInstanceConfig(token, updates) {
  * @param {string} token - JWT
  * @returns {Promise<Array<{ id: string, name: string, channels: Array, isDefault: boolean, position: number }>>}
  */
-export async function listServerTemplates(token) {
-  const res = await fetchWithAuth(token, '/api/instance/server-templates');
+export async function listServerTemplates(token, baseUrl = '') {
+  const res = await fetchWithAuth(token, '/api/instance/server-templates', {}, baseUrl);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load templates');
   return res.json();
 }
@@ -929,12 +945,12 @@ export async function listServerTemplates(token) {
  * @param {{ name: string, channels: Array, isDefault: boolean }} body
  * @returns {Promise<object>} Created template
  */
-export async function createServerTemplate(token, body) {
+export async function createServerTemplate(token, body, baseUrl = '') {
   const res = await fetchWithAuth(token, '/api/instance/server-templates', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }, baseUrl);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to create template');
   return res.json();
 }
@@ -946,12 +962,12 @@ export async function createServerTemplate(token, body) {
  * @param {{ name: string, channels: Array, isDefault: boolean }} body
  * @returns {Promise<void>}
  */
-export async function updateServerTemplate(token, id, body) {
+export async function updateServerTemplate(token, id, body, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/instance/server-templates/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }, baseUrl);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to update template');
 }
 
