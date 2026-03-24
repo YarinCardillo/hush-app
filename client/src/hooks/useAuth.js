@@ -1,16 +1,71 @@
 /**
- * Auth hook for Go backend: login, register, guest, session rehydration.
- * JWT in sessionStorage (hush_jwt); deviceId in localStorage (hush_device_id).
+ * BIP39 auth hook: challenge-response authentication, vault PIN management,
+ * vault timeout, guest ephemeral sessions, and scorched-earth logout.
+ *
+ * Auth flow:
+ *   1. Derive keypair from mnemonic via bip39Identity.mnemonicToIdentityKey
+ *   2. Request challenge nonce via api.requestChallenge
+ *   3. Sign nonce via bip39Identity.signChallenge
+ *   4. Submit signature via api.verifyChallenge → receive JWT
+ *
+ * Vault states:
+ *   'none'     — no vault exists, show login/register UI
+ *   'locked'   — vault exists but PIN not entered
+ *   'unlocked' — private key in memory, JWT valid
+ *   'guest'    — ephemeral session, no IK stored in IDB
  */
 
-import { useState, useCallback, useEffect } from 'react';
-import { fetchWithAuth, uploadKeyPackagesAfterAuth } from '../lib/api';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import {
+  mnemonicToIdentityKey,
+  signChallenge,
+} from '../lib/bip39Identity';
+import {
+  encryptVault,
+  decryptVault,
+  openVaultStore,
+  saveEncryptedKey,
+  loadEncryptedKey,
+  deleteVaultDatabase,
+  getVaultConfig,
+  bytesToHex,
+} from '../lib/identityVault';
+import {
+  fetchWithAuth,
+  uploadKeyPackagesAfterAuth,
+  requestChallenge,
+  verifyChallenge,
+  registerWithPublicKey,
+  loginGuest as apiLoginGuest,
+} from '../lib/api';
+
+// ── Module-level constants ───────────────────────────────────────────────────
 
 export const JWT_KEY = 'hush_jwt';
 export const GUEST_SESSION_KEY = 'hush_guest_session';
-const DEVICE_ID_KEY = 'hush_device_id';
-const defaultBase = '';
 
+const DEVICE_ID_KEY = 'hush_device_id';
+const VAULT_USER_KEY_PREFIX = 'hush_vault_user_';
+const VAULT_SESSION_FLAG = 'hush_vault_session_alive';
+const PIN_ATTEMPTS_KEY_PREFIX = 'hush_pin_attempts_';
+const INACTIVITY_EVENTS = ['mousemove', 'keydown', 'touchstart', 'click'];
+
+/** Progressive delay in ms by failure count threshold. */
+const PIN_DELAY_TABLE = [
+  { threshold: 9, delayMs: 60_000 },
+  { threshold: 7, delayMs: 30_000 },
+  { threshold: 5, delayMs: 5_000 },
+  { threshold: 3, delayMs: 1_000 },
+];
+
+const MAX_PIN_FAILURES = 10;
+
+// ── Module-level helpers ─────────────────────────────────────────────────────
+
+/**
+ * Returns or generates a stable per-device UUID stored in localStorage.
+ * @returns {string}
+ */
 export function getDeviceId() {
   let id = localStorage.getItem(DEVICE_ID_KEY);
   if (!id) {
@@ -20,202 +75,679 @@ export function getDeviceId() {
   return id;
 }
 
-async function postAuth(path, body = null) {
-  const url = path.startsWith('http') ? path : `${defaultBase}${path}`;
-  const opts = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(url, opts);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(data.error || `auth ${res.status}`);
-    err.status = res.status;
-    throw err;
-  }
-  return data;
-}
-
+/**
+ * Clears the JWT from sessionStorage and the vault session flag.
+ * Does NOT wipe vault IDB or localStorage — use performLogout for full wipe.
+ */
 export function clearSession() {
   sessionStorage.removeItem(JWT_KEY);
+  sessionStorage.removeItem(VAULT_SESSION_FLAG);
 }
 
 /**
- * After successful auth: upload MLS KeyPackages, then persist token.
- * Token is written to sessionStorage ONLY after key upload succeeds,
- * so a failed upload never leaves a stale JWT behind.
- * @param {{ token: string, user: { id: string } }} data
- * @returns {Promise<{ token: string, user: object }>}
+ * Encodes a Uint8Array to a base64 string.
+ * @param {Uint8Array} bytes
+ * @returns {string}
  */
-async function finishAuth(data) {
-  const { token, user } = data;
-  if (!token || !user?.id) throw new Error('invalid auth response');
-  const deviceId = getDeviceId();
-  await uploadKeyPackagesAfterAuth(token, user.id, deviceId);
-  sessionStorage.setItem(JWT_KEY, token);
-  return { token, user };
+function toBase64(bytes) {
+  return btoa(String.fromCharCode(...bytes));
 }
 
 /**
- * Provides Go-backed auth state and actions.
+ * Returns the delay in ms to impose before accepting the next PIN attempt,
+ * based on the number of prior failures.
+ * @param {number} failureCount
+ * @returns {number} ms to wait (0 if under threshold)
+ */
+function pinDelayMs(failureCount) {
+  for (const { threshold, delayMs } of PIN_DELAY_TABLE) {
+    if (failureCount >= threshold) return delayMs;
+  }
+  return 0;
+}
+
+/**
+ * Loads the PIN attempt record from localStorage for a user.
+ * @param {string} userId
+ * @returns {{ count: number, lastAttemptAt: string|null }}
+ */
+function loadPinAttempts(userId) {
+  const raw = localStorage.getItem(`${PIN_ATTEMPTS_KEY_PREFIX}${userId}`);
+  if (!raw) return { count: 0, lastAttemptAt: null };
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { count: 0, lastAttemptAt: null };
+  }
+}
+
+/**
+ * Persists the PIN attempt record to localStorage.
+ * @param {string} userId
+ * @param {{ count: number, lastAttemptAt: string }} record
+ */
+function savePinAttempts(userId, record) {
+  localStorage.setItem(`${PIN_ATTEMPTS_KEY_PREFIX}${userId}`, JSON.stringify(record));
+}
+
+/**
+ * Resets the PIN attempt counter for a user after successful unlock.
+ * @param {string} userId
+ */
+function clearPinAttempts(userId) {
+  localStorage.removeItem(`${PIN_ATTEMPTS_KEY_PREFIX}${userId}`);
+}
+
+// ── Main hook ────────────────────────────────────────────────────────────────
+
+/**
+ * BIP39 auth hook providing challenge-response login, vault PIN management,
+ * vault timeout, guest ephemeral sessions, and scorched-earth logout.
+ *
  * @returns {{
  *   user: object|null,
  *   token: string|null,
+ *   vaultState: 'none'|'locked'|'unlocked'|'guest',
  *   isAuthenticated: boolean,
- *   isLoading: boolean,
+ *   loading: boolean,
  *   error: Error|null,
- *   login: (username: string, password: string) => Promise<void>,
- *   register: (username: string, password: string, displayName: string) => Promise<void>,
- *   loginAsGuest: () => Promise<void>,
- *   logout: () => Promise<void>,
+ *   performChallengeResponse: (privateKey: Uint8Array, publicKey: Uint8Array) => Promise<void>,
+ *   performRegister: (username: string, displayName: string, mnemonic: string, inviteCode?: string) => Promise<void>,
+ *   performRecovery: (mnemonic: string, revokeOtherDevices?: boolean) => Promise<void>,
+ *   performGuestLogin: (joinCode?: string) => Promise<void>,
+ *   unlockVault: (pin: string) => Promise<void>,
+ *   lockVault: () => void,
+ *   setPIN: (pin: string) => Promise<void>,
+ *   performLogout: () => Promise<void>,
  *   clearError: () => void,
  * }}
  */
 export function useAuth() {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(() => sessionStorage.getItem(JWT_KEY));
-  const [isLoading, setIsLoading] = useState(() => Boolean(sessionStorage.getItem(JWT_KEY)));
+  const [token, setToken] = useState(null);
+  const [vaultState, setVaultState] = useState('none');
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // In-memory identity key — never persisted to any storage as plaintext.
+  const identityKeyRef = useRef(null);
+
+  // Inactivity timer handle.
+  const inactivityTimerRef = useRef(null);
 
   const isAuthenticated = Boolean(token && user);
 
   const clearError = useCallback(() => setError(null), []);
 
-  /** Shared auth flow: call endpoint, finish auth (keys + persist), update state. */
-  const performAuth = useCallback(async (path, body = null) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await postAuth(path, body);
-      const result = await finishAuth(data);
-      setToken(result.token);
-      setUser(result.user);
-    } catch (err) {
-      setError(err);
-      clearSession();
-      setToken(null);
-      setUser(null);
-      throw err;
-    } finally {
-      setIsLoading(false);
+  // ── Inactivity timer ───────────────────────────────────────────────────────
+
+  /**
+   * Clears the running inactivity timer.
+   */
+  const clearInactivityTimer = useCallback(() => {
+    if (inactivityTimerRef.current != null) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
     }
   }, []);
 
-  const login = useCallback(
-    (username, password) => performAuth('/api/auth/login', { username, password }),
-    [performAuth],
-  );
+  /**
+   * Starts (or resets) the inactivity lock timer for a numeric timeout config.
+   * @param {number} timeoutMinutes
+   */
+  const startInactivityTimer = useCallback((timeoutMinutes) => {
+    clearInactivityTimer();
+    inactivityTimerRef.current = setTimeout(() => {
+      identityKeyRef.current = null;
+      setVaultState('locked');
+    }, timeoutMinutes * 60 * 1000);
+  }, [clearInactivityTimer]);
 
-  const register = useCallback(
-    (username, password, displayName) => performAuth('/api/auth/register', {
-      username,
-      password,
-      displayName: displayName || username,
-    }),
-    [performAuth],
-  );
+  // ── Vault configuration helpers ────────────────────────────────────────────
 
-  const loginAsGuest = useCallback(
-    () => performAuth('/api/auth/guest'),
-    [performAuth],
-  );
+  /**
+   * Applies the vault timeout policy for the given user after unlock.
+   * @param {string} userId
+   */
+  const applyVaultTimeout = useCallback((userId) => {
+    const config = getVaultConfig(userId);
+    const timeout = config?.timeout ?? 'browser_close';
 
-  const logout = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const t = sessionStorage.getItem(JWT_KEY);
-      if (t) {
-        try {
-          await fetchWithAuth(t, '/api/auth/logout', { method: 'POST' });
-        } catch {
-          // Ignore logout API failure — clear local state regardless
-        }
-      }
-      clearSession();
-      setToken(null);
-      setUser(null);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Rehydrate session on mount
-  useEffect(() => {
-    const stored = sessionStorage.getItem(JWT_KEY);
-    if (!stored) {
-      setIsLoading(false);
-      setUser(null);
+    if (timeout === 'browser_close') {
+      // Mark session alive in sessionStorage; on next page load without this
+      // flag (browser closed), vault stays locked.
+      sessionStorage.setItem(VAULT_SESSION_FLAG, '1');
       return;
     }
 
-    setIsLoading(true);
+    if (timeout === 'refresh') {
+      sessionStorage.setItem(VAULT_SESSION_FLAG, '1');
+      return;
+    }
+
+    if (timeout === 'never') {
+      return;
+    }
+
+    if (typeof timeout === 'number' && timeout > 0) {
+      sessionStorage.setItem(VAULT_SESSION_FLAG, '1');
+      startInactivityTimer(timeout);
+
+      const resetTimer = () => startInactivityTimer(timeout);
+      INACTIVITY_EVENTS.forEach(ev => window.addEventListener(ev, resetTimer, { passive: true }));
+
+      // Cleanup when vault locks or component unmounts is handled by the
+      // useEffect that subscribes to vaultState changes.
+      return resetTimer;
+    }
+  }, [startInactivityTimer]);
+
+  // ── Core auth completion ───────────────────────────────────────────────────
+
+  /**
+   * Shared post-auth finalisation: upload MLS KeyPackages, persist JWT, update state.
+   * @param {{ token: string, user: object }} data
+   */
+  const finishAuth = useCallback(async (data) => {
+    const { token: jwt, user: u } = data;
+    if (!jwt || !u?.id) throw new Error('invalid auth response');
+
+    const deviceId = getDeviceId();
+    await uploadKeyPackagesAfterAuth(jwt, u.id, deviceId);
+
+    sessionStorage.setItem(JWT_KEY, jwt);
+    setToken(jwt);
+    setUser(u);
+    return { token: jwt, user: u };
+  }, []);
+
+  // ── Challenge-response login ───────────────────────────────────────────────
+
+  /**
+   * Performs the full BIP39 challenge-response authentication flow.
+   * Encodes the public key as base64, requests a nonce, signs it, submits.
+   *
+   * @param {Uint8Array} privateKey - 32-byte Ed25519 seed.
+   * @param {Uint8Array} publicKey - 32-byte Ed25519 public key.
+   */
+  const performChallengeResponse = useCallback(async (privateKey, publicKey) => {
+    const deviceId = getDeviceId();
+    const publicKeyBase64 = toBase64(publicKey);
+
+    const { nonce } = await requestChallenge(publicKeyBase64);
+
+    const nonceBytes = hexToBytes(nonce);
+    const signature = await signChallenge(nonceBytes, privateKey);
+    const signatureBase64 = toBase64(signature);
+
+    const data = await verifyChallenge(publicKeyBase64, nonce, signatureBase64, deviceId);
+
+    // Keep private key in memory for vault lock/unlock, not in any storage.
+    identityKeyRef.current = { privateKey, publicKey };
+
+    const { user: u } = await finishAuth(data);
+
+    // Mark vault key presence using public key hex (no secret material).
+    localStorage.setItem(`${VAULT_USER_KEY_PREFIX}${u.id}`, bytesToHex(publicKey));
+    setVaultState('unlocked');
+    applyVaultTimeout(u.id);
+  }, [finishAuth, applyVaultTimeout]);
+
+  // ── Register ───────────────────────────────────────────────────────────────
+
+  /**
+   * Registers a new account from a BIP39 mnemonic, then authenticates.
+   * PIN setup is deferred to first vault lock (user decision).
+   *
+   * @param {string} username
+   * @param {string} displayName
+   * @param {string} mnemonic - 12-word BIP39 mnemonic.
+   * @param {string} [inviteCode] - Optional invite code.
+   */
+  const performRegister = useCallback(async (username, displayName, mnemonic, inviteCode) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { privateKey, publicKey } = await mnemonicToIdentityKey(mnemonic);
+      const deviceId = getDeviceId();
+      const publicKeyBase64 = toBase64(publicKey);
+
+      const data = await registerWithPublicKey(
+        username,
+        displayName,
+        publicKeyBase64,
+        deviceId,
+        inviteCode,
+      );
+
+      identityKeyRef.current = { privateKey, publicKey };
+
+      const { user: u } = await finishAuth(data);
+
+      localStorage.setItem(`${VAULT_USER_KEY_PREFIX}${u.id}`, bytesToHex(publicKey));
+      setVaultState('unlocked');
+      applyVaultTimeout(u.id);
+    } catch (err) {
+      setError(err);
+      clearSession();
+      setToken(null);
+      setUser(null);
+      setVaultState('none');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [finishAuth, applyVaultTimeout]);
+
+  // ── Recovery ───────────────────────────────────────────────────────────────
+
+  /**
+   * Recovers account access from a mnemonic by performing challenge-response.
+   * Optionally revokes all other registered device keys.
+   *
+   * @param {string} mnemonic - 12-word BIP39 mnemonic.
+   * @param {boolean} [revokeOtherDevices=false]
+   */
+  const performRecovery = useCallback(async (mnemonic, revokeOtherDevices = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { privateKey, publicKey } = await mnemonicToIdentityKey(mnemonic);
+
+      await performChallengeResponse(privateKey, publicKey);
+
+      if (revokeOtherDevices) {
+        const jwt = sessionStorage.getItem(JWT_KEY);
+        const deviceId = getDeviceId();
+        const { listDeviceKeys, revokeDeviceKey } = await import('../lib/api');
+        const devices = await listDeviceKeys(jwt);
+        await Promise.allSettled(
+          devices
+            .filter(d => d.deviceId !== deviceId)
+            .map(d => revokeDeviceKey(jwt, d.deviceId)),
+        );
+      }
+    } catch (err) {
+      setError(err);
+      clearSession();
+      setToken(null);
+      setUser(null);
+      setVaultState('none');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [performChallengeResponse]);
+
+  // ── Guest login ────────────────────────────────────────────────────────────
+
+  /**
+   * Authenticates as a guest with an ephemeral session.
+   * Token is stored in sessionStorage only; no IK is persisted.
+   *
+   * @param {string} [joinCode]
+   */
+  const performGuestLogin = useCallback(async (joinCode) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiLoginGuest(joinCode);
+      const { token: jwt, user: u } = data;
+      if (!jwt || !u?.id) throw new Error('invalid guest auth response');
+
+      const deviceId = getDeviceId();
+      await uploadKeyPackagesAfterAuth(jwt, u.id, deviceId);
+
+      sessionStorage.setItem(JWT_KEY, jwt);
+      sessionStorage.setItem(GUEST_SESSION_KEY, '1');
+
+      setToken(jwt);
+      setUser(u);
+      setVaultState('guest');
+    } catch (err) {
+      setError(err);
+      clearSession();
+      sessionStorage.removeItem(GUEST_SESSION_KEY);
+      setToken(null);
+      setUser(null);
+      setVaultState('none');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── Vault PIN management ───────────────────────────────────────────────────
+
+  /**
+   * Attempts to unlock the vault with a PIN.
+   * Applies progressive delays on failure and wipes vault after MAX_PIN_FAILURES.
+   *
+   * @param {string} pin
+   */
+  const unlockVault = useCallback(async (pin) => {
+    const userId = user?.id ?? localStorage.getItem(`${VAULT_USER_KEY_PREFIX}_last_user`);
+    if (!userId) throw new Error('no active vault user');
+
+    const attempts = loadPinAttempts(userId);
+    const delay = pinDelayMs(attempts.count);
+    if (delay > 0) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    try {
+      const db = await openVaultStore(userId);
+      const blob = await loadEncryptedKey(db);
+      db.close();
+
+      if (!blob) throw new Error('vault is empty');
+
+      const privateKey = await decryptVault(blob, pin);
+
+      // Derive public key from stored hex marker.
+      const storedHex = localStorage.getItem(`${VAULT_USER_KEY_PREFIX}${userId}`);
+      const publicKey = storedHex ? hexToBytes(storedHex) : null;
+
+      identityKeyRef.current = { privateKey, publicKey };
+      clearPinAttempts(userId);
+
+      setVaultState('unlocked');
+      applyVaultTimeout(userId);
+    } catch (err) {
+      const newCount = attempts.count + 1;
+      savePinAttempts(userId, { count: newCount, lastAttemptAt: new Date().toISOString() });
+
+      if (newCount >= MAX_PIN_FAILURES) {
+        await deleteVaultDatabase(userId);
+        clearSession();
+        localStorage.removeItem(`${VAULT_USER_KEY_PREFIX}${userId}`);
+        localStorage.removeItem(`${PIN_ATTEMPTS_KEY_PREFIX}${userId}`);
+        setToken(null);
+        setUser(null);
+        setVaultState('none');
+        identityKeyRef.current = null;
+
+        const wipeError = new Error('vault wiped after too many failed PIN attempts');
+        wipeError.code = 'VAULT_WIPED';
+        throw wipeError;
+      }
+
+      const wrongPinError = new Error(
+        `incorrect PIN (${MAX_PIN_FAILURES - newCount} attempts remaining)`,
+      );
+      wrongPinError.code = 'WRONG_PIN';
+      throw wrongPinError;
+    }
+  }, [user, applyVaultTimeout]);
+
+  /**
+   * Locks the vault by clearing the in-memory private key.
+   * Does NOT delete vault IDB data — use performLogout for full wipe.
+   */
+  const lockVault = useCallback(() => {
+    identityKeyRef.current = null;
+    clearInactivityTimer();
+    setVaultState('locked');
+  }, [clearInactivityTimer]);
+
+  /**
+   * Encrypts the current in-memory private key with a PIN and saves it to vault IDB.
+   * Call this from settings UI when the user first sets or changes their PIN.
+   *
+   * @param {string} pin
+   */
+  const setPIN = useCallback(async (pin) => {
+    if (!identityKeyRef.current?.privateKey) {
+      throw new Error('no identity key in memory — must be unlocked first');
+    }
+    if (!user?.id) throw new Error('no authenticated user');
+
+    const blob = await encryptVault(identityKeyRef.current.privateKey, pin);
+    const db = await openVaultStore(user.id);
+    await saveEncryptedKey(db, blob);
+    db.close();
+  }, [user]);
+
+  // ── Scorched-earth logout ──────────────────────────────────────────────────
+
+  /**
+   * Performs a full scorched-earth logout per IDEN-08:
+   *   1. POST /api/auth/logout (best-effort)
+   *   2. BroadcastChannel message to other tabs
+   *   3. Delete all hush IDB databases
+   *   4. Clear localStorage and sessionStorage
+   *   5. Unregister all service workers
+   *   6. Clear Cache API
+   *   7. Reset all in-memory state
+   */
+  const performLogout = useCallback(async () => {
+    setLoading(true);
+
+    const jwt = sessionStorage.getItem(JWT_KEY);
+    const userId = user?.id;
+
+    // 1. Best-effort server logout.
+    if (jwt) {
+      try {
+        await fetchWithAuth(jwt, '/api/auth/logout', { method: 'POST' });
+      } catch {
+        // Ignore — local wipe proceeds regardless.
+      }
+    }
+
+    // 2. Notify other tabs.
+    try {
+      const bc = new BroadcastChannel('hush_auth');
+      bc.postMessage({ type: 'hush_logout' });
+      bc.close();
+    } catch {
+      // BroadcastChannel may not be available in all environments.
+    }
+
+    // 3. Delete all hush IDB databases.
+    const deviceId = getDeviceId();
+    const deleteTargets = [];
+
+    if (userId) {
+      deleteTargets.push(
+        deleteVaultDatabase(userId).catch(() => undefined),
+        new Promise(resolve => {
+          const req = indexedDB.deleteDatabase(`hush-mls-${userId}-${deviceId}`);
+          req.onsuccess = req.onerror = req.onblocked = () => resolve();
+        }),
+      );
+    }
+
+    await Promise.allSettled(deleteTargets);
+
+    // 4. Clear web storage.
+    localStorage.clear();
+    sessionStorage.clear();
+
+    // 5. Unregister service workers.
+    if ('serviceWorker' in navigator) {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.allSettled(registrations.map(r => r.unregister()));
+      } catch {
+        // Ignore.
+      }
+    }
+
+    // 6. Clear Cache API.
+    if ('caches' in window) {
+      try {
+        const cacheNames = await caches.keys();
+        await Promise.allSettled(cacheNames.map(name => caches.delete(name)));
+      } catch {
+        // Ignore.
+      }
+    }
+
+    // 7. Reset in-memory state.
+    identityKeyRef.current = null;
+    clearInactivityTimer();
+    setToken(null);
+    setUser(null);
+    setVaultState('none');
+    setError(null);
+    setLoading(false);
+  }, [user, clearInactivityTimer]);
+
+  // ── Startup: session rehydration ──────────────────────────────────────────
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem(JWT_KEY);
+    const isGuest = sessionStorage.getItem(GUEST_SESSION_KEY) === '1';
+    const sessionAlive = sessionStorage.getItem(VAULT_SESSION_FLAG) === '1';
+
+    if (!stored) {
+      // No JWT at all — show login/register.
+      setLoading(false);
+      setVaultState('none');
+      return;
+    }
+
     let cancelled = false;
 
     (async () => {
       try {
         const res = await fetchWithAuth(stored, '/api/auth/me');
         if (cancelled) return;
+
         if (res.status === 401) {
-          // Session truly invalid (expired/revoked) — clear auth
           clearSession();
           setToken(null);
           setUser(null);
+          setVaultState('none');
           return;
         }
+
         if (!res.ok) {
-          // Transient error (429 rate limit, 5xx) — keep session, use stored token
-          // User stays logged in; next navigation or visibility change will re-verify
-          return;
+          // Transient error — keep session alive, fall through to state check.
+          setToken(stored);
+          // State determined below.
+        } else {
+          const u = await res.json();
+          if (cancelled) return;
+          setToken(stored);
+          setUser(u);
+
+          const vaultPublicKeyHex = localStorage.getItem(`${VAULT_USER_KEY_PREFIX}${u.id}`);
+
+          if (isGuest) {
+            setVaultState('guest');
+          } else if (vaultPublicKeyHex && sessionAlive) {
+            // Vault unlocked before the current session; treat as unlocked
+            // since the session flag persisted (tab reload, not browser close).
+            setVaultState('unlocked');
+            applyVaultTimeout(u.id);
+          } else if (vaultPublicKeyHex) {
+            // Vault exists but session flag absent (browser restarted or
+            // refresh policy) — require PIN re-entry.
+            setVaultState('locked');
+          } else {
+            // Authenticated via JWT but no vault set up yet.
+            setVaultState('unlocked');
+          }
         }
-        const u = await res.json();
-        if (!cancelled) setUser(u);
       } catch {
-        // Network error — keep session, don't force logout on transient failures
+        // Network error — keep token, keep as locked if vault exists.
+        setToken(stored);
+        setVaultState(isGuest ? 'guest' : 'locked');
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
 
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-verify session when tab regains focus (catches bans applied while tab was hidden).
-  // Only treat 401 (session revoked/expired) as a forced logout — transient 500s or
-  // network errors should not evict the user.
+  // ── Visibility change re-verification ─────────────────────────────────────
+
   useEffect(() => {
     const onVisible = async () => {
       if (document.visibilityState !== 'visible') return;
       const stored = sessionStorage.getItem(JWT_KEY);
       if (!stored) return;
+
       try {
         const res = await fetchWithAuth(stored, '/api/auth/me');
         if (res.status === 401) {
           clearSession();
           window.location.href = '/';
-          return;
         }
       } catch {
-        // network error — don't log out, might be offline
+        // Network error — don't log out, user may be offline.
       }
     };
+
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
+  // ── Inactivity cleanup on vault lock ──────────────────────────────────────
+
+  useEffect(() => {
+    if (vaultState !== 'unlocked') {
+      clearInactivityTimer();
+    }
+  }, [vaultState, clearInactivityTimer]);
+
+  // ── BroadcastChannel logout listener ─────────────────────────────────────
+
+  useEffect(() => {
+    let bc;
+    try {
+      bc = new BroadcastChannel('hush_auth');
+      bc.onmessage = (event) => {
+        if (event.data?.type === 'hush_logout') {
+          identityKeyRef.current = null;
+          clearInactivityTimer();
+          setToken(null);
+          setUser(null);
+          setVaultState('none');
+        }
+      };
+    } catch {
+      // BroadcastChannel unavailable.
+    }
+    return () => { try { bc?.close(); } catch { /* noop */ } };
+  }, [clearInactivityTimer]);
+
   return {
     user,
     token,
+    vaultState,
     isAuthenticated,
-    isLoading,
+    loading,
     error,
-    login,
-    register,
-    loginAsGuest,
-    logout,
+    performChallengeResponse,
+    performRegister,
+    performRecovery,
+    performGuestLogin,
+    unlockVault,
+    lockVault,
+    setPIN,
+    performLogout,
     clearError,
+    // Legacy aliases preserved for compatibility with existing consumers.
+    isLoading: loading,
   };
+}
+
+// ── Local hex helpers (mirrors identityVault.hexToBytes without import cycle) ─
+
+/**
+ * Converts a hex string to a Uint8Array.
+ * @param {string} hex
+ * @returns {Uint8Array}
+ */
+function hexToBytes(hex) {
+  const result = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    result[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+  }
+  return result;
 }
