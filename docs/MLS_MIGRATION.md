@@ -1,7 +1,7 @@
 # Signal Protocol to MLS Migration
 
 **Decision date:** 2026-03-16
-**Status:** Planning (no code changes until reviewed)
+**Status:** Complete (M.1, M.2, M.3 shipped; Phase O extends with metadata encryption)
 **RFC:** 9420 (Messaging Layer Security)
 **Implementation:** OpenMLS (Rust crate)
 
@@ -33,7 +33,15 @@ Signal excels at 1:1 messaging. Hush channels are group messaging with potential
 - Moderation, roles, audit log
 - LiveKit SFU (only the key distribution method changes)
 
-## Component Mapping
+## Phase O: Metadata Encryption (2026-03-24)
+
+Phase O extends the MLS crypto model to metadata. Guild and channel names are now encrypted client-side with an AES-256-GCM key derived from the MLS group secret. The server stores only opaque BYTEA blobs and never sees plaintext for any data -- messages, metadata, media, guild names, or channel names. Permission levels (integer 0-3) replace role strings. A standalone admin dashboard (`client/admin/`) uses API key auth for instance administration without requiring a Hush identity.
+
+---
+
+## Component Mapping (Historical Reference)
+
+The tables below describe the Signal-to-MLS migration that was completed across phases M.1, M.2, and M.3. They are preserved as a reference for what changed.
 
 ### Crypto Library (hush-crypto/)
 
@@ -105,27 +113,26 @@ Signal excels at 1:1 messaging. Hush channels are group messaging with potential
 | `keys.low` → replenish OPKs | `key_packages.low` → replenish KeyPackages |
 | `keys.spk_stale` → force SPK rotation | Not needed |
 
-## Phases
+## Phases (Completed)
 
-See ROADMAP.md for full phase details. Summary:
+| Phase | Replaces | What it does | Status |
+|-|-|-|-|
+| M.1: MLS Core | Phase B (Signal Protocol Core) | OpenMLS crate, WASM bindings, server KeyPackage storage, credential management | Complete (2026-03) |
+| M.2: MLS Encrypted Chat | Phase C (Encrypted Chat) + B.7 (Key Lifecycle) | MLS groups per channel, message encrypt/decrypt, member add/remove, KeyPackage replenishment | Complete (2026-03) |
+| M.3: MLS Voice/Video | Phase D (E2EE Voice/Video) | Frame key via MLS group secret export, epoch-based key rotation | Complete (2026-03) |
+| Phase O: Metadata Encryption | -- | Guild/channel names encrypted with MLS-derived AES-256-GCM key, permission levels, admin dashboard | Complete (2026-03-24) |
 
-| New Phase | Replaces | What it does |
+**Execution order (actual):** K.6 (done) -> M.1 -> M.2 -> M.3 -> Phase O
+
+## Risks (Post-Migration Assessment)
+
+| Risk | Original Mitigation | Outcome |
 |-|-|-|
-| M.1: MLS Core | Phase B (Signal Protocol Core) | OpenMLS crate, WASM bindings, server KeyPackage storage, credential management |
-| M.2: MLS Encrypted Chat | Phase C (Encrypted Chat) + B.7 (Key Lifecycle) | MLS groups per channel, message encrypt/decrypt, member add/remove, KeyPackage replenishment |
-| M.3: MLS Voice/Video | Phase D (E2EE Voice/Video) | Frame key via MLS group secret export, epoch-based key rotation |
-
-**Execution order:** ... → K.6 (done) → M.1 → M.2 → M.3 → J → I
-
-## Risks
-
-| Risk | Mitigation |
-|-|-|
-| OpenMLS WASM maturity | OpenMLS has `openmls-wasm` crate with working JS bindings (verified in docs). Discord's DAVE protocol uses OpenMLS for voice E2EE. |
-| MLS group state size | For large channels, ratchet tree can grow. Use `use_ratchet_tree_extension(true)` for inline tree distribution. |
-| Breaking change for existing users | All Signal sessions invalidated. Users must re-authenticate. Acceptable pre-launch. |
-| MLS server requirements | MLS Delivery Service is simpler than Signal pre-key server. Server just stores/relays opaque blobs. |
-| 1:1 DM overhead | A 2-member MLS group has slightly more overhead than a Signal session. Acceptable tradeoff for unified crypto layer. |
+| OpenMLS WASM maturity | OpenMLS has `openmls-wasm` crate with working JS bindings. Discord's DAVE protocol uses OpenMLS for voice E2EE. | Mitigated. WASM bindings worked reliably; custom wrappers built for voice frame key export. |
+| MLS group state size | Use `use_ratchet_tree_extension(true)` for inline tree distribution. | Mitigated. Inline ratchet tree extension enabled; no issues at current scale. |
+| Breaking change for existing users | All Signal sessions invalidated. Users must re-authenticate. Acceptable pre-launch. | Accepted. Migration executed pre-launch; all Signal tables dropped. |
+| MLS server requirements | MLS Delivery Service is simpler than Signal pre-key server. Server just stores/relays opaque blobs. | Confirmed. Server is simpler post-migration -- blind relay for all data. |
+| 1:1 DM overhead | A 2-member MLS group has slightly more overhead than a Signal session. Acceptable tradeoff for unified crypto layer. | Accepted. Unified crypto layer outweighs marginal overhead. |
 
 ## Requirements Impact
 
@@ -143,3 +150,4 @@ CRYP-01 through CRYP-06 (Signal-specific) will be superseded by new MLS requirem
 ---
 
 *Created: 2026-03-16 — Signal to MLS architectural pivot*
+*Updated: 2026-03-24 — Migration complete (M.1, M.2, M.3); Phase O metadata encryption shipped*

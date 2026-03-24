@@ -2,7 +2,7 @@
 
 **Your server. Nobody else's. Privacy by default.**
 
-High-quality screen sharing with end-to-end encryption. Open source, self-hostable. Signal Protocol for chat, LiveKit for media, both E2EE.
+High-quality screen sharing with end-to-end encryption. Open source, self-hostable. MLS (RFC 9420) for chat, voice key distribution, and metadata encryption. The server is a blind relay.
 
 ---
 
@@ -14,16 +14,19 @@ Hush is a privacy-first Discord alternative for screen sharing, voice, video, an
 - Mnemonic-based identity: a BIP39 12-word phrase is your account. No email, no password, no central recovery. The server stores only your public key.
 - Multi-device support: each device has its own keypair, certified by an existing device via QR scan. Private keys never leave the device.
 - Screen sharing, webcam, and microphone
-- E2EE chat (Signal Protocol: X3DH + Double Ratchet)
-- E2EE media (LiveKit frame encryption, AES-256-GCM)
+- E2EE chat (MLS, RFC 9420 via OpenMLS)
+- E2EE media (LiveKit frame encryption, AES-256-GCM; frame keys derived from MLS export_secret)
+- Encrypted metadata: guild names, channel names encrypted with MLS-derived AES-256-GCM key. The server stores only opaque blobs.
 - Servers with text and voice channels (Discord-like)
 - Guest access (no account required to try — ephemeral identity)
 - Self-hostable: `./scripts/setup.sh` then `docker-compose up -d`
 
 **Privacy:**
-- Chat messages encrypted with Signal Protocol. The server stores only ciphertext.
+- The server is a blind relay for ALL data. It never sees plaintext for messages, metadata, media, guild names, or channel names.
+- Chat messages encrypted with MLS (RFC 9420). The server stores only ciphertext.
 - Media frames encrypted client-side with AES-256-GCM. The SFU forwards encrypted data.
-- Frame keys distributed via Signal sessions, never sent to the server.
+- Frame keys derived from MLS group secret, never sent to the server.
+- Guild and channel names encrypted with MLS-derived AES-256-GCM key. The server stores opaque BYTEA blobs.
 - See [SECURITY.md](SECURITY.md) for algorithms, trust model, and browser support.
 
 ---
@@ -75,7 +78,7 @@ Main environment variables (see [.env.example](.env.example)):
 ## Architecture
 
 - **Client:** React 18, Vite. `hush-crypto` (Rust compiled to WASM) for E2EE chat and key distribution. `livekit-client` for voice/video/screen.
-- **Backend (Go):** Chi router. Auth, rooms, channels, membership, WebSocket real-time, Signal Protocol pre-key server, LiveKit token endpoint.
+- **Backend (Go):** Chi router. Auth, rooms, channels, membership, WebSocket real-time, MLS KeyPackage storage and credential management, LiveKit token endpoint.
 - **Database:** PostgreSQL. Messages stored as ciphertext.
 - **LiveKit:** SFU for WebRTC media. Frame-level E2EE via Insertable Streams.
 - **Caddy:** Reverse proxy and TLS.
@@ -89,7 +92,7 @@ Main environment variables (see [.env.example](.env.example)):
 | Layer | Technology |
 |-|-|
 | Frontend | React 18, Vite, hush-crypto (WASM), livekit-client |
-| E2EE | Signal Protocol (chat), AES-256-GCM (media frames) |
+| E2EE | MLS / RFC 9420 (chat, voice key distribution, metadata), AES-256-GCM (media frames) |
 | Backend | Go, Chi |
 | Database | PostgreSQL |
 | Media SFU | LiveKit |

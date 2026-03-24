@@ -43,7 +43,7 @@ Hush has three core components:
 |-|-|-|
 | **Client** | React 18, Vite, hush-crypto (WASM) | UI, E2EE encryption/decryption |
 | **Go API** | Go, Chi, pgx, gorilla/websocket | Auth, servers, channels, keys, presence, LiveKit tokens |
-| **PostgreSQL** | PostgreSQL 16 | Users, servers, channels, messages (ciphertext), Signal keys |
+| **PostgreSQL** | PostgreSQL 16 | Users, servers, channels, messages (ciphertext), MLS credentials, KeyPackages |
 | **LiveKit** | LiveKit SFU (self-hosted) | WebRTC media relay (voice, video, screen) |
 | **Caddy** | Caddy 2 (Docker only) | Reverse proxy, TLS, CORS, security headers |
 
@@ -307,7 +307,7 @@ graph TB
   Caddy -->|"/api/*, /ws"| GoAPI
   GoAPI -->|SQL| PG
   GoAPI -->|"token API"| LiveKit
-  WASM -.->|"Signal Protocol<br/>encrypt/decrypt"| Browser
+  WASM -.->|"MLS (RFC 9420)<br/>encrypt/decrypt"| Browser
   LKClient -.->|"frame encryption<br/>AES-256-GCM"| Browser
 ```
 
@@ -327,7 +327,7 @@ graph LR
     Auth["/api/auth<br/>register (BIP39), verify"]
     Servers["/api/servers<br/>CRUD, join, leave"]
     Channels["/api/channels<br/>messages"]
-    Keys["/api/keys<br/>Signal pre-keys"]
+    Keys["/api/keys<br/>MLS KeyPackages"]
     LKTokens["/api/livekit<br/>room tokens"]
     WS["/ws<br/>WebSocket Hub"]
     Health["/api/health"]
@@ -337,7 +337,7 @@ graph LR
     Users[(users)]
     ServersDB[(servers, channels)]
     Messages[(messages<br/>ciphertext)]
-    SignalKeys[(signal_identity_keys<br/>signal_one_time_pre_keys)]
+    MLSKeys[(mls_credentials<br/>mls_key_packages)]
   end
 
   React -->|"HTTP/WS"| Proxy
@@ -352,7 +352,7 @@ graph LR
   Auth --> Users
   Servers --> ServersDB
   Channels --> Messages
-  Keys --> SignalKeys
+  Keys --> MLSKeys
   LKTokens -.->|"generates JWT"| LiveKit["LiveKit"]
 ```
 
@@ -366,30 +366,24 @@ sequenceDiagram
   participant DB as PostgreSQL
   participant B as Bob (Browser)
 
-  Note over A,B: Chat Message (Signal Protocol)
-  A->>API: GET /api/keys/:userId/bundle
-  API->>DB: Fetch Bob's pre-key bundle
-  DB-->>API: identity_key, signed_pre_key, one_time_pre_key
-  API-->>A: Pre-key bundle
-  A->>WASM: X3DH key agreement + Double Ratchet encrypt
-  WASM-->>A: ciphertext
+  Note over A,B: Chat Message (MLS)
+  A->>WASM: MlsGroup::create_message(plaintext)
+  WASM-->>A: MLS ApplicationMessage (ciphertext)
   A->>API: POST /api/channels/:id/messages {ciphertext}
   API->>DB: Store ciphertext (server never sees plaintext)
   API-->>B: WS event: channel.message
   B->>API: GET /api/channels/:id/messages
   API-->>B: {ciphertext}
-  B->>WASM: Double Ratchet decrypt
+  B->>WASM: MlsGroup::process_message(ciphertext)
   WASM-->>B: plaintext
 
   Note over A,B: Voice/Video (LiveKit E2EE)
   A->>API: POST /api/livekit/token
   API-->>A: LiveKit JWT
-  A->>WASM: Generate frame key (AES-256-GCM)
-  A->>WASM: Encrypt frame key with Signal session
-  A->>API: Distribute encrypted frame key via Signal
+  A->>WASM: Derive frame key from MLS export_secret (AES-256-GCM)
   A->>LiveKit: WebRTC media (encrypted frames)
   LiveKit->>B: Forward encrypted frames (SFU cannot decrypt)
-  B->>WASM: Decrypt frame key via Signal session
+  B->>WASM: Derive frame key from MLS export_secret
   B->>WASM: Decrypt frames with AES-256-GCM
 ```
 
@@ -472,8 +466,8 @@ server/migrations/
 | `channel_config` | Per-channel settings: retention, max media size |
 | `server_members` | User-server membership with role (member/mod/admin) |
 | `messages` | ciphertext (BYTEA), sender, channel, timestamp |
-| `signal_identity_keys` | Per-device identity key (IK_device_pub), signed pre-key, registration ID |
-| `signal_one_time_pre_keys` | Ephemeral pre-keys with used flag |
+| `mls_credentials` | Per-device MLS credential (user_id, device_id, credential_bytes, signing_public_key) |
+| `mls_key_packages` | MLS KeyPackages (user_id, device_id, key_package_bytes, consumed flag) |
 | ~~`devices`~~ | *(moved to Core Tables above with certified key fields)* |
 | `invite_codes` | Server invites with expiry, max uses |
 
