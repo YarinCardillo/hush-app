@@ -71,13 +71,15 @@ server/
 │   ├── auth/
 │   │   ├── jwt.go               # JWT sign/verify/claims (session tokens after cryptographic auth)
 │   │   ├── jwt_test.go
-│   │   ├── password.go          # Password hashing utilities
-│   │   └── password_test.go
+│   │   ├── challenge.go         # Ed25519 nonce generation + signature verification (BIP39 auth)
+│   │   └── challenge_test.go
 │   ├── config/
 │   │   └── config.go            # Env-based config
 │   ├── db/
+│   │   ├── auth_nonces.go       # Challenge-response nonce queries
 │   │   ├── channels.go          # Channel queries
 │   │   ├── db.go                # PostgreSQL connection pool
+│   │   ├── device_keys.go       # Device key certificate queries (multi-device)
 │   │   ├── instance.go          # Instance config queries
 │   │   ├── integration_test.go  # End-to-end DB tests
 │   │   ├── invites.go           # Invite queries
@@ -92,7 +94,7 @@ server/
 │   │   ├── store.go             # Store interface (DI for testing)
 │   │   ├── system_messages.go   # System message queries
 │   │   ├── testdb.go            # Test DB setup/migration utilities
-│   │   └── users.go             # User CRUD
+│   │   └── users.go             # User CRUD (root_public_key, no password_hash)
 │   ├── livekit/
 │   │   ├── token.go             # LiveKit access token generation
 │   │   └── token_test.go
@@ -155,11 +157,17 @@ client/
 │   │   ├── api.js                # HTTP client for Go backend REST API
 │   │   ├── api.test.js           # API client tests
 │   │   ├── bandwidthEstimator.js # Upload speed test -> quality recommendation
+│   │   ├── bip39Identity.js      # BIP39 mnemonic generation, Ed25519 derivation, signing
+│   │   ├── bip39Identity.test.js # BIP39 identity tests
+│   │   ├── deviceLinking.js      # Device certificates, QR payload encode/decode
+│   │   ├── deviceLinking.test.js # Device linking tests
 │   │   ├── guildMetadata.js      # AES-256-GCM encrypt/decrypt for guild/channel names (MLS-derived key)
 │   │   ├── guildMetadata.test.js # Guild metadata encryption tests
 │   │   ├── hushCrypto.js         # WASM wrapper: MLS credential, KeyPackage, group ops, export_secret
 │   │   ├── hushCrypto.test.js    # WASM wrapper tests
 │   │   ├── hush-crypto-wasm/     # hush-crypto WASM build output
+│   │   ├── identityVault.js      # AES-256-GCM vault: encrypt IK seed with PIN (PBKDF2-SHA256)
+│   │   ├── identityVault.test.js # Identity vault tests
 │   │   ├── mlsGroup.js           # MLS group lifecycle (create, add/remove members, commit, Welcome)
 │   │   ├── mlsGroup.voice.test.js# MLS voice group tests
 │   │   ├── mlsStore.js           # MLS state persistence in IndexedDB (credentials, groups, epochs)
