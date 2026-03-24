@@ -489,6 +489,71 @@ export function useInstances() {
     }
   }, [flushState]);
 
+  // ── registerLocalInstance (post-auth shortcut) ──────────────────────────
+
+  /**
+   * Registers the current origin as a connected instance using an existing JWT.
+   * Skips challenge-response auth — used after registration/recovery when
+   * the caller already has a valid session.
+   *
+   * @param {string} jwt - Existing JWT token
+   * @param {{ id: string, username: string }} authUser - Authenticated user
+   * @returns {Promise<void>}
+   */
+  const registerLocalInstance = useCallback(async (jwt, authUser) => {
+    const instanceUrl = window.location.origin;
+
+    // Save to IDB.
+    try {
+      const db = dbRef.current ?? await openInstanceRegistry();
+      if (!dbRef.current) dbRef.current = db;
+      await saveInstance(db, {
+        instanceUrl,
+        jwt,
+        userId: authUser?.id,
+        username: authUser?.username,
+        connectionState: 'connected',
+        lastSeen: Date.now(),
+      });
+    } catch (err) {
+      console.warn('[useInstances] registerLocalInstance IDB save failed:', err);
+    }
+
+    // Create WS connection.
+    const existing = instancesRef.current.get(instanceUrl);
+    if (existing?.wsClient) {
+      try { existing.wsClient.disconnect(); } catch { /* noop */ }
+    }
+
+    const wsClient = createWsClient({
+      url: toWsUrl(instanceUrl),
+      getToken: () => instancesRef.current.get(instanceUrl)?.jwt ?? null,
+    });
+    wireWsHandlers(instanceUrl, wsClient);
+    wsClient.connect();
+
+    // Fetch guilds.
+    let guilds = [];
+    try {
+      const raw = await getMyGuilds(jwt, instanceUrl);
+      guilds = stampGuilds(raw, instanceUrl);
+    } catch { /* no guilds yet — that's fine after fresh registration */ }
+
+    instancesRef.current.set(instanceUrl, {
+      wsClient,
+      jwt,
+      userId: authUser?.id,
+      handshakeData: null,
+      guilds,
+      connectionState: 'connected',
+      reconnectAttempt: 0,
+      reconnectTimer: null,
+    });
+
+    flushState();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flushState, wireWsHandlers]);
+
   // ── Accessor functions ────────────────────────────────────────────────────
 
   /**
@@ -562,6 +627,7 @@ export function useInstances() {
     instanceStates,
     mergedGuilds,
     bootInstance,
+    registerLocalInstance,
     disconnectInstance,
     getWsClient,
     getTokenForInstance,

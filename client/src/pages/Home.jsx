@@ -406,7 +406,7 @@ export default function Home() {
 
   // ── Multi-instance state ──────────────────────────────────────────────────
 
-  const { mergedGuilds, bootInstance } = useInstanceContext();
+  const { mergedGuilds, registerLocalInstance } = useInstanceContext();
 
   // ── Vault state -> view routing ─────────────────────────────────────────────
 
@@ -540,31 +540,35 @@ export default function Home() {
   const handleRegisterComplete = useCallback(async ({ username, displayName, mnemonic, inviteCode }) => {
     try {
       await performRegister(username, displayName, mnemonic, inviteCode);
-      // Boot the current origin as an instance so useInstances tracks it.
-      bootInstance(window.location.origin).catch((err) => {
-        console.warn('[Home] instance boot after register failed:', err);
-      });
-      // After successful register, prompt for PIN setup (vault is unlocked but no PIN yet).
-      setAuthView(AUTH_VIEW.PIN_SETUP);
-    } catch {
-      // Error surfaces via authError toast. Wizard stays on SUBMITTING for parent to handle.
-    }
-  }, [performRegister, bootInstance]);
-
-  const handleRecoverySubmit = useCallback(async (mnemonic, revokeOtherDevices) => {
-    try {
-      await performRecovery(mnemonic, revokeOtherDevices);
-      // Boot the current origin as an instance so useInstances tracks it.
-      bootInstance(window.location.origin).catch((err) => {
-        console.warn('[Home] instance boot after recovery failed:', err);
-      });
-      // On success, vaultState becomes 'unlocked' and the useEffect above navigates.
-      // If no vault PIN was previously set, prompt for PIN setup.
+      // Register the current origin as a connected instance using the JWT
+      // that performRegister just stored. Read token/user from sessionStorage
+      // since React state may not have flushed yet.
+      const jwt = sessionStorage.getItem('hush_jwt');
+      if (jwt) {
+        registerLocalInstance(jwt, { id: user?.id, username: username.trim() }).catch((err) => {
+          console.warn('[Home] registerLocalInstance after register failed:', err);
+        });
+      }
       setAuthView(AUTH_VIEW.PIN_SETUP);
     } catch {
       // Error surfaces via authError toast.
     }
-  }, [performRecovery, bootInstance]);
+  }, [performRegister, registerLocalInstance, user]);
+
+  const handleRecoverySubmit = useCallback(async (mnemonic, revokeOtherDevices) => {
+    try {
+      await performRecovery(mnemonic, revokeOtherDevices);
+      const jwt = sessionStorage.getItem('hush_jwt');
+      if (jwt) {
+        registerLocalInstance(jwt, { id: user?.id, username: user?.username }).catch((err) => {
+          console.warn('[Home] registerLocalInstance after recovery failed:', err);
+        });
+      }
+      setAuthView(AUTH_VIEW.PIN_SETUP);
+    } catch {
+      // Error surfaces via authError toast.
+    }
+  }, [performRecovery, registerLocalInstance, user]);
 
   const handlePinUnlock = useCallback(async (pin) => {
     await unlockVault(pin);
