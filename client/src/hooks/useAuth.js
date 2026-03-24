@@ -732,6 +732,9 @@ export function useAuth() {
     setPIN,
     performLogout,
     clearError,
+    // Ref to the in-memory identity keypair. Used by useInstances for
+    // challenge-response auth on remote instances. Never serialized.
+    identityKeyRef,
     // Legacy aliases preserved for compatibility with existing consumers.
     isLoading: loading,
   };

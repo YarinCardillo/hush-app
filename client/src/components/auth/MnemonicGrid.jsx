@@ -48,16 +48,6 @@ const styles = {
     color: 'var(--hush-live)',
     borderColor: 'var(--hush-live)',
   },
-  toastBanner: {
-    marginTop: '8px',
-    padding: '8px 12px',
-    background: 'rgba(52, 211, 153, 0.08)',
-    border: '1px solid rgba(52, 211, 153, 0.2)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--hush-live)',
-    fontSize: '0.78rem',
-    textAlign: 'center',
-  },
 };
 
 /**
@@ -115,14 +105,8 @@ export function MnemonicGrid({ words, onCopyDone }) {
         onClick={handleCopy}
         aria-label="Copy all 12 words to clipboard"
       >
-        {copied ? 'Copied — clipboard clears in 60 seconds' : 'Copy recovery phrase'}
+        {copied ? 'Copied' : 'Copy recovery phrase'}
       </button>
-
-      {copied && (
-        <div style={styles.toastBanner} role="status" aria-live="polite">
-          Clipboard will clear automatically in 60 seconds.
-        </div>
-      )}
     </div>
   );
 }
