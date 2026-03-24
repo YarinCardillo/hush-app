@@ -287,3 +287,27 @@ export async function exportVoiceFrameKey(groupIdBytes, sigPriv, sigPub, credByt
     epoch: out.epoch,
   };
 }
+
+/**
+ * Export a 32-byte AES-256-GCM key for encrypting guild metadata from the
+ * current MLS group epoch.
+ *
+ * Uses MLS export_secret with label "hush-guild-metadata" (RFC 9420 §8.4).
+ * Label is intentionally distinct from "hush-voice-frame-key" so metadata
+ * and voice frame keys are cryptographically independent for the same group.
+ * Pure derivation — no group state mutation.
+ *
+ * @param {Uint8Array} groupIdBytes - Group ID bytes (channel or guild UUID as UTF-8)
+ * @param {Uint8Array} sigPriv - Signing private key
+ * @param {Uint8Array} sigPub - Signing public key
+ * @param {Uint8Array} credBytes - Credential bytes
+ * @returns {Promise<{ metadataKeyBytes: Uint8Array, epoch: number }>}
+ */
+export async function exportMetadataKey(groupIdBytes, sigPriv, sigPub, credBytes) {
+  await init();
+  const out = await module.exportMetadataKey(groupIdBytes, sigPriv, sigPub, credBytes);
+  return {
+    metadataKeyBytes: new Uint8Array(out.metadataKeyBytes),
+    epoch: out.epoch,
+  };
+}
