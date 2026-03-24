@@ -6,11 +6,13 @@ import { useDevices } from '../hooks/useDevices';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { getDeviceId } from '../hooks/useAuth.js';
 import DeviceManagement from './DeviceManagement.jsx';
+import InstancesSettingsTab from './InstancesSettingsTab.jsx';
 
 const TAB_ACCOUNT = 'account';
 const TAB_APPEARANCE = 'appearance';
 const TAB_AUDIO_VIDEO = 'audio-video';
 const TAB_DEVICES = 'devices';
+const TAB_INSTANCES = 'instances';
 
 const VAULT_TIMEOUT_KEY = 'hush_vault_timeout';
 
@@ -613,6 +615,7 @@ export default function UserSettingsModal({ onClose }) {
     { key: TAB_APPEARANCE, label: 'Appearance' },
     { key: TAB_AUDIO_VIDEO, label: 'Audio & Video' },
     { key: TAB_DEVICES, label: 'Devices' },
+    { key: TAB_INSTANCES, label: 'My Instances' },
   ];
 
   return createPortal(
@@ -683,6 +686,7 @@ export default function UserSettingsModal({ onClose }) {
         {tab === TAB_APPEARANCE && <AppearanceTab />}
         {tab === TAB_AUDIO_VIDEO && <AudioVideoTab />}
         {tab === TAB_DEVICES && <DevicesTab />}
+        {tab === TAB_INSTANCES && <InstancesSettingsTab />}
       </div>
 
       <button

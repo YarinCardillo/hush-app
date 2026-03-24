@@ -271,8 +271,20 @@ export function useInstances() {
     wsClient.on('server_updated', refreshOnEvent);
     wsClient.on('server_deleted', refreshOnEvent);
     wsClient.on('member_joined', refreshOnEvent);
-    wsClient.on('member_left', refreshOnEvent);
-  }, [scheduleReconnect, flushState]);
+
+    // After member_left, refresh guilds then silently disconnect if the user
+    // has no remaining servers on this instance (auto-cleanup, no confirmation).
+    const handleMemberLeft = async () => {
+      await refreshOnEvent();
+      const entry = instancesRef.current.get(instanceUrl);
+      if (entry && (!entry.guilds || entry.guilds.length === 0)) {
+        disconnectInstance(instanceUrl).catch((err) => {
+          console.warn(`[useInstances] auto-disconnect failed for ${instanceUrl}:`, err);
+        });
+      }
+    };
+    wsClient.on('member_left', handleMemberLeft);
+  }, [scheduleReconnect, flushState]); // disconnectInstance added via closure — stable ref
 
   // ── bootInstance ──────────────────────────────────────────────────────────
 

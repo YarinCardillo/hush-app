@@ -236,6 +236,32 @@ export function openStore(userId, deviceId) {
 }
 
 // ---------------------------------------------------------------------------
+// Instance namespace helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns a storage key namespaced by instance to prevent cross-instance
+ * UUID collisions (Pitfall 3: two instances can have channels with the same UUID).
+ *
+ * Falls back to the bare channelId when instanceUrl is not provided so that
+ * existing single-instance callers continue to work without changes.
+ *
+ * @param {string|null|undefined} instanceUrl - Canonical instance base URL
+ * @param {string} channelId - Channel UUID (or any composite key like "voice:uuid")
+ * @returns {string}
+ */
+export function namespacedKey(instanceUrl, channelId) {
+  if (!instanceUrl) return channelId;
+  try {
+    const host = new URL(instanceUrl).host;
+    return `${host}:${channelId}`;
+  } catch {
+    // If the URL is malformed, fall back to bare key rather than throwing.
+    return channelId;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -514,11 +540,13 @@ export async function setLocalPlaintext(db, messageId, payload) {
  * Returns null if the group has not been joined yet.
  *
  * @param {IDBDatabase} db
- * @param {string} channelId - Channel UUID
+ * @param {string} channelId - Channel UUID (or composite key like "voice:uuid", "guild-meta:uuid")
+ * @param {string} [instanceUrl] - Instance base URL for namespacing (optional — defaults to no namespace)
  * @returns {Promise<number|null>}
  */
-export async function getGroupEpoch(db, channelId) {
-  const row = await get(db, 'groupEpoch', channelId);
+export async function getGroupEpoch(db, channelId, instanceUrl) {
+  const key = namespacedKey(instanceUrl, channelId);
+  const row = await get(db, 'groupEpoch', key);
   if (row == null || row.epoch == null) return null;
   return row.epoch;
 }
@@ -528,20 +556,24 @@ export async function getGroupEpoch(db, channelId) {
  * @param {IDBDatabase} db
  * @param {string} channelId
  * @param {number} epoch
+ * @param {string} [instanceUrl] - Instance base URL for namespacing (optional)
  * @returns {Promise<void>}
  */
-export async function setGroupEpoch(db, channelId, epoch) {
-  await put(db, 'groupEpoch', channelId, { epoch });
+export async function setGroupEpoch(db, channelId, epoch, instanceUrl) {
+  const key = namespacedKey(instanceUrl, channelId);
+  await put(db, 'groupEpoch', key, { epoch });
 }
 
 /**
  * Delete the epoch record for a channel (used when leaving a group).
  * @param {IDBDatabase} db
  * @param {string} channelId
+ * @param {string} [instanceUrl] - Instance base URL for namespacing (optional)
  * @returns {Promise<void>}
  */
-export async function deleteGroupEpoch(db, channelId) {
-  await del(db, 'groupEpoch', channelId);
+export async function deleteGroupEpoch(db, channelId, instanceUrl) {
+  const key = namespacedKey(instanceUrl, channelId);
+  await del(db, 'groupEpoch', key);
 }
 
 /**
