@@ -491,7 +491,7 @@ export default function ServerLayout() {
     const handler = (data) => {
       if (data.server_id && data.server_id !== serverId) return;
       if (token && serverId && instanceUrl) {
-        getGuildChannels(token, serverId, instanceUrl).then(setChannels).catch(() => {});
+        getGuildChannels(token, serverId, instanceUrl).then(c => setChannels(parseChannelNames(c))).catch(() => {});
       }
     };
     wsClient.on('channel_moved', handler);
@@ -1028,9 +1028,23 @@ export default function ServerLayout() {
     setActiveVoiceChannel(channel);
   }, [pendingVoiceSwitch, memberIds, serverId, activeGuild, instanceParam]);
 
+  /** Parse channel names from base64 metadata before setting state. */
+  const parseChannelNames = useCallback((chans) =>
+    (Array.isArray(chans) ? chans : []).map(ch => {
+      if (ch.name) return ch;
+      if (!ch.encryptedMetadata) return ch;
+      try {
+        const decoded = new TextDecoder().decode(
+          Uint8Array.from(atob(ch.encryptedMetadata), c => c.charCodeAt(0))
+        );
+        const parsed = JSON.parse(decoded);
+        return { ...ch, name: parsed.n || parsed.name || '' };
+      } catch { return ch; }
+    }), []);
+
   const handleChannelsUpdated = useCallback((updatedChannels) => {
-    setChannels(Array.isArray(updatedChannels) ? updatedChannels : []);
-  }, []);
+    setChannels(parseChannelNames(updatedChannels));
+  }, [parseChannelNames]);
 
   // Derive myRole from guild membership.
   const myMember = members.find((m) => (m.id ?? m.userId) === currentUserId);
