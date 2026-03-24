@@ -72,7 +72,7 @@ export default function GuildContextMenu({
     <div
       ref={menuRef}
       role="menu"
-      aria-label="Guild actions"
+      aria-label="Server actions"
       style={{
         position: 'fixed',
         top: position.y,

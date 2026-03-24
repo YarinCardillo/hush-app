@@ -118,7 +118,7 @@ export default function Invite() {
     return encoded ? decodeGuildNameFromInvite(encoded) : null;
   }, []);
 
-  const guildName = guildNameFromFragment ?? 'a guild';
+  const guildName = guildNameFromFragment ?? 'a server';
 
   // ── Invite info fetch ──────────────────────────────────────────────────
 

@@ -1134,7 +1134,7 @@ export default function ChannelList({
           onClick={() => setShowServerMenu((v) => !v)}
           title="Server menu"
         >
-          <span style={styles.serverName}>{guildName ?? 'guild'}</span>
+          <span style={styles.serverName}>{guildName ?? 'Server'}</span>
           <svg
             width="12"
             height="12"
