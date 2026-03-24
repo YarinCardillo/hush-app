@@ -769,11 +769,11 @@ export async function changePermissionLevel(token, serverId, userId, permissionL
  * @deprecated Use changePermissionLevel instead.
  * Kept for backward compatibility during transition.
  */
-export async function changeUserRole(token, serverId, userId, newRole) {
+export async function changeUserRole(token, serverId, userId, newRole, baseUrl = '') {
   // Map legacy role strings to integer levels
   const levelMap = { member: 0, mod: 1, admin: 2, owner: 3 };
   const level = levelMap[newRole] ?? 0;
-  return changePermissionLevel(token, serverId, userId, level);
+  return changePermissionLevel(token, serverId, userId, level, baseUrl);
 }
 
 /**
