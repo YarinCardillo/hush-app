@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { updateInstance, getGuildMembers, listBans, listMutes, unbanUser, unmuteUser, getAuditLog, leaveGuild } from '../lib/api';
+import { getGuildMembers, listBans, listMutes, unbanUser, unmuteUser, getAuditLog, leaveGuild } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 
@@ -443,112 +443,21 @@ function truncate(str, max) {
 
 // ── Tab: Overview ──────────────────────────────────────────────────
 
-function OverviewTab({ getToken, instanceName, instanceData }) {
-  const [name, setName] = useState(instanceName ?? '');
-  const [iconUrl, setIconUrl] = useState(instanceData?.iconUrl ?? '');
-  const [registrationMode, setRegistrationMode] = useState(instanceData?.registrationMode ?? 'invite_only');
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState('');
-  const [saveSuccess, setSaveSuccess] = useState(false);
-
-  const isDirty =
-    name.trim() !== (instanceName ?? '') ||
-    iconUrl.trim() !== (instanceData?.iconUrl ?? '') ||
-    registrationMode !== (instanceData?.registrationMode ?? 'invite_only');
-
-  const handleSave = async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) return;
-    setSaving(true);
-    setSaveError('');
-    setSaveSuccess(false);
-    try {
-      await updateInstance(getToken(), {
-        name: trimmedName,
-        iconUrl: iconUrl.trim() || undefined,
-        registrationMode,
-      });
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err) {
-      setSaveError(err.message || 'Failed to save');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleReset = () => {
-    setName(instanceName ?? '');
-    setIconUrl(instanceData?.iconUrl ?? '');
-    setRegistrationMode(instanceData?.registrationMode ?? 'invite_only');
-    setSaveError('');
-    setSaveSuccess(false);
-  };
-
+function OverviewTab({ serverName }) {
   return (
     <>
       <div style={styles.sectionTitle}>Overview</div>
 
       <div style={styles.fieldRow}>
-        <label htmlFor="settings-instance-name" style={styles.fieldLabel}>Instance name</label>
-        <input
-          id="settings-instance-name"
-          className="input"
-          type="text"
-          value={name}
-          onChange={(e) => { setName(e.target.value); setSaveError(''); setSaveSuccess(false); }}
-          maxLength={100}
-          autoComplete="off"
-        />
-      </div>
-
-      <div style={styles.fieldRow}>
-        <label htmlFor="settings-icon-url" style={styles.fieldLabel}>Icon URL (optional)</label>
-        <input
-          id="settings-icon-url"
-          className="input"
-          type="url"
-          placeholder="https://..."
-          value={iconUrl}
-          onChange={(e) => { setIconUrl(e.target.value); setSaveError(''); setSaveSuccess(false); }}
-          autoComplete="off"
-        />
-      </div>
-
-      <div style={styles.fieldRow}>
-        <label htmlFor="settings-registration-mode" style={styles.fieldLabel}>Registration mode</label>
-        <select
-          id="settings-registration-mode"
-          className="input"
-          value={registrationMode}
-          onChange={(e) => { setRegistrationMode(e.target.value); setSaveError(''); setSaveSuccess(false); }}
-        >
-          <option value="open">Open (anyone can register)</option>
-          <option value="invite_only">Invite only</option>
-        </select>
+        <label style={styles.fieldLabel}>Server name</label>
+        <div style={{ fontSize: '0.95rem', color: 'var(--hush-text)', padding: '8px 0' }}>
+          {serverName || 'Unnamed server'}
+        </div>
         <div style={styles.fieldNote}>
-          Invite-only mode requires users to have an invite link to register.
+          Server names are end-to-end encrypted. Only members can see this name.
         </div>
       </div>
 
-      {saveError && <div style={styles.errorMsg}>{saveError}</div>}
-      {saveSuccess && <div style={styles.successMsg}>Saved.</div>}
-
-      {isDirty && (
-        <div style={styles.saveRow}>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving || !name.trim()}
-          >
-            {saving ? 'Saving\u2026' : 'Save Changes'}
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={handleReset}>
-            Reset
-          </button>
-        </div>
-      )}
     </>
   );
 }
@@ -1071,11 +980,7 @@ export default function ServerSettingsModal({
         ...(isMobile ? { padding: '20px 16px', maxWidth: 'none' } : {}),
       }}>
         {tab === TAB_OVERVIEW && isAdmin && (
-          <OverviewTab
-            getToken={getToken}
-            instanceName={instanceName}
-            instanceData={instanceData}
-          />
+          <OverviewTab serverName={instanceName} />
         )}
         {tab === TAB_MEMBERS && (
           <MembersTab

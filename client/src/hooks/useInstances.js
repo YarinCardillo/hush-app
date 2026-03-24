@@ -390,13 +390,13 @@ export function useInstances() {
       const guilds = await getMyGuilds(jwt, instanceUrl);
       const stampedGuilds = guilds.map(g => {
         const stamped = { ...g, instanceUrl };
-        // Extract name from plaintext metadata fallback (when MLS not bootstrapped).
+        // Extract name from metadata (Go serializes []byte as base64).
         if (!stamped.name && stamped.encryptedMetadata) {
           try {
-            const raw = typeof stamped.encryptedMetadata === 'string'
-              ? stamped.encryptedMetadata
-              : new TextDecoder().decode(Uint8Array.from(atob(stamped.encryptedMetadata), c => c.charCodeAt(0)));
-            const parsed = JSON.parse(raw);
+            const decoded = new TextDecoder().decode(
+              Uint8Array.from(atob(stamped.encryptedMetadata), c => c.charCodeAt(0))
+            );
+            const parsed = JSON.parse(decoded);
             stamped.name = parsed.n || parsed.name || '';
           } catch { /* encrypted blob — needs MLS key */ }
         }

@@ -353,17 +353,30 @@ export default function ServerLayout() {
       setActiveGuildName(activeGuild._localName ?? activeGuild.name ?? null);
       return;
     }
+    // Try plaintext JSON decode first (fallback when MLS not bootstrapped).
+    const nameFallback = activeGuild._localName ?? activeGuild.name ?? null;
+    try {
+      const decoded = new TextDecoder().decode(
+        Uint8Array.from(atob(activeGuild.encryptedMetadata), c => c.charCodeAt(0))
+      );
+      const parsed = JSON.parse(decoded);
+      if (parsed.n || parsed.name) {
+        setActiveGuildName(parsed.n || parsed.name);
+        return;
+      }
+    } catch { /* Not plaintext JSON — try MLS decryption below */ }
+
     getMetadataKey(activeGuild.id).then(async (keyBytes) => {
-      if (!keyBytes) { setActiveGuildName(activeGuild._localName ?? null); return; }
+      if (!keyBytes) { setActiveGuildName(nameFallback); return; }
       try {
         const cryptoKey = await importMetadataKey(keyBytes);
         const blob = fromBase64(activeGuild.encryptedMetadata);
         const { name } = await decryptGuildMetadata(cryptoKey, blob);
-        setActiveGuildName(name || null);
+        setActiveGuildName(name || nameFallback);
       } catch {
-        setActiveGuildName(activeGuild._localName ?? null);
+        setActiveGuildName(nameFallback);
       }
-    }).catch(() => setActiveGuildName(activeGuild._localName ?? null));
+    }).catch(() => setActiveGuildName(nameFallback));
   }, [activeGuild, getMetadataKey]);
 
   // ── MLS KeyPackage maintenance ─────────────────────────────────────────
@@ -881,17 +894,17 @@ export default function ServerLayout() {
         // Extract channel names from encryptedMetadata (plaintext JSON fallback
         // when MLS is not bootstrapped, or decrypt with metadata key if available).
         const processed = (Array.isArray(chans) ? chans : []).map(ch => {
-          if (ch.name) return ch; // Already has a name (legacy or pre-processed)
+          if (ch.name) return ch; // Already has a name
           if (!ch.encryptedMetadata) return ch;
           try {
-            // Try parsing as plaintext JSON first (fallback path).
-            const raw = typeof ch.encryptedMetadata === 'string'
-              ? ch.encryptedMetadata
-              : new TextDecoder().decode(Uint8Array.from(atob(ch.encryptedMetadata), c => c.charCodeAt(0)));
-            const parsed = JSON.parse(raw);
+            // Go serializes []byte as base64. Decode to UTF-8, then parse JSON.
+            const decoded = new TextDecoder().decode(
+              Uint8Array.from(atob(ch.encryptedMetadata), c => c.charCodeAt(0))
+            );
+            const parsed = JSON.parse(decoded);
             return { ...ch, name: parsed.n || parsed.name || '' };
           } catch {
-            return ch; // Encrypted blob — needs MLS key (handled elsewhere when MLS works)
+            return ch; // Encrypted blob — needs MLS key
           }
         });
         setChannels(processed);
