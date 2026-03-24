@@ -136,6 +136,24 @@ export function useInstances() {
   /** IDB handle, opened once on mount. */
   const dbRef = useRef(null);
 
+  // ── Metadata extraction helper ──────────────────────────────────────────
+
+  /** Stamp guilds with instanceUrl and extract names from base64 metadata. */
+  const stampGuilds = (guilds, instanceUrl) =>
+    guilds.map(g => {
+      const stamped = { ...g, instanceUrl };
+      if (!stamped.name && stamped.encryptedMetadata) {
+        try {
+          const decoded = new TextDecoder().decode(
+            Uint8Array.from(atob(stamped.encryptedMetadata), c => c.charCodeAt(0))
+          );
+          const parsed = JSON.parse(decoded);
+          stamped.name = parsed.n || parsed.name || '';
+        } catch { /* encrypted blob — needs MLS key */ }
+      }
+      return stamped;
+    });
+
   // ── State snapshot helper ────────────────────────────────────────────────
 
   /**
@@ -388,20 +406,7 @@ export function useInstances() {
 
       // Step 5: Fetch guilds, extract names from metadata, and stamp with instanceUrl.
       const guilds = await getMyGuilds(jwt, instanceUrl);
-      const stampedGuilds = guilds.map(g => {
-        const stamped = { ...g, instanceUrl };
-        // Extract name from metadata (Go serializes []byte as base64).
-        if (!stamped.name && stamped.encryptedMetadata) {
-          try {
-            const decoded = new TextDecoder().decode(
-              Uint8Array.from(atob(stamped.encryptedMetadata), c => c.charCodeAt(0))
-            );
-            const parsed = JSON.parse(decoded);
-            stamped.name = parsed.n || parsed.name || '';
-          } catch { /* encrypted blob — needs MLS key */ }
-        }
-        return stamped;
-      });
+      const stampedGuilds = stampGuilds(guilds, instanceUrl);
 
       // Step 6: Update entry.
       instancesRef.current.set(instanceUrl, {
@@ -476,7 +481,7 @@ export function useInstances() {
 
     try {
       const guilds = await getMyGuilds(entry.jwt, instanceUrl);
-      entry.guilds = guilds.map(g => ({ ...g, instanceUrl }));
+      entry.guilds = stampGuilds(guilds, instanceUrl);
       flushState();
     } catch (err) {
       console.error(`[useInstances] refreshGuilds failed for ${instanceUrl}:`, err);

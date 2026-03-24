@@ -442,9 +442,20 @@ export default function ServerLayout() {
     const handler = (data) => {
       if (!data.channel) return;
       if (data.server_id && data.server_id !== serverId) return;
+      // Extract name from base64 metadata (same as initial fetch processing).
+      const ch = { ...data.channel };
+      if (!ch.name && ch.encryptedMetadata) {
+        try {
+          const decoded = new TextDecoder().decode(
+            Uint8Array.from(atob(ch.encryptedMetadata), c => c.charCodeAt(0))
+          );
+          const parsed = JSON.parse(decoded);
+          ch.name = parsed.n || parsed.name || '';
+        } catch { /* encrypted blob */ }
+      }
       setChannels((prev) => {
-        if (prev.some((ch) => ch.id === data.channel.id)) return prev;
-        return [...prev, data.channel];
+        if (prev.some((c) => c.id === ch.id)) return prev;
+        return [...prev, ch];
       });
     };
     wsClient.on('channel_created', handler);
