@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { createGuild, listServerTemplates } from '../lib/api';
+import { createGuild, updateGuildMetadata, listServerTemplates } from '../lib/api';
+import * as api from '../lib/api';
+import * as mlsGroup from '../lib/mlsGroup';
+import * as mlsStoreLib from '../lib/mlsStore';
+import * as hushCryptoLib from '../lib/hushCrypto';
+import { encryptGuildMetadata, toBase64, importMetadataKey } from '../lib/guildMetadata';
+import { JWT_KEY, getDeviceId } from '../hooks/useAuth';
 import modalStyles from './modalStyles';
 
 /**
@@ -55,6 +61,17 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
     })();
   }, [getToken]);
 
+  /**
+   * Build the MLS deps object needed by mlsGroup functions.
+   * @param {IDBDatabase} db
+   * @param {string} token
+   * @returns {Promise<object>}
+   */
+  const buildMlsDeps = async (db, token) => {
+    const credential = await mlsStoreLib.getCredential(db);
+    return { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -70,7 +87,44 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
     }
     setLoading(true);
     try {
-      const guild = await createGuild(token, trimmed, selectedTemplateId);
+      // Step 1: Create the guild with null encryptedMetadata to get its UUID.
+      const guild = await createGuild(token, null, selectedTemplateId);
+
+      // Step 2: Create the guild metadata MLS group (creator is the sole member).
+      // If MLS is not set up yet (no credential), fall back to plaintext name.
+      let mlsSuccess = false;
+      try {
+        const db = await mlsStoreLib.openDB(getDeviceId());
+        if (db) {
+          const deps = await buildMlsDeps(db, token);
+          await mlsGroup.createGuildMetadataGroup(deps, guild.id);
+
+          // Step 3: Export the metadata key and encrypt the guild name.
+          const { metadataKeyBytes } = await mlsGroup.exportGuildMetadataKey(deps, guild.id);
+          const symmetricKey = await importMetadataKey(metadataKeyBytes);
+          const encBlob = await encryptGuildMetadata(symmetricKey, {
+            name: trimmed,
+            description: '',
+            icon: null,
+          });
+          const encryptedMetadata = toBase64(encBlob);
+
+          // Step 4: Upload the encrypted metadata blob to the server.
+          await updateGuildMetadata(token, guild.id, encryptedMetadata);
+          guild.encryptedMetadata = encryptedMetadata;
+          mlsSuccess = true;
+        }
+      } catch (mlsErr) {
+        // MLS setup failed — guild still created, name remains unset on server.
+        // Non-fatal: user can retry by viewing server settings.
+        console.warn('[GuildCreateModal] MLS metadata group setup failed:', mlsErr);
+      }
+
+      // Attach plaintext name for local UI use if MLS failed (name never sent to server).
+      if (!mlsSuccess) {
+        guild._localName = trimmed;
+      }
+
       onCreated(guild);
     } catch (err) {
       setError(err.message || 'Failed to create server.');

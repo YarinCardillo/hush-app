@@ -193,14 +193,15 @@ export async function getMyGuilds(token) {
 }
 
 /**
- * Create a new guild.
+ * Create a new guild (two-step: POST returns UUID, then PUT uploads encrypted metadata).
  * @param {string} token - JWT
- * @param {string} name - Guild name
+ * @param {string} [encryptedMetadata] - Base64-encoded AES-GCM blob; null on initial creation
  * @param {string} [templateId] - Optional template UUID to use for channel creation
- * @returns {Promise<{ id: string, name: string, ownerId: string, createdAt: string }>}
+ * @returns {Promise<{ id: string, encryptedMetadata: string|null, permissionLevel: number, createdAt: string }>}
  */
-export async function createGuild(token, name, templateId) {
-  const body = { name };
+export async function createGuild(token, encryptedMetadata, templateId) {
+  const body = {};
+  if (encryptedMetadata != null) body.encryptedMetadata = encryptedMetadata;
   if (templateId) body.templateId = templateId;
   const res = await fetchWithAuth(token, '/api/servers', {
     method: 'POST',
@@ -212,6 +213,25 @@ export async function createGuild(token, name, templateId) {
     throw new Error(err.error || `create guild ${res.status}`);
   }
   return res.json();
+}
+
+/**
+ * Update guild encrypted metadata (e.g. after MLS group is set up).
+ * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID
+ * @param {string} encryptedMetadata - Base64-encoded AES-GCM blob
+ * @returns {Promise<void>}
+ */
+export async function updateGuildMetadata(token, serverId, encryptedMetadata) {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ encryptedMetadata }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `update guild metadata ${res.status}`);
+  }
 }
 
 /**
@@ -365,8 +385,9 @@ export async function createGuildInvite(token, serverId, opts = {}) {
 
 /**
  * Resolve an invite code to guild info (public — no auth required).
+ * NOTE: Response does NOT include guildName — the guild name is read from the URL fragment.
  * @param {string} code - Invite code
- * @returns {Promise<{ code: string, guildName: string, expiresAt: string, serverId: string }>}
+ * @returns {Promise<{ code: string, serverId: string, memberCount: number, expiresAt: string }>}
  */
 export async function getInviteInfo(code) {
   const res = await fetch(`${defaultBase}/api/invites/${encodeURIComponent(code)}`);
@@ -379,9 +400,10 @@ export async function getInviteInfo(code) {
 
 /**
  * Claim an invite code (adds the authenticated user to the guild).
+ * NOTE: Response does NOT include guildName — navigation uses serverId only.
  * @param {string} token - JWT
  * @param {string} code - Invite code
- * @returns {Promise<{ serverId: string, guildName: string }>}
+ * @returns {Promise<{ serverId: string }>}
  */
 export async function claimInvite(token, code) {
   const res = await fetchWithAuth(token, '/api/invites/claim', {
@@ -557,28 +579,38 @@ export async function listMutes(token, serverId) {
 }
 
 /**
- * Change a user's role in a guild.
+ * Change a user's permission level in a guild.
  * @param {string} token - JWT
  * @param {string} serverId - Guild UUID
  * @param {string} userId - Target user UUID
- * @param {string} newRole - 'member' | 'mod' | 'admin'
- * @param {string} reason - Required reason string
+ * @param {number} permissionLevel - Integer: 0=member, 1=mod, 2=admin, 3=owner
  * @returns {Promise<void>}
  */
-export async function changeUserRole(token, serverId, userId, newRole, reason) {
+export async function changePermissionLevel(token, serverId, userId, permissionLevel) {
   const res = await fetchWithAuth(
     token,
-    `/api/servers/${encodeURIComponent(serverId)}/members/${encodeURIComponent(userId)}/role`,
+    `/api/servers/${encodeURIComponent(serverId)}/members/${encodeURIComponent(userId)}/level`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ newRole, reason }),
+      body: JSON.stringify({ permissionLevel }),
     },
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `change role ${res.status}`);
+    throw new Error(err.error || `change permission level ${res.status}`);
   }
+}
+
+/**
+ * @deprecated Use changePermissionLevel instead.
+ * Kept for backward compatibility during transition.
+ */
+export async function changeUserRole(token, serverId, userId, newRole) {
+  // Map legacy role strings to integer levels
+  const levelMap = { member: 0, mod: 1, admin: 2, owner: 3 };
+  const level = levelMap[newRole] ?? 0;
+  return changePermissionLevel(token, serverId, userId, level);
 }
 
 /**
@@ -1000,5 +1032,48 @@ export async function deleteMLSPendingWelcome(token, welcomeId) {
   if (!res.ok && res.status !== 404) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `deleteMLSPendingWelcome ${res.status}`);
+  }
+}
+
+// ── Guild Metadata MLS Group ──────────────────────────────────────────────────
+
+/**
+ * Fetch the current GroupInfo for a guild metadata MLS group.
+ * Used by members joining the guild to join the metadata group via External Commit.
+ *
+ * @param {string} token - JWT
+ * @param {string} guildId - Guild UUID
+ * @returns {Promise<{ groupInfo: string, epoch: number }|null>}
+ */
+export async function getGuildMetadataGroupInfo(token, guildId) {
+  const res = await fetchWithAuth(token, `/api/mls/guilds/${encodeURIComponent(guildId)}/group-info`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `getGuildMetadataGroupInfo ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Upload or update the GroupInfo for a guild metadata MLS group.
+ * Called by the guild creator after createGuildMetadataGroup and by members
+ * after joining via External Commit.
+ *
+ * @param {string} token - JWT
+ * @param {string} guildId - Guild UUID
+ * @param {string} groupInfoBase64 - Base64-encoded serialised GroupInfo
+ * @param {number} epoch - Current group epoch
+ * @returns {Promise<void>}
+ */
+export async function putGuildMetadataGroupInfo(token, guildId, groupInfoBase64, epoch) {
+  const res = await fetchWithAuth(token, `/api/mls/guilds/${encodeURIComponent(guildId)}/group-info`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ groupInfoBytes: groupInfoBase64, epoch }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `putGuildMetadataGroupInfo ${res.status}`);
   }
 }

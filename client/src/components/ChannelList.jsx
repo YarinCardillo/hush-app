@@ -19,6 +19,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { getGuildChannels, createGuildChannel, createGuildInvite, moveChannel, deleteGuildChannel } from '../lib/api';
+import { encodeGuildNameForInvite } from '../lib/guildMetadata';
 import modalStyles from './modalStyles';
 import ConfirmModal from './ConfirmModal';
 import ServerSettingsModal from './ServerSettingsModal';
@@ -440,7 +441,7 @@ function CreateCategoryModal({ getToken, serverId, onClose, onCreated }) {
   );
 }
 
-function InviteModal({ getToken, serverId, onClose }) {
+function InviteModal({ getToken, serverId, guildName, onClose }) {
   const [isOpen, setIsOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
@@ -475,7 +476,11 @@ function InviteModal({ getToken, serverId, onClose }) {
     return () => { cancelled = true; };
   }, [getToken]);
 
-  const inviteLink = inviteCode ? `${window.location.origin}/invite/${inviteCode}` : '';
+  // Embed guild name in URL fragment so the invite page can display it without
+  // the server knowing which guild the link is for (backend opacity model).
+  const inviteLink = inviteCode
+    ? `${window.location.origin}/invite/${inviteCode}${guildName ? `#name=${encodeGuildNameForInvite(guildName)}` : ''}`
+    : '';
 
   const handleCopy = async () => {
     try {
@@ -694,7 +699,7 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, voic
             <span style={{ opacity: 0.8 }}>#</span>
           )}
         </span>
-        <span style={styles.channelName}>{channel.name}</span>
+        <span style={styles.channelName}>{channel._displayName ?? channel.name ?? ''}</span>
         {isVoice && participantCount != null && (
           <span style={styles.voiceCount}>{participantCount}</span>
         )}
@@ -822,6 +827,18 @@ function UncategorizeZone({ position, visible }) {
   );
 }
 
+/**
+ * Returns the display name for a system channel.
+ * System channels have NULL encryptedMetadata — their name is derived from type.
+ * @param {object} channel
+ * @returns {string}
+ */
+function getSystemChannelName(channel) {
+  if (channel._displayName) return channel._displayName;
+  if (channel.name) return channel.name;
+  return 'System';
+}
+
 /** System channel row: pinned at top, not draggable, shield icon, muted color. */
 function SystemChannelRow({ channel, isActive, onSelect }) {
   const [hover, setHover] = useState(false);
@@ -848,7 +865,7 @@ function SystemChannelRow({ channel, isActive, onSelect }) {
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
         </svg>
       </span>
-      <span style={{ ...styles.channelName, color: 'var(--hush-text-muted)' }}>{channel.name}</span>
+      <span style={{ ...styles.channelName, color: 'var(--hush-text-muted)' }}>{getSystemChannelName(channel)}</span>
     </div>
   );
 }
@@ -860,6 +877,7 @@ export default function ChannelList({
   instanceData,
   channels,
   myRole,
+  myPermissionLevel = 0,
   activeChannelId,
   onChannelSelect,
   onChannelsUpdated,
@@ -875,7 +893,8 @@ export default function ChannelList({
   const [confirmDelete, setConfirmDelete] = useState(null); // { id, name, isCategory }
   const [activeId, setActiveId] = useState(null);
   const [localChannels, setLocalChannels] = useState(channels ?? []);
-  const isAdmin = myRole === 'admin' || myRole === 'owner';
+  // Support both legacy role strings and new integer permission levels
+  const isAdmin = myPermissionLevel >= 2 || myRole === 'admin' || myRole === 'owner';
   const serverMenuRef = useRef(null);
 
   const GUILD_COLLAPSED_KEY = serverId ? `collapsed_${serverId}` : 'collapsed_default';
@@ -1277,6 +1296,7 @@ export default function ChannelList({
         <InviteModal
           getToken={getToken}
           serverId={serverId}
+          guildName={guildName}
           onClose={() => setShowInviteModal(false)}
         />
       )}
@@ -1297,6 +1317,7 @@ export default function ChannelList({
           instanceData={instanceData}
           isAdmin={isAdmin}
           myRole={myRole}
+          myPermissionLevel={myPermissionLevel}
           onClose={() => setShowSettings(false)}
           showToast={showToast}
           members={members}

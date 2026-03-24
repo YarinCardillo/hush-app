@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getInviteInfo, claimInvite } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { decodeGuildNameFromInvite } from '../lib/guildMetadata';
 
 const styles = {
   page: {
@@ -89,6 +90,16 @@ export default function Invite() {
   const [invite, setInvite] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Read guild name from URL hash fragment (#name=...) — never fetched from server.
+  // The invite creator embeds the encrypted guild name in the fragment so the server
+  // remains blind to which guild the link is for.
+  const guildNameFromFragment = useMemo(() => {
+    const hash = window.location.hash.slice(1); // remove leading #
+    const params = new URLSearchParams(hash);
+    const encoded = params.get('name');
+    return encoded ? decodeGuildNameFromInvite(encoded) : null;
+  }, []);
 
   // Registration form state (unauthenticated flow)
   const [username, setUsername] = useState('');
@@ -184,7 +195,9 @@ export default function Invite() {
 
   if (!invite) return null;
 
-  const guildName = invite.guildName ?? invite.instanceName ?? 'a guild';
+  // Prefer guild name from URL fragment (never stored on server).
+  // Fall back to "a guild" for backward compatibility with old invite links.
+  const guildName = guildNameFromFragment ?? 'a guild';
 
   // Authenticated: show redirecting state while auto-claim runs
   if (isAuthenticated) {

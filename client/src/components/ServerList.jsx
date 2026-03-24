@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import UserSettingsModal from './UserSettingsModal';
 import GuildCreateModal from './GuildCreateModal';
+import { decryptGuildMetadata, fromBase64, importMetadataKey } from '../lib/guildMetadata';
 
 const ICON_SIZE = 48;
 const STRIP_WIDTH = 72;
@@ -124,20 +125,6 @@ const styles = {
 };
 
 /**
- * Whether the current user is allowed to create guilds given the instance policy.
- * @param {string|undefined} policy - serverCreationPolicy from instance data
- * @param {string} userRole - user's instance role
- * @returns {boolean}
- */
-function canCreateGuild(policy, userRole) {
-  if (!policy || policy === 'any_member' || policy === 'open') return true;
-  if (policy === 'admin_only') {
-    return userRole === 'admin' || userRole === 'owner';
-  }
-  return false;
-}
-
-/**
  * Vertical guild icon strip sidebar.
  *
  * @param {{
@@ -146,8 +133,9 @@ function canCreateGuild(policy, userRole) {
  *   activeGuild: object|null,
  *   onGuildSelect: (guild: object) => void,
  *   onGuildCreated: (guild: object) => void,
+ *   getMetadataKey: (guildId: string) => Promise<Uint8Array|null>,
  *   instanceData: object|null,
- *   userRole: string,
+ *   userPermissionLevel: number,
  * }} props
  */
 export default function ServerList({
@@ -156,15 +144,70 @@ export default function ServerList({
   activeGuild = null,
   onGuildSelect,
   onGuildCreated,
+  getMetadataKey = null,
   instanceData,
   userRole = 'member',
+  userPermissionLevel = 0,
   compact = false,
 }) {
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  // Map<guildId, { name: string, icon: string|null }> — decrypted metadata cache
+  const [metadataCache, setMetadataCache] = useState(new Map());
+  const decryptingRef = useRef(new Set());
 
-  const serverCreationPolicy = instanceData?.serverCreationPolicy ?? 'open';
-  const showAddButton = canCreateGuild(serverCreationPolicy, userRole);
+  // Decrypt guild metadata when guilds or keys change.
+  useEffect(() => {
+    if (!getMetadataKey || guilds.length === 0) return;
+
+    for (const guild of guilds) {
+      const guildId = guild.id;
+      if (!guild.encryptedMetadata) continue;
+      if (metadataCache.has(guildId)) continue;
+      if (decryptingRef.current.has(guildId)) continue;
+
+      decryptingRef.current.add(guildId);
+      (async () => {
+        try {
+          const keyBytes = await getMetadataKey(guildId);
+          if (!keyBytes) return;
+          const cryptoKey = await importMetadataKey(keyBytes);
+          const blob = fromBase64(guild.encryptedMetadata);
+          const { name, icon } = await decryptGuildMetadata(cryptoKey, blob);
+          setMetadataCache((prev) => {
+            const next = new Map(prev);
+            next.set(guildId, { name, icon });
+            return next;
+          });
+        } catch (err) {
+          console.warn('[ServerList] Failed to decrypt guild metadata for', guildId, err);
+        } finally {
+          decryptingRef.current.delete(guildId);
+        }
+      })();
+    }
+  }, [guilds, getMetadataKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Returns the display name for a guild — from decrypted metadata cache,
+   * or from _localName (set by GuildCreateModal before upload), or falls back
+   * to the guild UUID as last resort.
+   * @param {object} guild
+   * @returns {string}
+   */
+  const getGuildDisplayName = useCallback((guild) => {
+    const cached = metadataCache.get(guild.id);
+    if (cached?.name) return cached.name;
+    if (guild._localName) return guild._localName;
+    if (guild.name) return guild.name; // backward compat during migration
+    return guild.id.slice(0, 8); // UUID prefix as last resort
+  }, [metadataCache]);
+
+  // Allow guild creation based on permission level and instance policy.
+  // Supports both new permissionLevel integers and legacy role strings during transition.
+  const isAdminOrHigher = userPermissionLevel >= 2 || userRole === 'admin' || userRole === 'owner';
+  const policy = instanceData?.guildDiscovery ?? instanceData?.serverCreationPolicy ?? 'open';
+  const showAddButton = policy === 'admin_only' ? isAdminOrHigher : true;
 
   const handleGuildCreated = useCallback((newGuild) => {
     setShowCreateModal(false);
@@ -176,19 +219,20 @@ export default function ServerList({
       {guilds.map((guild) => {
         const isActive = guild.id === activeGuild?.id;
         const bg = guildColor(guild.id);
+        const displayName = getGuildDisplayName(guild);
         return (
           <button
             key={guild.id}
             type="button"
             style={styles.guildBtn(isActive, bg)}
-            title={guild.name}
-            aria-label={guild.name}
+            title={displayName}
+            aria-label={displayName}
             aria-pressed={isActive}
             onClick={() => onGuildSelect?.(guild)}
             onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.opacity = '0.8'; }}
             onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
           >
-            {getInitials(guild.name)}
+            {getInitials(displayName)}
           </button>
         );
       })}
