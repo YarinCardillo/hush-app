@@ -13,7 +13,7 @@ const DB_NAME_PREFIX = 'hush-mls-';
 const STORE_CREDENTIAL = 'credential';
 const STORE_KEY_PACKAGES = 'keyPackages';
 const STORE_LAST_RESORT = 'lastResort';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const CREDENTIAL_KEY = 'credential';
 const LAST_RESORT_KEY = 'lastResort';
@@ -31,6 +31,17 @@ const STORAGE_PROVIDER_STORES = [
   'mls_encryption_keys',
   'mls_psk',
   'mls_tree_sync',
+  // v3 — stores required by OpenMLS createGroup/joinGroup WASM operations.
+  'mls_signature_key_pairs',
+  'mls_confirmation_tag',
+  'mls_group_context',
+  'mls_interim_transcript_hash',
+  'mls_own_leaf_index',
+  'mls_message_secrets',
+  'mls_resumption_psk',
+  'mls_join_config',
+  'mls_group_state',
+  'mls_epoch_key_pairs',
 ];
 
 // Synchronous Map cache backed by IndexedDB. WASM reads/writes happen synchronously
