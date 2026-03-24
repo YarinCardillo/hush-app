@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
+import { useInstanceContext } from '../contexts/InstanceContext';
+import { slugify } from '../lib/slugify';
 import { GUEST_SESSION_KEY } from '../hooks/useAuth';
 import { RegistrationWizard } from '../components/auth/RegistrationWizard';
 import { RecoveryPhraseInput } from '../components/auth/RecoveryPhraseInput';
@@ -402,6 +404,10 @@ export default function Home() {
     () => (typeof window !== 'undefined' ? !window.matchMedia('(pointer: coarse)').matches : false),
   );
 
+  // ── Multi-instance state ──────────────────────────────────────────────────
+
+  const { mergedGuilds } = useInstanceContext();
+
   // ── Vault state -> view routing ─────────────────────────────────────────────
 
   useEffect(() => {
@@ -413,11 +419,27 @@ export default function Home() {
     }
 
     if (vaultState === 'unlocked' || vaultState === 'guest') {
-      // Navigate to channels / invite on successful auth.
-      const target = joinParam
-        ? `/invite/${encodeURIComponent(joinParam)}`
-        : '/channels';
-      navigate(target, { replace: true });
+      // Navigate to invite if a joinParam is present.
+      if (joinParam) {
+        navigate(`/invite/${encodeURIComponent(joinParam)}`, { replace: true });
+        return;
+      }
+
+      // Navigate to first guild via instance-aware route, or /home for empty state.
+      if (mergedGuilds.length > 0) {
+        const first = mergedGuilds[0];
+        const instanceHost = first.instanceUrl
+          ? new URL(first.instanceUrl).host
+          : null;
+        const guildSlug = slugify(first._localName ?? first.name ?? first.id ?? 'guild');
+        if (instanceHost) {
+          navigate(`/${instanceHost}/${guildSlug}`, { replace: true });
+          return;
+        }
+      }
+
+      // No guilds or no instance host available — go to the empty state page.
+      navigate('/home', { replace: true });
       return;
     }
 
@@ -426,7 +448,7 @@ export default function Home() {
       setAuthView(AUTH_VIEW.CHOOSE);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vaultState, authLoading]);
+  }, [vaultState, authLoading, mergedGuilds]);
 
   // ── Error toast ─────────────────────────────────────────────────────────────
 
@@ -552,10 +574,10 @@ export default function Home() {
     try {
       await setPIN(pin);
       setHasPinSetup(true);
-      // Navigate to channels once PIN is saved.
+      // Navigate to invite or /home; vault routing effect handles guild redirect.
       const target = joinParam
         ? `/invite/${encodeURIComponent(joinParam)}`
-        : '/channels';
+        : '/home';
       navigate(target, { replace: true });
     } catch (err) {
       // Error shown in PinSetupModal.
@@ -568,7 +590,7 @@ export default function Home() {
   const handlePinSetupSkip = useCallback(() => {
     const target = joinParam
       ? `/invite/${encodeURIComponent(joinParam)}`
-      : '/channels';
+      : '/home';
     navigate(target, { replace: true });
   }, [joinParam, navigate]);
 

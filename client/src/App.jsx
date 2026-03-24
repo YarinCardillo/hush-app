@@ -1,10 +1,9 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { lazy, Suspense, useEffect } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import { InstanceProvider } from './contexts/InstanceContext';
 import AppBackground from './components/AppBackground';
 import { applyThemeMode, getStoredThemeMode } from './components/UserSettingsModal';
-import { getMyGuilds } from './lib/api';
-import { JWT_KEY } from './hooks/useAuth';
 
 // Apply stored theme before first paint to avoid FOUC.
 applyThemeMode(getStoredThemeMode());
@@ -50,76 +49,45 @@ function FaviconThemeSync() {
   return null;
 }
 
-function getToken() {
-  return typeof window !== 'undefined'
-    ? (sessionStorage.getItem(JWT_KEY) ?? sessionStorage.getItem('hush_token'))
-    : null;
-}
-
-/**
- * Home route handler: if authenticated, redirect to first guild or show empty-state page.
- * If unauthenticated, show the normal Home (login/register) page.
- */
-function HomeRoute() {
-  const { isAuthenticated } = useAuth();
-  const navigate = useNavigate();
-  const [checking, setChecking] = useState(true);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setChecking(false);
-      return;
-    }
-    const token = getToken();
-    if (!token) {
-      setChecking(false);
-      return;
-    }
-    getMyGuilds(token)
-      .then((guilds) => {
-        if (Array.isArray(guilds) && guilds.length > 0) {
-          navigate(`/servers/${guilds[0].id}/channels`, { replace: true });
-        } else {
-          setChecking(false);
-        }
-      })
-      .catch(() => setChecking(false));
-  }, [isAuthenticated, navigate]);
-
-  if (checking && isAuthenticated) {
-    return <div style={{ height: '100%', background: 'var(--hush-black)' }} />;
-  }
-
-  if (isAuthenticated && !checking) {
-    // No guilds — show empty state using ServerLayout without a serverId
-    return <Navigate to="/guilds" replace />;
-  }
-
-  return (
-    <Suspense fallback={fallback}>
-      <Home />
-    </Suspense>
-  );
-}
-
 export default function App() {
   return (
     <AuthProvider>
-      <FaviconThemeSync />
-      <AppBackground />
-      <Suspense fallback={fallback}>
-        <Routes>
-          <Route path="/" element={<HomeRoute />} />
-          <Route path="/guilds" element={<ServerLayout />} />
-          <Route path="/invite/:code" element={<Invite />} />
-          <Route path="/servers/:serverId/*" element={<ServerLayout />} />
-          <Route path="/room/:roomName" element={<Room />} />
-          <Route path="/roadmap" element={<Roadmap />} />
-          {/* Legacy redirect: single-tenant paths redirect to root */}
-          <Route path="/channels" element={<Navigate to="/" replace />} />
-          <Route path="/channels/:channelId" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Suspense>
+      <InstanceProvider>
+        <FaviconThemeSync />
+        <AppBackground />
+        <Suspense fallback={fallback}>
+          <Routes>
+            {/* Auth / landing page */}
+            <Route path="/" element={<Home />} />
+
+            {/* DM landing / no-guild empty state */}
+            <Route path="/home" element={<ServerLayout />} />
+
+            {/* Cross-instance invite */}
+            <Route path="/join/:instance/:code" element={<Invite />} />
+
+            {/* Same-instance invite (legacy path kept) */}
+            <Route path="/invite/:code" element={<Invite />} />
+
+            {/* Instance-aware guild route: /:instance/:guildSlug/:channelSlug? */}
+            <Route path="/:instance/:guildSlug/:channelSlug?" element={<ServerLayout />} />
+
+            {/* Legacy: /servers/:serverId/* — still works via ServerLayout legacy lookup */}
+            <Route path="/servers/:serverId/*" element={<ServerLayout />} />
+
+            {/* Legacy: /guilds — redirect to /home */}
+            <Route path="/guilds" element={<Navigate to="/home" replace />} />
+
+            {/* Legacy single-tenant paths */}
+            <Route path="/channels" element={<Navigate to="/home" replace />} />
+            <Route path="/channels/:channelId" element={<Navigate to="/home" replace />} />
+
+            {/* Utility pages */}
+            <Route path="/room/:roomName" element={<Room />} />
+            <Route path="/roadmap" element={<Roadmap />} />
+          </Routes>
+        </Suspense>
+      </InstanceProvider>
     </AuthProvider>
   );
 }

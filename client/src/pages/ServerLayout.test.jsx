@@ -31,6 +31,9 @@ vi.mock('../lib/mlsGroup', () => ({
   createChannelGroup: vi.fn().mockResolvedValue({ groupInfoBytes: new Uint8Array(0), epoch: 0 }),
   joinChannelGroup: vi.fn().mockResolvedValue(undefined),
   joinAllChannelGroups: vi.fn().mockResolvedValue(undefined),
+  joinGuildMetadataGroup: vi.fn().mockResolvedValue(undefined),
+  leaveGuildMetadataGroup: vi.fn().mockResolvedValue(undefined),
+  exportGuildMetadataKey: vi.fn().mockResolvedValue({ metadataKeyBytes: new Uint8Array(32) }),
   addMemberToChannel: vi.fn().mockResolvedValue({ welcomeBytes: new Uint8Array(0) }),
   removeMemberFromChannel: vi.fn().mockResolvedValue(undefined),
   encryptMessage: vi.fn().mockResolvedValue({ messageBytes: new Uint8Array(0), localId: 'test' }),
@@ -40,6 +43,7 @@ vi.mock('../lib/mlsGroup', () => ({
   leaveChannelGroup: vi.fn().mockResolvedValue(undefined),
   leaveAllChannelGroups: vi.fn().mockResolvedValue(undefined),
   performSelfUpdate: vi.fn().mockResolvedValue(undefined),
+  createGuildMetadataGroup: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../lib/hushCrypto', () => ({
@@ -77,6 +81,21 @@ vi.mock('../contexts/AuthContext', () => ({
     logout: vi.fn(),
   })),
   AuthProvider: ({ children }) => children,
+}));
+
+vi.mock('../contexts/InstanceContext', () => ({
+  useInstanceContext: vi.fn(() => ({
+    instanceStates: new Map(),
+    mergedGuilds: [{ id: 's1', name: 'Test Guild', ownerId: 'u1' }],
+    getWsClient: vi.fn(() => null),
+    getTokenForInstance: vi.fn(() => null),
+    refreshGuilds: vi.fn().mockResolvedValue(undefined),
+    bootInstance: vi.fn().mockResolvedValue(undefined),
+    disconnectInstance: vi.fn().mockResolvedValue(undefined),
+    guildOrder: [],
+    setGuildOrder: vi.fn().mockResolvedValue(undefined),
+  })),
+  InstanceProvider: ({ children }) => children,
 }));
 
 vi.mock('../hooks/useAuth', () => ({
@@ -175,8 +194,10 @@ function renderAtRoute(path) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
+        <Route path="/home" element={<ServerLayout />} />
         <Route path="/guilds" element={<ServerLayout />} />
         <Route path="/servers/:serverId/*" element={<ServerLayout />} />
+        <Route path="/:instance/:guildSlug/:channelSlug?" element={<ServerLayout />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -207,8 +228,9 @@ describe('ServerLayout', () => {
   it('fetches channels and members when serverId is in the URL', async () => {
     renderAtRoute('/servers/s1/channels');
     await waitFor(() => {
-      expect(getGuildChannels).toHaveBeenCalledWith('test-token', 's1');
-      expect(getGuildMembers).toHaveBeenCalledWith('test-token', 's1');
+      // instanceUrl is null for legacy routes (no instanceUrl on mergedGuilds mock guild).
+      expect(getGuildChannels).toHaveBeenCalledWith('test-token', 's1', undefined);
+      expect(getGuildMembers).toHaveBeenCalledWith('test-token', 's1', undefined);
     });
   });
 
