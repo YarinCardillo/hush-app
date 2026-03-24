@@ -125,10 +125,32 @@ export function useMLS({ getStore, getToken, channelId, _deps }) {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Guild metadata key export
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Export the AES-256 metadata key for a guild from its MLS metadata group.
+   * Returns null if the credential or group state is not yet available.
+   *
+   * @param {string} guildId
+   * @returns {Promise<Uint8Array|null>}
+   */
+  async function getGuildMetadataKey(guildId) {
+    try {
+      const deps = await buildDeps();
+      return await mlsGroup.exportGuildMetadataKey(deps, guildId);
+    } catch {
+      // Group state not yet available — caller falls back to showing UUID
+      return null;
+    }
+  }
+
   return {
     encryptForChannel,
     decryptFromChannel,
     getCachedMessage,
     setCachedMessage,
+    getGuildMetadataKey,
   };
 }

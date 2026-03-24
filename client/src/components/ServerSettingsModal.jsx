@@ -585,14 +585,17 @@ function MembersTab({ getToken, serverId }) {
         <div style={styles.memberList}>
           {members.map((m) => {
             const memberId = m.id ?? m.userId ?? '';
-            const isPrivileged = m.role === 'owner' || m.role === 'admin';
+            // Prefer integer permissionLevel (new API), fall back to role string
+            const level = m.permissionLevel ?? ({ owner: 3, admin: 2, mod: 1, member: 0 }[m.role] ?? 0);
+            const isPrivileged = level >= 2;
+            const roleLabel = ({ 3: 'Owner', 2: 'Admin', 1: 'Mod', 0: 'Member' }[level] ?? m.role ?? 'Member');
             const initial = (m.displayName || m.username || '?')[0].toUpperCase();
             return (
               <div key={memberId} style={styles.memberRow}>
                 <div style={styles.memberAvatar}>{initial}</div>
                 <span style={styles.memberName}>{m.displayName || m.username}</span>
                 <span style={styles.memberRoleBadge(isPrivileged)}>
-                  {m.role ?? 'member'}
+                  {roleLabel}
                 </span>
               </div>
             );

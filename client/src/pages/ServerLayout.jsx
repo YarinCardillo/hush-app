@@ -8,6 +8,7 @@ import TextChannel from './TextChannel';
 import VoiceChannel from './VoiceChannel';
 import { getInstance, getMyGuilds, getGuildChannels, getGuildMembers, getHandshake } from '../lib/api';
 import * as api from '../lib/api';
+import { importMetadataKey, fromBase64, decryptGuildMetadata } from '../lib/guildMetadata';
 import { createWsClient } from '../lib/ws';
 import { useAuth } from '../contexts/AuthContext';
 import { JWT_KEY, getDeviceId } from '../hooks/useAuth';
@@ -361,18 +362,17 @@ export default function ServerLayout() {
       if (!data.user_id) return;
       if (data.server_id && data.server_id !== serverId) return;
       if (data.user_id === currentUserId) {
-        // Clean up MLS group state for all text channels.
+        // Clean up MLS group state for all text channels and guild metadata group.
         try {
           const textChannelIds = channels.filter((c) => c.type === 'text').map((c) => c.id);
-          if (textChannelIds.length) {
-            const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
-            const deps = { db, mlsStore: mlsStoreLib };
-            await mlsGroup.leaveAllChannelGroups(deps, textChannelIds);
-          }
+          const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+          const deps = { db, mlsStore: mlsStoreLib };
+          if (textChannelIds.length) await mlsGroup.leaveAllChannelGroups(deps, textChannelIds);
+          if (serverId) await mlsGroup.leaveGuildMetadataGroup(deps, serverId);
         } catch (err) {
           console.warn('[mls] Failed to clean up MLS groups on kick:', err);
         }
-        const serverName = activeGuild?.name || 'the server';
+        const serverName = activeGuildName ?? activeGuild?.name ?? 'the server';
         showToast({ message: `You were removed from ${serverName}`, variant: 'error' });
         setGuilds((prev) => prev.filter((g) => g.id !== serverId));
         setTimeout(() => {
@@ -402,15 +402,14 @@ export default function ServerLayout() {
         // Clean up MLS group state for all text channels.
         try {
           const textChannelIds = channels.filter((c) => c.type === 'text').map((c) => c.id);
-          if (textChannelIds.length) {
-            const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
-            const deps = { db, mlsStore: mlsStoreLib };
-            await mlsGroup.leaveAllChannelGroups(deps, textChannelIds);
-          }
+          const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+          const deps = { db, mlsStore: mlsStoreLib };
+          if (textChannelIds.length) await mlsGroup.leaveAllChannelGroups(deps, textChannelIds);
+          if (serverId) await mlsGroup.leaveGuildMetadataGroup(deps, serverId);
         } catch (err) {
           console.warn('[mls] Failed to clean up MLS groups on ban:', err);
         }
-        const serverName = activeGuild?.name || 'the server';
+        const serverName = activeGuildName ?? activeGuild?.name ?? 'the server';
         showToast({ message: `You were banned from ${serverName}`, variant: 'error' });
         setGuilds((prev) => prev.filter((g) => g.id !== serverId));
         setTimeout(() => {
@@ -461,21 +460,37 @@ export default function ServerLayout() {
     return () => wsClient.off('member_muted', handler);
   }, [wsClient, serverId, currentUserId, activeVoiceChannel, handleVoiceLeave, showToast]);
 
-  // member_joined: append new member to the list (guild-scoped)
+  // member_joined: append new member to the list; join guild metadata group if self (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
-    const handler = (data) => {
+    const handler = async (data) => {
       if (!data.member) return;
       if (data.server_id && data.server_id !== serverId) return;
+      const joinedId = data.member.id ?? data.member.userId;
       setMembers((prev) => {
-        const memberId = data.member.id ?? data.member.userId;
-        if (prev.some((m) => (m.id ?? m.userId) === memberId)) return prev;
+        if (prev.some((m) => (m.id ?? m.userId) === joinedId)) return prev;
         return [...prev, data.member];
       });
+
+      // If self joined a new guild, join its metadata MLS group.
+      if (joinedId === currentUserId && data.server_id) {
+        const token = getToken();
+        if (!token || !currentUserId) return;
+        try {
+          const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+          const credential = await mlsStoreLib.getCredential(db);
+          if (!credential) return;
+          const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+          await mlsGroup.joinGuildMetadataGroup(deps, data.server_id);
+        } catch (err) {
+          console.warn('[mls] Failed to join guild metadata group on member_joined:', err);
+        }
+      }
     };
     wsClient.on('member_joined', handler);
     return () => wsClient.off('member_joined', handler);
-  }, [wsClient, serverId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsClient, serverId, currentUserId]);
 
   // member_left: remove from list; navigate self if voluntarily left (guild-scoped)
   // Also cleans up local MLS group state when self leaves.
@@ -488,10 +503,11 @@ export default function ServerLayout() {
         // Clean up MLS group state for all text channels in this guild.
         try {
           const textChannelIds = channels.filter((c) => c.type === 'text').map((c) => c.id);
-          if (textChannelIds.length && currentUserId) {
+          if (currentUserId) {
             const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
             const deps = { db, mlsStore: mlsStoreLib };
-            await mlsGroup.leaveAllChannelGroups(deps, textChannelIds);
+            if (textChannelIds.length) await mlsGroup.leaveAllChannelGroups(deps, textChannelIds);
+            if (serverId) await mlsGroup.leaveGuildMetadataGroup(deps, serverId);
           }
         } catch (err) {
           console.warn('[mls] Failed to clean up MLS groups on leave:', err);
@@ -583,14 +599,14 @@ export default function ServerLayout() {
   }, [wsClient, currentUserId]);
 
   // ---------------------------------------------------------------------------
-  // MLS group joins: join all text channel groups when entering a guild.
+  // MLS group joins: join all text channel groups and guild metadata group
+  // when entering a guild.
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!channels.length || !currentUserId || !authToken) return;
+    if (!channels.length || !currentUserId || !authToken || !serverId) return;
 
     const textChannelIds = channels.filter((c) => c.type === 'text').map((c) => c.id);
-    if (!textChannelIds.length) return;
 
     const token = getToken();
     if (!token) return;
@@ -601,6 +617,17 @@ export default function ServerLayout() {
         const credential = await mlsStoreLib.getCredential(db);
         const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
 
+        // Join guild metadata group (idempotent — returns silently if already joined).
+        try {
+          const metaEpoch = await mlsStoreLib.getGroupEpoch(db, `guild-meta:${serverId}`);
+          if (metaEpoch == null) {
+            await mlsGroup.joinGuildMetadataGroup(deps, serverId);
+          }
+        } catch (err) {
+          console.warn('[mls] Failed to join guild metadata group for', serverId, err);
+        }
+
+        // Join text channel groups.
         for (const chId of textChannelIds) {
           const epoch = await mlsStoreLib.getGroupEpoch(db, chId);
           if (epoch == null) {
@@ -618,7 +645,7 @@ export default function ServerLayout() {
 
     joinMissingGroups();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channels, currentUserId, authToken]);
+  }, [channels, currentUserId, authToken, serverId]);
 
   // ---------------------------------------------------------------------------
   // MLS self-update timer: rotate leaf node key material every 24h.
@@ -805,10 +832,62 @@ export default function ServerLayout() {
     setChannels(Array.isArray(updatedChannels) ? updatedChannels : []);
   }, []);
 
-  // Derive myRole from activeGuild or guild membership in members list
-  const myRole = activeGuild?.myRole
-    ?? members.find((m) => (m.id ?? m.userId) === currentUserId)?.role
-    ?? 'member';
+  // Derive myRole from activeGuild or guild membership in members list.
+  // Also derive myPermissionLevel from the new API field when available.
+  const myMember = members.find((m) => (m.id ?? m.userId) === currentUserId);
+  const myRole = activeGuild?.myRole ?? myMember?.role ?? 'member';
+  const myPermissionLevel = myMember?.permissionLevel
+    ?? activeGuild?.permissionLevel
+    ?? ({ owner: 3, admin: 2, mod: 1, member: 0 }[myRole] ?? 0);
+
+  /**
+   * Returns the raw AES-256-GCM key bytes for a guild's metadata MLS group.
+   * Used by ServerList and ChannelList to decrypt guild/channel names.
+   * Returns null if the guild has no metadata group state locally.
+   *
+   * @param {string} guildId
+   * @returns {Promise<Uint8Array|null>}
+   */
+  const getMetadataKey = useCallback(async (guildId) => {
+    if (!currentUserId || !guildId) return null;
+    try {
+      const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+      if (!db) return null;
+      const credential = await mlsStoreLib.getCredential(db);
+      if (!credential) return null;
+      const deps = { db, token: getToken(), credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+      const { metadataKeyBytes } = await mlsGroup.exportGuildMetadataKey(deps, guildId);
+      return metadataKeyBytes;
+    } catch {
+      return null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId]);
+
+  /**
+   * Returns the decrypted guild name for the currently active guild.
+   * Used to populate guildName prop in ChannelList.
+   */
+  const [activeGuildName, setActiveGuildName] = useState(null);
+
+  useEffect(() => {
+    if (!activeGuild) { setActiveGuildName(null); return; }
+    if (!activeGuild.encryptedMetadata) {
+      setActiveGuildName(activeGuild._localName ?? activeGuild.name ?? null);
+      return;
+    }
+    getMetadataKey(activeGuild.id).then(async (keyBytes) => {
+      if (!keyBytes) { setActiveGuildName(activeGuild._localName ?? null); return; }
+      try {
+        const cryptoKey = await importMetadataKey(keyBytes);
+        const blob = fromBase64(activeGuild.encryptedMetadata);
+        const { name } = await decryptGuildMetadata(cryptoKey, blob);
+        setActiveGuildName(name || null);
+      } catch {
+        setActiveGuildName(activeGuild._localName ?? null);
+      }
+    }).catch(() => setActiveGuildName(activeGuild._localName ?? null));
+  }, [activeGuild, getMetadataKey]);
 
   // No guild selected — show empty state with guild strip and welcome message
   if (!serverId) {
@@ -820,8 +899,10 @@ export default function ServerLayout() {
           activeGuild={null}
           onGuildSelect={handleGuildSelect}
           onGuildCreated={handleGuildCreated}
+          getMetadataKey={getMetadataKey}
           instanceData={instanceData}
           userRole={myRole}
+          userPermissionLevel={myPermissionLevel}
         />
         <div style={{
           flex: 1,
@@ -848,8 +929,10 @@ export default function ServerLayout() {
       activeGuild={activeGuild}
       onGuildSelect={handleGuildSelect}
       onGuildCreated={handleGuildCreated}
+      getMetadataKey={getMetadataKey}
       instanceData={instanceData}
       userRole={myRole}
+      userPermissionLevel={myPermissionLevel}
       compact={isMobile}
     />
   );
@@ -858,10 +941,11 @@ export default function ServerLayout() {
     <ChannelList
       getToken={getToken}
       serverId={serverId}
-      guildName={activeGuild?.name}
+      guildName={activeGuildName ?? activeGuild?.name}
       instanceData={instanceData}
       channels={channels}
       myRole={myRole}
+      myPermissionLevel={myPermissionLevel}
       activeChannelId={channelId}
       onChannelSelect={handleChannelSelect}
       onChannelsUpdated={handleChannelsUpdated}
@@ -964,6 +1048,7 @@ export default function ServerLayout() {
                           onlineUserIds={onlineUserIds}
                           currentUserId={currentUserId}
                           myRole={myRole}
+                          myPermissionLevel={myPermissionLevel}
                           showToast={showToast}
                           onMemberUpdate={handleMemberUpdate}
                           serverId={serverId}
@@ -1007,6 +1092,7 @@ export default function ServerLayout() {
                             onlineUserIds={onlineUserIds}
                             currentUserId={currentUserId}
                             myRole={myRole}
+                            myPermissionLevel={myPermissionLevel}
                             showToast={showToast}
                             onMemberUpdate={handleMemberUpdate}
                             serverId={serverId}
@@ -1059,6 +1145,7 @@ export default function ServerLayout() {
                   onlineUserIds={onlineUserIds}
                   currentUserId={currentUserId}
                   myRole={myRole}
+                  myPermissionLevel={myPermissionLevel}
                   showToast={showToast}
                   onMemberUpdate={handleMemberUpdate}
                   serverId={serverId}

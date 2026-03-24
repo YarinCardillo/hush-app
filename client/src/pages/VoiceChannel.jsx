@@ -500,7 +500,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     <div style={styles.page}>
       <div style={styles.header}>
         <div style={styles.headerLeft}>
-          <span style={styles.roomTitle}>#{channel.name}</span>
+          <span style={styles.roomTitle}>#{channel._displayName ?? channel.name ?? ''}</span>
           {isE2EEEnabled && !isVoiceReconnecting && (
             <span
               title={`Encrypted${voiceEpoch != null ? ` \u00b7 Epoch ${voiceEpoch}` : ''}`}

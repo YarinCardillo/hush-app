@@ -98,7 +98,7 @@ export default function TextChannel({
               </svg>
             </button>
           )}
-          <span style={styles.channelName}>#{channel.name}</span>
+          <span style={styles.channelName}>#{channel._displayName ?? channel.name ?? ''}</span>
         </div>
         {onToggleMembers && (
           <button
