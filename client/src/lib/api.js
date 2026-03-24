@@ -285,11 +285,29 @@ export async function revokeDeviceKey(token, deviceId) {
  * @param {string} deviceId - Device ID for the new device.
  * @returns {Promise<void>}
  */
-export async function certifyNewDevice(token, newDevicePublicKeyBase64, certificate, deviceId) {
+/**
+ * Register a new device key certified by an existing authenticated device.
+ * Used in the multi-device linking flow (Plan 06).
+ *
+ * @param {string} token - JWT of the certifying device.
+ * @param {string} newDevicePublicKeyBase64 - Base64-encoded Ed25519 public key of the new device.
+ * @param {string} certificate - Base64-encoded signature: Sign(IK_existing_priv, IK_new_pub).
+ * @param {string} deviceId - Device ID for the new device.
+ * @param {string} signingDeviceId - Device ID of the certifying (existing) device.
+ * @param {string} [label] - Optional human-readable label for the new device.
+ * @returns {Promise<void>}
+ */
+export async function certifyNewDevice(token, newDevicePublicKeyBase64, certificate, deviceId, signingDeviceId, label) {
   const res = await fetchWithAuth(token, '/api/auth/devices', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ devicePublicKey: newDevicePublicKeyBase64, certificate, deviceId }),
+    body: JSON.stringify({
+      devicePublicKey: newDevicePublicKeyBase64,
+      certificate,
+      deviceId,
+      signingDeviceId,
+      label,
+    }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));

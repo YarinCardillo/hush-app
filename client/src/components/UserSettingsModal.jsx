@@ -4,10 +4,26 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useDevices } from '../hooks/useDevices';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { getDeviceId } from '../hooks/useAuth.js';
+import DeviceManagement from './DeviceManagement.jsx';
 
 const TAB_ACCOUNT = 'account';
 const TAB_APPEARANCE = 'appearance';
 const TAB_AUDIO_VIDEO = 'audio-video';
+const TAB_DEVICES = 'devices';
+
+const VAULT_TIMEOUT_KEY = 'hush_vault_timeout';
+
+const VAULT_TIMEOUT_OPTIONS = [
+  { value: 'browser_close', label: 'On browser close' },
+  { value: 'refresh', label: 'On refresh' },
+  { value: '1m', label: '1 minute' },
+  { value: '15m', label: '15 minutes' },
+  { value: '30m', label: '30 minutes' },
+  { value: '1h', label: '1 hour' },
+  { value: '4h', label: '4 hours' },
+  { value: 'never', label: 'Never' },
+];
 
 const THEME_MODE_KEY = 'hush_theme_mode';
 const DARK_THEME_KEY = 'hush_dark_theme';
@@ -233,17 +249,79 @@ const styles = {
   },
 };
 
+// ─── Logout Confirmation Modal ────────────────────────────
+
+function LogoutConfirmModal({ onConfirm, onCancel, loading }) {
+  return createPortal(
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.85)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 400,
+    }}>
+      <div style={{
+        background: 'var(--hush-surface)',
+        border: '1px solid transparent',
+        padding: '28px',
+        width: '100%',
+        maxWidth: '400px',
+      }}>
+        <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--hush-text)', marginBottom: '12px' }}>
+          Sign out and wipe data?
+        </div>
+        <div style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginBottom: '8px', lineHeight: 1.6 }}>
+          Signing out will delete all local data including your encrypted
+          identity key, MLS group states, and session tokens.
+        </div>
+        <div style={{ fontSize: '0.85rem', color: 'var(--hush-danger)', marginBottom: '24px', lineHeight: 1.6 }}>
+          You will need your 12-word recovery phrase to sign back in.
+        </div>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={loading}>
+            Stay signed in
+          </button>
+          <button type="button" className="btn btn-danger" onClick={onConfirm} disabled={loading}>
+            {loading ? 'Signing out\u2026' : 'Sign out and wipe data'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 // ─── Account Tab ──────────────────────────────────────────
 
 function AccountTab() {
-  const { user, logout } = useAuth();
+  const { user, performLogout, logout } = useAuth();
   const navigate = useNavigate();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [vaultTimeout, setVaultTimeout] = useState(
+    () => localStorage.getItem(VAULT_TIMEOUT_KEY) || 'browser_close',
+  );
 
-  const handleLogout = async () => {
+  const handleLogoutClick = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const handleLogoutConfirm = async () => {
     setLoggingOut(true);
-    await logout();
-    navigate('/');
+    try {
+      // Use scorched-earth wipe if available (BIP39 auth), else standard logout.
+      const wipe = performLogout || logout;
+      await wipe();
+    } finally {
+      navigate('/');
+    }
+  };
+
+  const handleVaultTimeoutChange = (value) => {
+    setVaultTimeout(value);
+    localStorage.setItem(VAULT_TIMEOUT_KEY, value);
   };
 
   return (
@@ -260,22 +338,64 @@ function AccountTab() {
         <div style={styles.fieldValue}>{user?.username || '\u2014'}</div>
       </div>
 
+      <div style={styles.fieldRow}>
+        <label style={styles.fieldLabel}>Vault timeout</label>
+        <select
+          value={vaultTimeout}
+          onChange={(e) => handleVaultTimeoutChange(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '11px 14px',
+            background: 'var(--hush-black)',
+            border: '1px solid transparent',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--hush-text)',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '0.9rem',
+            outline: 'none',
+            cursor: 'pointer',
+            appearance: 'none',
+            transition: 'border-color var(--duration-fast) var(--ease-out)',
+          }}
+        >
+          {VAULT_TIMEOUT_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        {vaultTimeout === 'never' && (
+          <div style={{ ...styles.fieldNote, color: 'var(--hush-danger)' }}>
+            Your key will remain decrypted in memory.
+          </div>
+        )}
+        <div style={styles.fieldNote}>
+          How long before your vault locks and requires PIN re-entry.
+        </div>
+      </div>
+
       <div style={styles.dangerZone}>
         <div style={styles.dangerTitle}>Session</div>
         <div style={styles.dangerAction}>
           <span style={styles.dangerActionText}>
-            Sign out and return to the home page.
+            Sign out and permanently wipe all local data.
           </span>
           <button
             type="button"
             className="btn btn-danger"
-            onClick={handleLogout}
+            onClick={handleLogoutClick}
             disabled={loggingOut}
           >
-            {loggingOut ? 'Signing out\u2026' : 'Log out'}
+            {loggingOut ? 'Signing out\u2026' : 'Sign out'}
           </button>
         </div>
       </div>
+
+      {showLogoutConfirm && (
+        <LogoutConfirmModal
+          onConfirm={handleLogoutConfirm}
+          onCancel={() => setShowLogoutConfirm(false)}
+          loading={loggingOut}
+        />
+      )}
     </>
   );
 }
@@ -452,6 +572,19 @@ function AudioVideoTab() {
   );
 }
 
+// ─── Devices Tab ──────────────────────────────────────────
+
+function DevicesTab() {
+  const { token } = useAuth();
+  const currentDeviceId = getDeviceId();
+  return (
+    <DeviceManagement
+      token={token}
+      currentDeviceId={currentDeviceId}
+    />
+  );
+}
+
 // ─── Main Modal ───────────────────────────────────────────
 
 export default function UserSettingsModal({ onClose }) {
@@ -479,6 +612,7 @@ export default function UserSettingsModal({ onClose }) {
     { key: TAB_ACCOUNT, label: 'Account' },
     { key: TAB_APPEARANCE, label: 'Appearance' },
     { key: TAB_AUDIO_VIDEO, label: 'Audio & Video' },
+    { key: TAB_DEVICES, label: 'Devices' },
   ];
 
   return createPortal(
@@ -548,6 +682,7 @@ export default function UserSettingsModal({ onClose }) {
         {tab === TAB_ACCOUNT && <AccountTab />}
         {tab === TAB_APPEARANCE && <AppearanceTab />}
         {tab === TAB_AUDIO_VIDEO && <AudioVideoTab />}
+        {tab === TAB_DEVICES && <DevicesTab />}
       </div>
 
       <button
