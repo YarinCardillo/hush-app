@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { createGuild, updateGuildMetadata, listServerTemplates } from '../lib/api';
 import * as api from '../lib/api';
@@ -6,19 +6,61 @@ import * as mlsGroup from '../lib/mlsGroup';
 import * as mlsStoreLib from '../lib/mlsStore';
 import * as hushCryptoLib from '../lib/hushCrypto';
 import { encryptGuildMetadata, toBase64, importMetadataKey } from '../lib/guildMetadata';
-import { JWT_KEY, getDeviceId } from '../hooks/useAuth';
+import { getDeviceId } from '../hooks/useAuth';
+import { useInstanceContext } from '../contexts/InstanceContext';
 import modalStyles from './modalStyles';
 
+// ── Instance creation policy annotations ─────────────────────────────────────
+
 /**
- * Guild creation modal — name input + template picker.
+ * Maps instance server_creation_policy to { label, disabled, buttonLabel }.
+ * @param {string|undefined} policy
+ * @returns {{ annotation: string|null, disabled: boolean, buttonLabel: string }}
+ */
+function getPolicyState(policy) {
+  switch (policy) {
+    case 'subscribers':
+      return {
+        annotation: 'Subscription required to create servers.',
+        disabled: true,
+        buttonLabel: 'Create',
+      };
+    case 'disabled':
+      return {
+        annotation: 'Server creation is managed by the instance admin.',
+        disabled: true,
+        buttonLabel: 'Create',
+      };
+    case 'request':
+      return {
+        annotation: 'Your request will be reviewed by the instance admin.',
+        disabled: false,
+        buttonLabel: 'Request creation',
+      };
+    case 'open':
+    case 'any_member':
+    default:
+      return { annotation: null, disabled: false, buttonLabel: 'Create' };
+  }
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+/**
+ * Guild creation modal — server name input, instance picker, template picker.
+ *
+ * Instance picker is ALWAYS visible (even with one instance) to teach the
+ * multi-instance model. Pre-selected to the instance of the currently active
+ * guild, or the first connected instance.
  *
  * @param {{
  *   getToken: () => string|null,
  *   onClose: () => void,
  *   onCreated: (guild: object) => void,
+ *   activeInstanceUrl?: string|null,
  * }} props
  */
-export default function GuildCreateModal({ getToken, onClose, onCreated }) {
+export default function GuildCreateModal({ getToken, onClose, onCreated, activeInstanceUrl }) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,6 +70,40 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [templatesLoaded, setTemplatesLoaded] = useState(false);
+
+  // ── Instance context ───────────────────────────────────────────────────
+
+  const { instanceStates, refreshGuilds } = useInstanceContext();
+
+  /** List of connected instances sorted by URL for stable display order. */
+  const connectedInstances = useMemo(() => {
+    const entries = [];
+    for (const [url, state] of instanceStates) {
+      if (state.connectionState === 'connected') {
+        entries.push({ url, state });
+      }
+    }
+    entries.sort((a, b) => a.url.localeCompare(b.url));
+    return entries;
+  }, [instanceStates]);
+
+  /** Pre-select the active guild's instance, or the first connected instance. */
+  const defaultInstanceUrl = activeInstanceUrl ?? connectedInstances[0]?.url ?? null;
+  const [selectedInstanceUrl, setSelectedInstanceUrl] = useState(defaultInstanceUrl);
+
+  // Update selected instance when context loads if not yet set.
+  useEffect(() => {
+    if (!selectedInstanceUrl && connectedInstances.length > 0) {
+      setSelectedInstanceUrl(connectedInstances[0].url);
+    }
+  }, [connectedInstances, selectedInstanceUrl]);
+
+  // Re-derive policy from selected instance's handshake data.
+  const selectedHandshake = instanceStates.get(selectedInstanceUrl ?? '')?.handshakeData ?? null;
+  const creationPolicy = selectedHandshake?.server_creation_policy ?? selectedHandshake?.server_creation_policy_value ?? null;
+  const { annotation, disabled: policyDisabled, buttonLabel } = getPolicyState(creationPolicy);
+
+  // ── Modal lifecycle ────────────────────────────────────────────────────
 
   useEffect(() => {
     const t = requestAnimationFrame(() => setIsOpen(true));
@@ -42,35 +118,47 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
     return () => document.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
-  // Load templates on mount
+  // ── Load templates for selected instance ──────────────────────────────
+
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
+    const effectiveToken = selectedInstanceUrl
+      ? (instanceStates.get(selectedInstanceUrl)?.jwt ?? getToken())
+      : getToken();
+    if (!effectiveToken) return;
+
+    setTemplates([]);
+    setSelectedTemplateId(null);
+    setTemplatesLoaded(false);
+
     (async () => {
       try {
-        const data = await listServerTemplates(token);
+        const data = await listServerTemplates(effectiveToken, selectedInstanceUrl ?? undefined);
         if (Array.isArray(data) && data.length > 0) {
           setTemplates(data);
           const def = data.find(t => t.isDefault);
           setSelectedTemplateId(def ? def.id : data[0].id);
         }
       } catch {
-        // Templates are optional — if loading fails, server uses its default
+        // Templates are optional — server uses its default on failure.
       }
       setTemplatesLoaded(true);
     })();
-  }, [getToken]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInstanceUrl]);
+
+  // ── MLS deps builder ──────────────────────────────────────────────────
 
   /**
    * Build the MLS deps object needed by mlsGroup functions.
    * @param {IDBDatabase} db
    * @param {string} token
-   * @returns {Promise<object>}
+   * @returns {object}
    */
-  const buildMlsDeps = async (db, token) => {
-    const credential = await mlsStoreLib.getCredential(db);
-    return { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+  const buildMlsDeps = (db, token) => {
+    return { db, token, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
   };
+
+  // ── Submit ────────────────────────────────────────────────────────────
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -80,26 +168,32 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
       setError('Server name is required.');
       return;
     }
-    const token = getToken();
-    if (!token) {
+
+    // Use per-instance JWT for the selected instance, fall back to prop getToken().
+    const effectiveToken = selectedInstanceUrl
+      ? (instanceStates.get(selectedInstanceUrl)?.jwt ?? getToken())
+      : getToken();
+    const effectiveBaseUrl = selectedInstanceUrl ?? undefined;
+
+    if (!effectiveToken) {
       setError('Not authenticated.');
       return;
     }
+
     setLoading(true);
     try {
       // Step 1: Create the guild with null encryptedMetadata to get its UUID.
-      const guild = await createGuild(token, null, selectedTemplateId);
+      const guild = await createGuild(effectiveToken, null, selectedTemplateId, effectiveBaseUrl);
 
       // Step 2: Create the guild metadata MLS group (creator is the sole member).
-      // If MLS is not set up yet (no credential), fall back to plaintext name.
       let mlsSuccess = false;
       try {
         const db = await mlsStoreLib.openDB(getDeviceId());
         if (db) {
-          const deps = await buildMlsDeps(db, token);
+          const credential = await mlsStoreLib.getCredential(db);
+          const deps = { ...buildMlsDeps(db, effectiveToken), credential };
           await mlsGroup.createGuildMetadataGroup(deps, guild.id);
 
-          // Step 3: Export the metadata key and encrypt the guild name.
           const { metadataKeyBytes } = await mlsGroup.exportGuildMetadataKey(deps, guild.id);
           const symmetricKey = await importMetadataKey(metadataKeyBytes);
           const encBlob = await encryptGuildMetadata(symmetricKey, {
@@ -109,20 +203,21 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
           });
           const encryptedMetadata = toBase64(encBlob);
 
-          // Step 4: Upload the encrypted metadata blob to the server.
-          await updateGuildMetadata(token, guild.id, encryptedMetadata);
+          await updateGuildMetadata(effectiveToken, guild.id, encryptedMetadata, effectiveBaseUrl);
           guild.encryptedMetadata = encryptedMetadata;
           mlsSuccess = true;
         }
       } catch (mlsErr) {
-        // MLS setup failed — guild still created, name remains unset on server.
-        // Non-fatal: user can retry by viewing server settings.
         console.warn('[GuildCreateModal] MLS metadata group setup failed:', mlsErr);
       }
 
-      // Attach plaintext name for local UI use if MLS failed (name never sent to server).
       if (!mlsSuccess) {
         guild._localName = trimmed;
+      }
+
+      // Step 3: Refresh guild list for the selected instance.
+      if (selectedInstanceUrl) {
+        refreshGuilds(selectedInstanceUrl).catch(() => {});
       }
 
       onCreated(guild);
@@ -132,6 +227,8 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
       setLoading(false);
     }
   };
+
+  // ── Render ────────────────────────────────────────────────────────────
 
   return createPortal(
     <div
@@ -144,6 +241,7 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
       >
         <div style={modalStyles.title}>Create a server</div>
         <form style={modalStyles.form} onSubmit={handleSubmit}>
+          {/* Server name */}
           <div>
             <label htmlFor="guild-name" style={modalStyles.fieldLabel}>Server name</label>
             <input
@@ -160,7 +258,47 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
             />
           </div>
 
-          {/* Template picker — only shown when templates are available */}
+          {/* Instance picker — ALWAYS visible, even with 1 instance */}
+          <div>
+            <label htmlFor="guild-instance" style={modalStyles.fieldLabel}>Instance</label>
+            {connectedInstances.length === 0 ? (
+              <div style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', padding: '8px 0' }}>
+                No instances connected.
+              </div>
+            ) : (
+              <select
+                id="guild-instance"
+                className="input"
+                value={selectedInstanceUrl ?? ''}
+                onChange={(e) => setSelectedInstanceUrl(e.target.value || null)}
+                style={{ cursor: 'pointer' }}
+              >
+                {connectedInstances.map(({ url }) => {
+                  const host = (() => {
+                    try { return new URL(url).host; } catch { return url; }
+                  })();
+                  return (
+                    <option key={url} value={url}>{host}</option>
+                  );
+                })}
+              </select>
+            )}
+          </div>
+
+          {/* Policy annotation */}
+          {annotation && (
+            <div style={{
+              padding: '8px 12px',
+              background: policyDisabled ? 'var(--hush-danger-ghost)' : 'var(--hush-amber-ghost)',
+              color: policyDisabled ? 'var(--hush-danger)' : 'var(--hush-amber)',
+              fontSize: '0.8rem',
+              borderRadius: 0,
+            }}>
+              {annotation}
+            </div>
+          )}
+
+          {/* Template picker — only shown when multiple templates exist */}
           {templatesLoaded && templates.length > 1 && (
             <div style={{ marginTop: '4px' }}>
               <label style={modalStyles.fieldLabel}>Template</label>
@@ -204,8 +342,12 @@ export default function GuildCreateModal({ getToken, onClose, onCreated }) {
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={loading || !name.trim()}>
-              {loading ? 'Creating\u2026' : 'Create'}
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={loading || !name.trim() || policyDisabled || connectedInstances.length === 0}
+            >
+              {loading ? 'Creating\u2026' : buttonLabel}
             </button>
           </div>
         </form>

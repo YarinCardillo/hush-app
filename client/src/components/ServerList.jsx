@@ -760,6 +760,7 @@ export default function ServerList({
           getToken={getToken}
           onClose={() => setShowCreateModal(false)}
           onCreated={handleGuildCreated}
+          activeInstanceUrl={activeGuild?.instanceUrl ?? null}
         />
       )}
 

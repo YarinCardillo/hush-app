@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getInviteInfo, claimInvite } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useInstanceContext } from '../contexts/InstanceContext';
+import { slugify } from '../lib/slugify';
 import { decodeGuildNameFromInvite } from '../lib/guildMetadata';
 
 const styles = {
@@ -28,8 +30,19 @@ const styles = {
     fontSize: '1.4rem',
     fontWeight: 300,
     color: 'var(--hush-text)',
-    marginBottom: '24px',
+    marginBottom: '8px',
     letterSpacing: '-0.02em',
+  },
+  instanceHost: {
+    fontSize: '0.8rem',
+    color: 'var(--hush-text-muted)',
+    marginBottom: '24px',
+    fontFamily: 'var(--font-mono)',
+  },
+  memberCount: {
+    fontSize: '0.85rem',
+    color: 'var(--hush-text-muted)',
+    marginBottom: '24px',
   },
   error: {
     padding: '10px 14px',
@@ -38,19 +51,6 @@ const styles = {
     fontSize: '0.85rem',
     marginBottom: '16px',
     overflowWrap: 'break-word',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-    marginBottom: '16px',
-  },
-  fieldLabel: {
-    display: 'block',
-    fontSize: '0.8rem',
-    fontWeight: 500,
-    color: 'var(--hush-text-secondary)',
-    marginBottom: '6px',
   },
   actions: {
     display: 'flex',
@@ -74,40 +74,54 @@ function inviteErrorMessage(err) {
 }
 
 /**
- * Two-phase guild invite page:
- * - Unauthenticated: shows register form, then claims invite after registration.
- * - Authenticated: auto-claims the invite and navigates to /servers/${serverId}/channels.
+ * Invite page — handles two URL patterns:
  *
- * serverId comes from two sources:
- * 1. getInviteInfo response (before claim) — available immediately after page load
- * 2. claimInvite response — used to navigate after successful claim
+ * 1. /invite/:code                   — same-instance invite (legacy)
+ * 2. /join/:instance/:code           — cross-instance invite (new)
+ *
+ * Cross-instance flow:
+ *   - Show confirm modal with guild name + instance host
+ *   - On confirm: bootInstance(instanceUrl) -> claimInvite -> navigate to guild
+ *
+ * Same-instance flow:
+ *   - Authenticated: auto-claim invite -> navigate to guild
+ *   - Unauthenticated: show auth prompt (redirect to home)
+ *
+ * Vault locked: invite URL is queued in sessionStorage and processed after unlock.
  */
 export default function Invite() {
-  const { code } = useParams();
+  const { code, instance: instanceParam } = useParams();
   const navigate = useNavigate();
-  const { token, isAuthenticated, register: authRegister } = useAuth();
+  const { isAuthenticated } = useAuth();
+  const { bootInstance, getTokenForInstance, instanceStates, mergedGuilds } = useInstanceContext();
+
+  /** Whether this is a cross-instance invite. */
+  const isCrossInstance = Boolean(instanceParam);
+
+  /** Canonical base URL for the remote instance (cross-instance only). */
+  const instanceUrl = useMemo(() => {
+    if (!instanceParam) return null;
+    return `https://${instanceParam}`;
+  }, [instanceParam]);
 
   const [invite, setInvite] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [joining, setJoining] = useState(false);
+  const [booting, setBooting] = useState(false);
 
-  // Read guild name from URL hash fragment (#name=...) — never fetched from server.
-  // The invite creator embeds the encrypted guild name in the fragment so the server
-  // remains blind to which guild the link is for.
+  // Guild name from URL fragment (#name=...) — server never receives it.
   const guildNameFromFragment = useMemo(() => {
-    const hash = window.location.hash.slice(1); // remove leading #
+    const hash = window.location.hash.slice(1);
     const params = new URLSearchParams(hash);
     const encoded = params.get('name');
     return encoded ? decodeGuildNameFromInvite(encoded) : null;
   }, []);
 
-  // Registration form state (unauthenticated flow)
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [registerLoading, setRegisterLoading] = useState(false);
+  const guildName = guildNameFromFragment ?? 'a guild';
 
-  // Fetch invite info on mount (public endpoint)
+  // ── Invite info fetch ──────────────────────────────────────────────────
+
   useEffect(() => {
     if (!code) {
       setLoading(false);
@@ -115,7 +129,8 @@ export default function Invite() {
       return;
     }
     let cancelled = false;
-    getInviteInfo(code)
+    const baseUrl = instanceUrl ?? undefined;
+    getInviteInfo(code, baseUrl)
       .then((data) => {
         if (!cancelled) {
           setInvite(data);
@@ -132,45 +147,100 @@ export default function Invite() {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [code]);
+  }, [code, instanceUrl]);
 
-  // Authenticated flow: auto-claim invite and navigate to the guild
+  // ── Queue invite URL when vault is locked ─────────────────────────────
+
   useEffect(() => {
-    if (!isAuthenticated || !token || !invite || !code) return;
-    claimInvite(token, code)
+    if (!isAuthenticated) {
+      // Store invite URL so Home.jsx can redirect back after authentication.
+      sessionStorage.setItem('hush_pending_invite', window.location.href);
+    }
+  }, [isAuthenticated]);
+
+  // ── Same-instance authenticated flow: auto-claim ──────────────────────
+
+  useEffect(() => {
+    if (isCrossInstance) return; // handled separately
+    if (!isAuthenticated || !invite || !code) return;
+
+    // Get token from the first (only) connected instance.
+    const firstEntry = [...instanceStates.values()][0];
+    const token = firstEntry?.jwt ?? null;
+    if (!token) return;
+    const firstInstanceUrl = [...instanceStates.keys()][0] ?? undefined;
+
+    setJoining(true);
+    claimInvite(token, code, firstInstanceUrl)
       .then((result) => {
         const serverId = result?.serverId ?? invite?.serverId;
         if (serverId) {
+          const guild = mergedGuilds.find((g) => g.id === serverId);
+          if (guild?.instanceUrl) {
+            const host = (() => {
+              try { return new URL(guild.instanceUrl).host; } catch { return null; }
+            })();
+            const slug = slugify(guild._localName ?? guild.name ?? serverId);
+            if (host) {
+              navigate(`/${host}/${slug}`, { replace: true });
+              return;
+            }
+          }
           navigate(`/servers/${serverId}/channels`, { replace: true });
         } else {
-          navigate('/', { replace: true });
+          navigate('/home', { replace: true });
         }
       })
-      .catch((err) => setError(inviteErrorMessage(err)));
-  }, [isAuthenticated, token, invite, code, navigate]);
+      .catch((err) => {
+        setError(inviteErrorMessage(err));
+        setJoining(false);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, invite, code, isCrossInstance]);
 
-  const handleRegisterAndClaim = useCallback(async (e) => {
-    e.preventDefault();
+  // ── Cross-instance: user pressed "Join" ──────────────────────────────
+
+  const handleCrossInstanceJoin = useCallback(async () => {
+    if (!instanceUrl || !code) return;
     setError(null);
+    setBooting(true);
 
-    const trimmedUsername = username.trim();
-    const trimmedDisplayName = displayName.trim();
-    if (!trimmedUsername || !password) {
-      setError('Username and password are required.');
-      return;
-    }
-
-    setRegisterLoading(true);
     try {
-      // Register via AuthContext so token + user state are set globally.
-      // After authRegister, the authenticated useEffect above will auto-claim the invite.
-      await authRegister(trimmedUsername, password, trimmedDisplayName || trimmedUsername);
+      // Step 1: Boot the remote instance (handshake -> auth -> WS -> guild fetch).
+      await bootInstance(instanceUrl);
+
+      // Step 2: Get the JWT for the now-connected instance.
+      const jwt = getTokenForInstance(instanceUrl);
+      if (!jwt) throw new Error('Authentication failed for instance.');
+
+      // Step 3: Claim the invite on the remote instance.
+      setJoining(true);
+      const result = await claimInvite(jwt, code, instanceUrl);
+      const serverId = result?.serverId ?? invite?.serverId;
+
+      // Step 4: Navigate to the guild using instance-aware URL.
+      if (serverId) {
+        const slug = slugify(guildName);
+        navigate(`/${instanceParam}/${slug}`, { replace: true });
+      } else {
+        navigate(`/${instanceParam}`, { replace: true });
+      }
     } catch (err) {
       setError(inviteErrorMessage(err));
     } finally {
-      setRegisterLoading(false);
+      setBooting(false);
+      setJoining(false);
     }
-  }, [username, password, displayName, authRegister]);
+  }, [instanceUrl, code, bootInstance, getTokenForInstance, invite, guildName, instanceParam, navigate]);
+
+  // ── Unauthenticated flow: redirect to / with pending invite queued ────
+
+  const handleUnauthenticated = useCallback(() => {
+    sessionStorage.setItem('hush_pending_invite', window.location.href);
+    navigate('/', { replace: true });
+  }, [navigate]);
+
+  // ── Render ─────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -195,11 +265,55 @@ export default function Invite() {
 
   if (!invite) return null;
 
-  // Prefer guild name from URL fragment (never stored on server).
-  // Fall back to "a guild" for backward compatibility with old invite links.
-  const guildName = guildNameFromFragment ?? 'a guild';
+  // ── Cross-instance invite UI ──────────────────────────────────────────
 
-  // Authenticated: show redirecting state while auto-claim runs
+  if (isCrossInstance) {
+    const memberCount = invite.memberCount ?? invite.member_count ?? null;
+    const isConnecting = booting || joining;
+
+    return (
+      <div style={styles.page}>
+        <div className="glass" style={styles.card}>
+          <p style={styles.title}>You're invited to join</p>
+          <p style={styles.guildName}>{guildName}</p>
+          <p style={styles.instanceHost}>hosted on {instanceParam}</p>
+          {memberCount != null && (
+            <p style={styles.memberCount}>{memberCount} member{memberCount !== 1 ? 's' : ''}</p>
+          )}
+          {error && <p style={styles.error}>{error}</p>}
+          {!isAuthenticated ? (
+            <div style={styles.actions}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleUnauthenticated}
+                style={{ padding: '12px' }}
+              >
+                Sign in to join
+              </button>
+              <a href="/" style={styles.link}>Return to home</a>
+            </div>
+          ) : (
+            <div style={styles.actions}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleCrossInstanceJoin}
+                disabled={isConnecting}
+                style={{ padding: '12px' }}
+              >
+                {booting ? 'Connecting to instance…' : joining ? 'Joining…' : 'Join'}
+              </button>
+              <a href="/" style={styles.link}>Return to home</a>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Same-instance invite UI ───────────────────────────────────────────
+
   if (isAuthenticated) {
     return (
       <div style={styles.page}>
@@ -220,67 +334,24 @@ export default function Invite() {
     );
   }
 
-  // Unauthenticated: show registration form
+  // Unauthenticated same-instance: redirect to home with invite queued.
   return (
     <div style={styles.page}>
       <div className="glass" style={styles.card}>
         <p style={styles.title}>You're invited to join</p>
         <p style={styles.guildName}>{guildName}</p>
         {error && <p style={styles.error}>{error}</p>}
-        <form style={styles.form} onSubmit={handleRegisterAndClaim}>
-          <div>
-            <label htmlFor="invite-username" style={styles.fieldLabel}>Username</label>
-            <input
-              id="invite-username"
-              name="username"
-              className="input"
-              type="text"
-              placeholder="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              maxLength={32}
-              autoComplete="username"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="invite-display-name" style={styles.fieldLabel}>Display name (optional)</label>
-            <input
-              id="invite-display-name"
-              name="displayName"
-              className="input"
-              type="text"
-              placeholder="Display name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              maxLength={64}
-              autoComplete="name"
-            />
-          </div>
-          <div>
-            <label htmlFor="invite-password" style={styles.fieldLabel}>Password</label>
-            <input
-              id="invite-password"
-              name="password"
-              className="input"
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-              required
-            />
-          </div>
+        <div style={styles.actions}>
           <button
-            type="submit"
+            type="button"
             className="btn btn-primary"
-            disabled={registerLoading}
-            style={{ width: '100%', padding: '12px' }}
+            onClick={handleUnauthenticated}
+            style={{ padding: '12px' }}
           >
-            {registerLoading ? 'Creating account…' : 'Create account and join'}
+            Sign in to join
           </button>
-        </form>
-        <a href="/" style={styles.link}>Return to home</a>
+          <a href="/" style={styles.link}>Return to home</a>
+        </div>
       </div>
     </div>
   );
