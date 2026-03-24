@@ -16,7 +16,7 @@
 import { createContext, useContext } from 'react';
 import { useInstances } from '../hooks/useInstances.js';
 
-const InstanceContext = createContext(null);
+export const InstanceContext = createContext(null);
 
 /**
  * Provides multi-instance connection state to the component tree.

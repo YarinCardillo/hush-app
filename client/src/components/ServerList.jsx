@@ -1,10 +1,31 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useContext } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import UserSettingsModal from './UserSettingsModal';
 import GuildCreateModal from './GuildCreateModal';
+import GuildContextMenu from './GuildContextMenu';
 import { decryptGuildMetadata, fromBase64, importMetadataKey } from '../lib/guildMetadata';
+import { InstanceContext } from '../contexts/InstanceContext.jsx';
 
 const ICON_SIZE = 48;
 const STRIP_WIDTH = 72;
+
+/** LocalStorage key for grouped sidebar toggle. */
+const LS_GROUPED_KEY = 'hush_grouped_sidebar';
 
 /**
  * Palette of muted background colors for guild icons.
@@ -52,6 +73,16 @@ function getInitials(name) {
   return name.slice(0, 2).toUpperCase();
 }
 
+/**
+ * Extracts the hostname from an instance URL for display.
+ * @param {string} url
+ * @returns {string}
+ */
+function instanceDomain(url) {
+  if (!url) return '';
+  try { return new URL(url).hostname; } catch { return url; }
+}
+
 const styles = {
   strip: {
     width: STRIP_WIDTH,
@@ -65,7 +96,7 @@ const styles = {
     gap: '8px',
     overflowY: 'auto',
   },
-  guildBtn: (isActive, bgColor) => ({
+  guildBtn: (isActive, bgColor, isOffline) => ({
     width: ICON_SIZE,
     height: ICON_SIZE,
     borderRadius: '50%',
@@ -84,6 +115,9 @@ const styles = {
     overflow: 'hidden',
     flexShrink: 0,
     boxSizing: 'border-box',
+    opacity: isOffline ? 0.5 : 1,
+    pointerEvents: 'auto',
+    position: 'relative',
   }),
   addBtn: {
     width: ICON_SIZE,
@@ -107,6 +141,19 @@ const styles = {
     background: 'var(--hush-border)',
     flexShrink: 0,
   },
+  instanceLabel: {
+    fontSize: '0.6rem',
+    fontWeight: 600,
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    color: 'var(--hush-text-muted)',
+    textAlign: 'center',
+    padding: '2px 0',
+    maxWidth: ICON_SIZE + 8,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
   settingsBtn: {
     width: ICON_SIZE,
     height: ICON_SIZE,
@@ -122,25 +169,292 @@ const styles = {
     flexShrink: 0,
     marginTop: 'auto',
   },
+  dmSection: {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 4,
+    paddingBottom: 4,
+  },
+  dmBtn: (isExpanded) => ({
+    width: ICON_SIZE,
+    height: ICON_SIZE,
+    borderRadius: '50%',
+    border: isExpanded ? '2px solid var(--hush-amber)' : '2px solid transparent',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'var(--hush-elevated)',
+    color: isExpanded ? 'var(--hush-amber)' : 'var(--hush-text-secondary)',
+    transition: 'all var(--duration-fast) var(--ease-out)',
+    flexShrink: 0,
+    position: 'relative',
+  }),
+  offlineDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 10,
+    height: 10,
+    borderRadius: '50%',
+    background: 'var(--hush-text-ghost)',
+    border: '2px solid var(--hush-surface)',
+  },
 };
 
+// ── SortableGuildIcon ─────────────────────────────────────────────────────────
+
 /**
- * Vertical guild icon strip sidebar.
+ * A draggable guild icon using @dnd-kit/sortable.
+ * Supports right-click context menu and mobile long-press (500ms).
+ */
+function SortableGuildIcon({
+  guild,
+  isActive,
+  isOffline,
+  displayName,
+  onGuildSelect,
+  onContextMenu,
+  onLongPress,
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: guild.id,
+  });
+
+  const bg = guildColor(guild.id);
+  const domain = instanceDomain(guild.instanceUrl);
+  const tooltip = domain ? `${displayName}\n${domain}` : displayName;
+
+  const longPressTimerRef = useRef(null);
+  const touchStartRef = useRef(null);
+
+  const handleTouchStart = useCallback((e) => {
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    longPressTimerRef.current = setTimeout(() => {
+      onLongPress?.(guild, { x: touch.clientX, y: touch.clientY });
+    }, 500);
+  }, [guild, onLongPress]);
+
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    touchStartRef.current = null;
+  }, []);
+
+  const handleTouchMove = useCallback((e) => {
+    if (!touchStartRef.current) return;
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - touchStartRef.current.x);
+    const dy = Math.abs(touch.clientY - touchStartRef.current.y);
+    if (dx > 10 || dy > 10) cancelLongPress();
+  }, [cancelLongPress]);
+
+  const style = {
+    ...styles.guildBtn(isActive, bg, isOffline),
+    transform: CSS.Transform.toString(transform),
+    transition: isDragging ? 'none' : transition,
+    boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.5)' : undefined,
+    zIndex: isDragging ? 100 : undefined,
+    cursor: isDragging ? 'grabbing' : 'pointer',
+  };
+
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      style={style}
+      title={tooltip}
+      aria-label={displayName}
+      aria-pressed={isActive}
+      onClick={() => !isDragging && onGuildSelect?.(guild)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu?.(guild, { x: e.clientX, y: e.clientY });
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={cancelLongPress}
+      onTouchMove={handleTouchMove}
+      onMouseEnter={(e) => {
+        if (!isActive && !isDragging) {
+          e.currentTarget.style.opacity = isOffline ? '0.35' : '0.8';
+        }
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.opacity = isOffline ? '0.5' : '1';
+      }}
+      {...attributes}
+      {...listeners}
+    >
+      {getInitials(displayName)}
+      {isOffline && <span style={styles.offlineDot} aria-label="offline" />}
+    </button>
+  );
+}
+
+// ── DmSection ─────────────────────────────────────────────────────────────────
+
+/**
+ * Collapsible Direct Messages section at the top of the sidebar.
+ * DMs are identified by the isDm flag on guild objects.
+ * Phase U scaffolding — actual DM routing wired in a later plan.
+ *
+ * @param {{ dmGuilds: object[], onGuildSelect: function }} props
+ */
+function DmSection({ dmGuilds, onGuildSelect }) {
+  const [expanded, setExpanded] = useState(false);
+  // Unread count is 0 for Phase U scaffolding; wired to state in a later plan.
+  const totalUnread = 0;
+
+  return (
+    <div style={styles.dmSection} data-testid="dm-section">
+      <button
+        type="button"
+        style={styles.dmBtn(expanded)}
+        title="Direct Messages"
+        aria-label={`Direct Messages${totalUnread > 0 ? ` (${totalUnread} unread)` : ''}`}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {/* Chat bubble icon (Lucide-style) */}
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        {totalUnread > 0 && (
+          <span style={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            background: 'var(--hush-danger)',
+            color: '#fff',
+            fontSize: '0.6rem',
+            fontWeight: 600,
+            borderRadius: '50%',
+            width: 16,
+            height: 16,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '2px solid var(--hush-surface)',
+          }}>
+            {totalUnread > 9 ? '9+' : totalUnread}
+          </span>
+        )}
+      </button>
+
+      {expanded && (
+        <div style={{
+          width: '100%',
+          background: 'var(--hush-elevated)',
+          borderTop: '1px solid var(--hush-border)',
+        }}>
+          {dmGuilds.length === 0 ? (
+            <div style={{
+              padding: '8px',
+              fontSize: '0.7rem',
+              color: 'var(--hush-text-muted)',
+              textAlign: 'center',
+            }}>
+              No direct messages yet
+            </div>
+          ) : (
+            dmGuilds.map((guild) => (
+              <button
+                key={guild.id}
+                type="button"
+                onClick={() => onGuildSelect?.(guild)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  padding: '6px 8px',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--hush-text-secondary)',
+                  fontSize: '0.75rem',
+                  textAlign: 'left',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {guild._localName ?? guild.id.slice(0, 8)}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── GroupSection ──────────────────────────────────────────────────────────────
+
+/**
+ * Renders either a flat list or an instance-labeled group of guild icons.
+ */
+function GroupSection({
+  group,
+  activeGuild,
+  isGrouped,
+  isGuildOffline,
+  getGuildDisplayName,
+  onGuildSelect,
+  onContextMenu,
+  onLongPress,
+}) {
+  return (
+    <>
+      {isGrouped && group.type === 'group' && group.instanceUrl !== '__default__' && (
+        <div style={styles.instanceLabel} title={group.instanceUrl}>
+          {instanceDomain(group.instanceUrl)}
+        </div>
+      )}
+      {group.guilds.map((guild) => (
+        <SortableGuildIcon
+          key={guild.id}
+          guild={guild}
+          isActive={guild.id === activeGuild?.id}
+          isOffline={isGuildOffline(guild)}
+          displayName={getGuildDisplayName(guild)}
+          onGuildSelect={onGuildSelect}
+          onContextMenu={onContextMenu}
+          onLongPress={onLongPress}
+        />
+      ))}
+    </>
+  );
+}
+
+// ── ServerList ────────────────────────────────────────────────────────────────
+
+/**
+ * Vertical guild icon strip sidebar with multi-instance support.
+ *
+ * When wrapped in InstanceProvider, reads mergedGuilds, instanceStates,
+ * guildOrder and setGuildOrder from context. Otherwise falls back to the
+ * `guilds` prop for single-instance backward compatibility.
  *
  * @param {{
  *   getToken: () => string|null,
- *   guilds: Array<object>,
- *   activeGuild: object|null,
+ *   guilds?: Array<object>,
+ *   activeGuild?: object|null,
  *   onGuildSelect: (guild: object) => void,
  *   onGuildCreated: (guild: object) => void,
- *   getMetadataKey: (guildId: string) => Promise<Uint8Array|null>,
- *   instanceData: object|null,
- *   userPermissionLevel: number,
+ *   getMetadataKey?: (guildId: string) => Promise<Uint8Array|null>,
+ *   instanceData?: object|null,
+ *   userRole?: string,
+ *   userPermissionLevel?: number,
+ *   compact?: boolean,
  * }} props
  */
 export default function ServerList({
   getToken,
-  guilds = [],
+  guilds: guildsProp = [],
   activeGuild = null,
   onGuildSelect,
   onGuildCreated,
@@ -150,13 +464,53 @@ export default function ServerList({
   userPermissionLevel = 0,
   compact = false,
 }) {
+  // Read InstanceContext without throwing — null when InstanceProvider is absent.
+  const instanceCtx = useContext(InstanceContext);
+
+  const mergedGuildsFromCtx = instanceCtx?.mergedGuilds ?? null;
+  const instanceStates = instanceCtx?.instanceStates ?? new Map();
+  const guildOrderFromCtx = instanceCtx?.guildOrder ?? [];
+  const setGuildOrder = instanceCtx?.setGuildOrder ?? null;
+
+  // Multi-instance guilds take precedence over legacy prop.
+  const guilds = mergedGuildsFromCtx ?? guildsProp;
+
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  // Map<guildId, { name: string, icon: string|null }> — decrypted metadata cache
+
+  /** Map<guildId, { name: string, icon: string|null }> — decrypted metadata cache */
   const [metadataCache, setMetadataCache] = useState(new Map());
   const decryptingRef = useRef(new Set());
 
-  // Decrypt guild metadata when guilds or keys change.
+  /** Active context menu: { guild, position: { x, y } } | null */
+  const [contextMenu, setContextMenu] = useState(null);
+
+  /** Whether guilds are displayed grouped by instance domain. */
+  const [isGrouped] = useState(
+    () => localStorage.getItem(LS_GROUPED_KEY) === 'true',
+  );
+
+  /**
+   * Local drag-and-drop order (array of guild IDs).
+   * Seeded from context guildOrder on mount; updated on drag-end.
+   */
+  const [localOrder, setLocalOrder] = useState([]);
+
+  // Sync local order from context when IDB order loads.
+  useEffect(() => {
+    if (guildOrderFromCtx.length > 0) {
+      setLocalOrder(guildOrderFromCtx);
+    }
+  }, [guildOrderFromCtx]);
+
+  // DnD sensors: 5px activation distance prevents accidental drags on click.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  // ── Metadata decryption ───────────────────────────────────────────────────
+
   useEffect(() => {
     if (!getMetadataKey || guilds.length === 0) return;
 
@@ -188,56 +542,180 @@ export default function ServerList({
     }
   }, [guilds, getMetadataKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /**
-   * Returns the display name for a guild — from decrypted metadata cache,
-   * or from _localName (set by GuildCreateModal before upload), or falls back
-   * to the guild UUID as last resort.
-   * @param {object} guild
-   * @returns {string}
-   */
+  // ── Display name resolution ───────────────────────────────────────────────
+
   const getGuildDisplayName = useCallback((guild) => {
     const cached = metadataCache.get(guild.id);
     if (cached?.name) return cached.name;
     if (guild._localName) return guild._localName;
-    if (guild.name) return guild.name; // backward compat during migration
-    return guild.id.slice(0, 8); // UUID prefix as last resort
+    if (guild.name) return guild.name;
+    return guild.id.slice(0, 8);
   }, [metadataCache]);
 
-  // Allow guild creation based on permission level and instance policy.
-  // Supports both new permissionLevel integers and legacy role strings during transition.
-  const isAdminOrHigher = userPermissionLevel >= 2 || userRole === 'admin' || userRole === 'owner';
-  const policy = instanceData?.guildDiscovery ?? instanceData?.serverCreationPolicy ?? 'open';
-  const showAddButton = policy === 'admin_only' ? isAdminOrHigher : true;
+  // ── Guild ordering ────────────────────────────────────────────────────────
+
+  /**
+   * Returns guilds sorted by localOrder. New guilds not in localOrder append
+   * at the end in their original array order.
+   */
+  const getSortedGuilds = useCallback(() => {
+    if (localOrder.length === 0) return guilds;
+    const orderIndex = new Map(localOrder.map((id, i) => [id, i]));
+    return [...guilds].sort((a, b) => {
+      const ai = orderIndex.get(a.id) ?? Infinity;
+      const bi = orderIndex.get(b.id) ?? Infinity;
+      return ai - bi;
+    });
+  }, [guilds, localOrder]);
+
+  // ── DnD handlers ─────────────────────────────────────────────────────────
+
+  const handleDragEnd = useCallback((event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const currentOrder = getSortedGuilds().map((g) => g.id);
+    const oldIndex = currentOrder.indexOf(String(active.id));
+    const newIndex = currentOrder.indexOf(String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const newOrder = arrayMove(currentOrder, oldIndex, newIndex);
+    setLocalOrder(newOrder);
+    // Fire-and-forget persist via context.
+    setGuildOrder?.(newOrder);
+  }, [getSortedGuilds, setGuildOrder]);
+
+  // ── Context menu handlers ─────────────────────────────────────────────────
+
+  const handleContextMenu = useCallback((guild, position) => {
+    setContextMenu({ guild, position });
+  }, []);
+
+  const handleLongPress = useCallback((guild, position) => {
+    setContextMenu({ guild, position });
+  }, []);
+
+  const handleContextMenuClose = useCallback(() => setContextMenu(null), []);
+
+  const handleMute = useCallback((guild, durationMs) => {
+    const key = `hush_muted_${guild.id}`;
+    if (durationMs === null) {
+      localStorage.setItem(key, 'forever');
+    } else {
+      localStorage.setItem(key, String(Date.now() + durationMs));
+    }
+  }, []);
+
+  const handleCopyInvite = useCallback(async (guild) => {
+    try {
+      await navigator.clipboard.writeText(
+        `${window.location.origin}/invite?guild=${guild.id}`,
+      );
+    } catch {
+      // Clipboard API not available in this environment — silently skip.
+    }
+  }, []);
+
+  const handleMarkRead = useCallback((_guild) => {
+    // Phase U scaffolding — unread tracking wired in a later plan.
+  }, []);
+
+  const handleInstanceInfo = useCallback((guild, url) => {
+    const state = instanceStates.get(url);
+    const domain = instanceDomain(url);
+    const status = state?.connectionState ?? 'unknown';
+    alert(`Instance: ${domain}\nStatus: ${status}`);
+  }, [instanceStates]);
+
+  // ── Guild creation ────────────────────────────────────────────────────────
 
   const handleGuildCreated = useCallback((newGuild) => {
     setShowCreateModal(false);
     onGuildCreated?.(newGuild);
   }, [onGuildCreated]);
 
-  return (
-    <div style={{ ...styles.strip, ...(compact ? { width: 56, minWidth: 56 } : {}) }}>
-      {guilds.map((guild) => {
-        const isActive = guild.id === activeGuild?.id;
-        const bg = guildColor(guild.id);
-        const displayName = getGuildDisplayName(guild);
-        return (
-          <button
-            key={guild.id}
-            type="button"
-            style={styles.guildBtn(isActive, bg)}
-            title={displayName}
-            aria-label={displayName}
-            aria-pressed={isActive}
-            onClick={() => onGuildSelect?.(guild)}
-            onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.opacity = '0.8'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
-          >
-            {getInitials(displayName)}
-          </button>
-        );
-      })}
+  // ── Add button visibility ─────────────────────────────────────────────────
 
-      {guilds.length > 0 && showAddButton && (
+  const isAdminOrHigher = userPermissionLevel >= 2 || userRole === 'admin' || userRole === 'owner';
+  const policy = instanceData?.guildDiscovery ?? instanceData?.serverCreationPolicy ?? 'open';
+  const showAddButton = policy === 'admin_only' ? isAdminOrHigher : true;
+
+  // ── Offline detection ─────────────────────────────────────────────────────
+
+  const isGuildOffline = useCallback((guild) => {
+    const url = guild.instanceUrl;
+    if (!url) return false;
+    const state = instanceStates.get(url);
+    return state ? state.connectionState !== 'connected' : false;
+  }, [instanceStates]);
+
+  // ── Render preparation ────────────────────────────────────────────────────
+
+  const sorted = getSortedGuilds();
+  const dmGuilds = sorted.filter((g) => g.isDm === true);
+  const regularGuilds = sorted.filter((g) => g.isDm !== true);
+  const guildIds = regularGuilds.map((g) => g.id);
+
+  // Build groups for grouped view (by instanceUrl) or a single flat group.
+  const renderGroups = (() => {
+    if (!isGrouped) {
+      return [{ type: 'flat', instanceUrl: null, guilds: regularGuilds }];
+    }
+    const groups = new Map();
+    for (const guild of regularGuilds) {
+      const key = guild.instanceUrl ?? '__default__';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(guild);
+    }
+    return Array.from(groups.entries()).map(([url, gs]) => ({
+      type: 'group',
+      instanceUrl: url,
+      guilds: gs,
+    }));
+  })();
+
+  const contextMenuState = contextMenu
+    ? instanceStates.get(contextMenu.guild.instanceUrl)?.connectionState ?? 'connected'
+    : 'connected';
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  return (
+    <div
+      style={{ ...styles.strip, ...(compact ? { width: 56, minWidth: 56 } : {}) }}
+      data-testid="server-list"
+    >
+      {/* Direct Messages section pinned at top */}
+      <DmSection dmGuilds={dmGuilds} onGuildSelect={onGuildSelect} />
+
+      {dmGuilds.length > 0 && regularGuilds.length > 0 && (
+        <div style={styles.divider} />
+      )}
+
+      {/* Guild icon list with drag-and-drop */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={guildIds} strategy={verticalListSortingStrategy}>
+          {renderGroups.map((group) => (
+            <GroupSection
+              key={group.instanceUrl ?? 'flat'}
+              group={group}
+              activeGuild={activeGuild}
+              isGrouped={isGrouped}
+              isGuildOffline={isGuildOffline}
+              getGuildDisplayName={getGuildDisplayName}
+              onGuildSelect={onGuildSelect}
+              onContextMenu={handleContextMenu}
+              onLongPress={handleLongPress}
+            />
+          ))}
+        </SortableContext>
+      </DndContext>
+
+      {regularGuilds.length > 0 && showAddButton && (
         <div style={styles.divider} />
       )}
 
@@ -282,6 +760,26 @@ export default function ServerList({
           getToken={getToken}
           onClose={() => setShowCreateModal(false)}
           onCreated={handleGuildCreated}
+        />
+      )}
+
+      {contextMenu && (
+        <GuildContextMenu
+          guild={contextMenu.guild}
+          instanceUrl={contextMenu.guild.instanceUrl ?? ''}
+          position={contextMenu.position}
+          connectionState={contextMenuState}
+          userPermissionLevel={userPermissionLevel}
+          onClose={handleContextMenuClose}
+          onLeave={(guild) => {
+            console.info('[ServerList] Leave guild:', guild.id);
+            handleContextMenuClose();
+          }}
+          onMute={handleMute}
+          onCopyInvite={handleCopyInvite}
+          onMarkRead={handleMarkRead}
+          onSettings={(guild) => onGuildSelect?.(guild)}
+          onInstanceInfo={handleInstanceInfo}
         />
       )}
     </div>

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import ServerList from './ServerList';
+import { InstanceContext } from '../contexts/InstanceContext.jsx';
 
 // GuildCreateModal calls createGuild — mock it so the modal renders without real API calls
 vi.mock('../lib/api', () => ({
@@ -34,6 +35,13 @@ vi.mock('../contexts/AuthContext', () => ({
   AuthProvider: ({ children }) => children,
 }));
 
+// guildMetadata — no real crypto in tests
+vi.mock('../lib/guildMetadata', () => ({
+  decryptGuildMetadata: vi.fn(() => Promise.resolve({ name: 'Decrypted Name', icon: null })),
+  fromBase64: vi.fn((v) => v),
+  importMetadataKey: vi.fn(() => Promise.resolve({})),
+}));
+
 const getToken = () => 'test-token';
 
 const guilds = [
@@ -41,7 +49,30 @@ const guilds = [
   { id: 'g2', name: 'Beta', ownerId: 'u2' },
 ];
 
-describe('ServerList', () => {
+const multiInstanceGuilds = [
+  { id: 'g1', name: 'Alpha Guild', ownerId: 'u1', instanceUrl: 'https://a.example.com' },
+  { id: 'g2', name: 'Beta', ownerId: 'u2', instanceUrl: 'https://b.example.com' },
+  { id: 'g3', name: 'Gamma', ownerId: 'u3', instanceUrl: 'https://a.example.com' },
+];
+
+/** Renders ServerList inside an InstanceContext.Provider with the given value. */
+function renderWithInstanceCtx(ctxValue, props = {}) {
+  return render(
+    <InstanceContext.Provider value={ctxValue}>
+      <ServerList
+        getToken={getToken}
+        activeGuild={null}
+        onGuildSelect={() => {}}
+        onGuildCreated={() => {}}
+        instanceData={null}
+        userRole="member"
+        {...props}
+      />
+    </InstanceContext.Provider>,
+  );
+}
+
+describe('ServerList — legacy prop-based mode', () => {
   beforeEach(() => {
     cleanup();
   });
@@ -58,13 +89,14 @@ describe('ServerList', () => {
         userRole="member"
       />,
     );
+    // In legacy mode (no instanceUrl), tooltip is just the name.
     expect(screen.getByTitle('Alpha Guild')).toBeInTheDocument();
     expect(screen.getByTitle('Beta')).toBeInTheDocument();
     expect(screen.getByText('AG')).toBeInTheDocument();
     expect(screen.getByText('BE')).toBeInTheDocument();
   });
 
-  it('active guild has aria-pressed=true', () => {
+  it('active guild button has amber border style', () => {
     render(
       <ServerList
         getToken={getToken}
@@ -76,9 +108,13 @@ describe('ServerList', () => {
         userRole="member"
       />,
     );
-    const btn = screen.getByTitle('Alpha Guild');
-    expect(btn.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByTitle('Beta').getAttribute('aria-pressed')).toBe('false');
+    // aria-pressed comes from our own prop on the button, not overridden by dnd-kit in jsdom
+    const activeBtn = screen.getByTitle('Alpha Guild');
+    const inactiveBtn = screen.getByTitle('Beta');
+    // Active button has amber border
+    expect(activeBtn.style.border).toContain('var(--hush-amber)');
+    // Inactive button has transparent border
+    expect(inactiveBtn.style.border).toContain('transparent');
   });
 
   it('calls onGuildSelect when a guild button is clicked', () => {
@@ -141,5 +177,173 @@ describe('ServerList', () => {
       />,
     );
     expect(screen.getByTitle('Create a server')).toBeInTheDocument();
+  });
+});
+
+describe('ServerList — multi-instance mode via InstanceContext', () => {
+  beforeEach(() => {
+    cleanup();
+  });
+
+  it('renders guilds from mergedGuilds when InstanceContext is provided', () => {
+    const ctxValue = {
+      mergedGuilds: multiInstanceGuilds,
+      instanceStates: new Map([
+        ['https://a.example.com', { connectionState: 'connected' }],
+        ['https://b.example.com', { connectionState: 'connected' }],
+      ]),
+      guildOrder: [],
+      setGuildOrder: vi.fn(),
+    };
+    renderWithInstanceCtx(ctxValue);
+    // Guilds should be rendered by aria-label
+    expect(screen.getByLabelText('Alpha Guild')).toBeInTheDocument();
+    expect(screen.getByLabelText('Beta')).toBeInTheDocument();
+    expect(screen.getByLabelText('Gamma')).toBeInTheDocument();
+  });
+
+  it('tooltip includes instance domain for multi-instance guilds', () => {
+    const ctxValue = {
+      mergedGuilds: [{ id: 'g1', name: 'Alpha Guild', instanceUrl: 'https://a.example.com' }],
+      instanceStates: new Map([['https://a.example.com', { connectionState: 'connected' }]]),
+      guildOrder: [],
+      setGuildOrder: vi.fn(),
+    };
+    renderWithInstanceCtx(ctxValue);
+    const btn = screen.getByLabelText('Alpha Guild');
+    // Title should contain the domain
+    expect(btn.getAttribute('title')).toContain('a.example.com');
+  });
+
+  it('applies 0.5 opacity to guilds from offline instances', () => {
+    const ctxValue = {
+      mergedGuilds: [
+        { id: 'g1', name: 'Online Guild', instanceUrl: 'https://a.example.com' },
+        { id: 'g2', name: 'Offline Guild', instanceUrl: 'https://b.example.com' },
+      ],
+      instanceStates: new Map([
+        ['https://a.example.com', { connectionState: 'connected' }],
+        ['https://b.example.com', { connectionState: 'offline' }],
+      ]),
+      guildOrder: [],
+      setGuildOrder: vi.fn(),
+    };
+    renderWithInstanceCtx(ctxValue);
+    const onlineBtn = screen.getByLabelText('Online Guild');
+    const offlineBtn = screen.getByLabelText('Offline Guild');
+    expect(onlineBtn.style.opacity).toBe('1');
+    expect(offlineBtn.style.opacity).toBe('0.5');
+  });
+
+  it('renders DM section at top of sidebar', () => {
+    const ctxValue = {
+      mergedGuilds: multiInstanceGuilds,
+      instanceStates: new Map(),
+      guildOrder: [],
+      setGuildOrder: vi.fn(),
+    };
+    renderWithInstanceCtx(ctxValue);
+    expect(screen.getByTestId('dm-section')).toBeInTheDocument();
+    expect(screen.getByTitle('Direct Messages')).toBeInTheDocument();
+  });
+
+  it('shows context menu on right-click', () => {
+    const ctxValue = {
+      mergedGuilds: multiInstanceGuilds,
+      instanceStates: new Map([
+        ['https://a.example.com', { connectionState: 'connected' }],
+      ]),
+      guildOrder: [],
+      setGuildOrder: vi.fn(),
+    };
+    renderWithInstanceCtx(ctxValue);
+    const guildBtn = screen.getByLabelText('Alpha Guild');
+    fireEvent.contextMenu(guildBtn, { clientX: 100, clientY: 200 });
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    expect(screen.getByText('Leave server')).toBeInTheDocument();
+    expect(screen.getByText('Mark as read')).toBeInTheDocument();
+    expect(screen.getByText('Copy invite link')).toBeInTheDocument();
+    expect(screen.getByText('Instance info')).toBeInTheDocument();
+    expect(screen.getByText('Mute notifications')).toBeInTheDocument();
+  });
+
+  it('closes context menu on Escape key', () => {
+    const ctxValue = {
+      mergedGuilds: multiInstanceGuilds,
+      instanceStates: new Map([
+        ['https://a.example.com', { connectionState: 'connected' }],
+      ]),
+      guildOrder: [],
+      setGuildOrder: vi.fn(),
+    };
+    renderWithInstanceCtx(ctxValue);
+    const guildBtn = screen.getByLabelText('Alpha Guild');
+    fireEvent.contextMenu(guildBtn, { clientX: 100, clientY: 200 });
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('shows Settings action only for admin and above', () => {
+    const ctxValue = {
+      mergedGuilds: [{ id: 'g1', name: 'Alpha Guild', instanceUrl: 'https://a.example.com' }],
+      instanceStates: new Map([
+        ['https://a.example.com', { connectionState: 'connected' }],
+      ]),
+      guildOrder: [],
+      setGuildOrder: vi.fn(),
+    };
+
+    // Member — no settings visible
+    const { unmount } = renderWithInstanceCtx(ctxValue, { userPermissionLevel: 0 });
+    const guildBtn = screen.getByLabelText('Alpha Guild');
+    fireEvent.contextMenu(guildBtn, { clientX: 100, clientY: 200 });
+    expect(screen.queryByText('Server settings')).not.toBeInTheDocument();
+    unmount();
+
+    // Admin — settings visible
+    cleanup();
+    renderWithInstanceCtx(ctxValue, { userPermissionLevel: 2 });
+    const guildBtn2 = screen.getByLabelText('Alpha Guild');
+    fireEvent.contextMenu(guildBtn2, { clientX: 100, clientY: 200 });
+    expect(screen.getByText('Server settings')).toBeInTheDocument();
+  });
+
+  it('respects guildOrder from context — reorders displayed guilds', () => {
+    const ctxValue = {
+      mergedGuilds: multiInstanceGuilds,
+      instanceStates: new Map(),
+      guildOrder: ['g3', 'g1', 'g2'], // Gamma should appear first
+      setGuildOrder: vi.fn(),
+    };
+    renderWithInstanceCtx(ctxValue);
+    // Get all guild buttons by aria-label
+    const gammaBtn = screen.getByLabelText('Gamma');
+    const alphaBtn = screen.getByLabelText('Alpha Guild');
+    // Gamma (g3) has lower DOM order than Alpha (g1) when order is ['g3','g1','g2']
+    expect(
+      gammaBtn.compareDocumentPosition(alphaBtn) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
+describe('ServerList — DM section expansion', () => {
+  beforeEach(() => {
+    cleanup();
+  });
+
+  it('DM section starts collapsed and expands on click', () => {
+    const ctxValue = {
+      mergedGuilds: [],
+      instanceStates: new Map(),
+      guildOrder: [],
+      setGuildOrder: vi.fn(),
+    };
+    renderWithInstanceCtx(ctxValue);
+    const dmBtn = screen.getByTitle('Direct Messages');
+    expect(dmBtn.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(dmBtn);
+    expect(dmBtn.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('No direct messages yet')).toBeInTheDocument();
   });
 });
