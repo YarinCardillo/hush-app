@@ -315,8 +315,7 @@ export default function DeviceLinkModal({ onClose, onLinked, token, currentDevic
               {expired ? 'Expired — close and try again' : `Expires in ${formatTimer(secondsLeft)}`}
             </div>
             <div style={styles.instructions}>
-              Open hush on your existing device and scan this code from<br />
-              Settings &rsaquo; Devices &rsaquo; Link a device
+              Scan this QR code from the new device you want to link.
             </div>
           </>
         )}
@@ -335,8 +334,7 @@ export default function DeviceLinkModal({ onClose, onLinked, token, currentDevic
               </button>
             </div>
             <div style={styles.instructions}>
-              Enter this code on your existing device under<br />
-              Settings &rsaquo; Devices &rsaquo; Enter code
+              Enter this code on the new device you want to link.
             </div>
           </>
         )}

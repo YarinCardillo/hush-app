@@ -386,9 +386,22 @@ export function useInstances() {
       wireWsHandlers(instanceUrl, wsClient);
       wsClient.connect();
 
-      // Step 5: Fetch guilds and stamp.
+      // Step 5: Fetch guilds, extract names from metadata, and stamp with instanceUrl.
       const guilds = await getMyGuilds(jwt, instanceUrl);
-      const stampedGuilds = guilds.map(g => ({ ...g, instanceUrl }));
+      const stampedGuilds = guilds.map(g => {
+        const stamped = { ...g, instanceUrl };
+        // Extract name from plaintext metadata fallback (when MLS not bootstrapped).
+        if (!stamped.name && stamped.encryptedMetadata) {
+          try {
+            const raw = typeof stamped.encryptedMetadata === 'string'
+              ? stamped.encryptedMetadata
+              : new TextDecoder().decode(Uint8Array.from(atob(stamped.encryptedMetadata), c => c.charCodeAt(0)));
+            const parsed = JSON.parse(raw);
+            stamped.name = parsed.n || parsed.name || '';
+          } catch { /* encrypted blob — needs MLS key */ }
+        }
+        return stamped;
+      });
 
       // Step 6: Update entry.
       instancesRef.current.set(instanceUrl, {

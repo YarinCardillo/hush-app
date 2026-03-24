@@ -878,7 +878,23 @@ export default function ServerLayout() {
       getGuildMembers(token, serverId, instanceUrl ?? undefined),
     ])
       .then(([chans, mems]) => {
-        setChannels(Array.isArray(chans) ? chans : []);
+        // Extract channel names from encryptedMetadata (plaintext JSON fallback
+        // when MLS is not bootstrapped, or decrypt with metadata key if available).
+        const processed = (Array.isArray(chans) ? chans : []).map(ch => {
+          if (ch.name) return ch; // Already has a name (legacy or pre-processed)
+          if (!ch.encryptedMetadata) return ch;
+          try {
+            // Try parsing as plaintext JSON first (fallback path).
+            const raw = typeof ch.encryptedMetadata === 'string'
+              ? ch.encryptedMetadata
+              : new TextDecoder().decode(Uint8Array.from(atob(ch.encryptedMetadata), c => c.charCodeAt(0)));
+            const parsed = JSON.parse(raw);
+            return { ...ch, name: parsed.n || parsed.name || '' };
+          } catch {
+            return ch; // Encrypted blob — needs MLS key (handled elsewhere when MLS works)
+          }
+        });
+        setChannels(processed);
         setMembers(Array.isArray(mems) ? mems : []);
       })
       .catch((err) => {

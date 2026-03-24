@@ -363,10 +363,11 @@ export async function getMyGuilds(token, baseUrl = '') {
  * @param {string} [templateId] - Optional template UUID to use for channel creation
  * @returns {Promise<{ id: string, encryptedMetadata: string|null, permissionLevel: number, createdAt: string }>}
  */
-export async function createGuild(token, encryptedMetadata, templateId, baseUrl = '') {
+export async function createGuild(token, encryptedMetadata, templateId, baseUrl = '', name = '') {
   const body = {};
   if (encryptedMetadata != null) body.encryptedMetadata = encryptedMetadata;
   if (templateId) body.templateId = templateId;
+  if (name) body.name = name;
   const res = await fetchWithAuth(token, '/api/servers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

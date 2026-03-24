@@ -7,6 +7,7 @@ import * as mlsStoreLib from '../lib/mlsStore';
 import * as hushCryptoLib from '../lib/hushCrypto';
 import { encryptGuildMetadata, toBase64, importMetadataKey } from '../lib/guildMetadata';
 import { getDeviceId } from '../hooks/useAuth';
+import { useAuth } from '../contexts/AuthContext';
 import { useInstanceContext } from '../contexts/InstanceContext';
 import modalStyles from './modalStyles';
 
@@ -73,6 +74,7 @@ export default function GuildCreateModal({ getToken, onClose, onCreated, activeI
 
   // ── Instance context ───────────────────────────────────────────────────
 
+  const { user } = useAuth();
   const { instanceStates, refreshGuilds } = useInstanceContext();
 
   /** List of connected instances sorted by URL for stable display order. */
@@ -182,13 +184,14 @@ export default function GuildCreateModal({ getToken, onClose, onCreated, activeI
 
     setLoading(true);
     try {
-      // Step 1: Create the guild with null encryptedMetadata to get its UUID.
-      const guild = await createGuild(effectiveToken, null, selectedTemplateId, effectiveBaseUrl);
+      // Step 1: Create the guild. Send plaintext name as fallback — server wraps
+      // it as JSON metadata when MLS EncryptedMetadata is not provided.
+      const guild = await createGuild(effectiveToken, null, selectedTemplateId, effectiveBaseUrl, trimmed);
 
       // Step 2: Create the guild metadata MLS group (creator is the sole member).
       let mlsSuccess = false;
       try {
-        const db = await mlsStoreLib.openDB(getDeviceId());
+        const db = await mlsStoreLib.openStore(user?.id, getDeviceId());
         if (db) {
           const credential = await mlsStoreLib.getCredential(db);
           const deps = { ...buildMlsDeps(db, effectiveToken), credential };
