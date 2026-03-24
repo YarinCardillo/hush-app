@@ -7,8 +7,6 @@ import * as mlsStore from './mlsStore';
 import * as hushCrypto from './hushCrypto';
 import { uploadKeyPackagesAfterAuth as uploadKeyPackagesAfterAuthImpl } from './uploadKeyPackages';
 
-const defaultBase = '';
-
 /**
  * @param {string} token - JWT
  * @param {string} path - e.g. /api/keys/upload
@@ -977,10 +975,10 @@ export async function updateServerTemplate(token, id, body, baseUrl = '') {
  * @param {string} id - Template UUID
  * @returns {Promise<void>}
  */
-export async function deleteServerTemplate(token, id) {
+export async function deleteServerTemplate(token, id, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/instance/server-templates/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-  });
+  }, baseUrl);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to delete template');
 }
 
@@ -994,12 +992,12 @@ export async function deleteServerTemplate(token, id) {
  * @param {string} deviceId - Stable device ID (e.g. from localStorage or generated once)
  * @param {object} [deps] - Optional deps for testing: { mlsStore, crypto, uploadCredential, uploadKeyPackages }
  */
-export async function uploadKeyPackagesAfterAuth(token, userId, deviceId, deps = {}) {
+export async function uploadKeyPackagesAfterAuth(token, userId, deviceId, deps = {}, baseUrl = '') {
   await uploadKeyPackagesAfterAuthImpl(token, userId, deviceId, {
     mlsStore: deps.mlsStore ?? mlsStore,
     crypto: deps.crypto ?? hushCrypto,
-    uploadCredential: deps.uploadCredential ?? uploadMLSCredential.bind(null),
-    uploadKeyPackages: deps.uploadKeyPackages ?? uploadMLSKeyPackages.bind(null),
+    uploadCredential: deps.uploadCredential ?? ((t, b) => uploadMLSCredential(t, b, baseUrl)),
+    uploadKeyPackages: deps.uploadKeyPackages ?? ((t, b) => uploadMLSKeyPackages(t, b, baseUrl)),
   });
 }
 
@@ -1013,8 +1011,8 @@ export async function uploadKeyPackagesAfterAuth(token, userId, deviceId, deps =
  * @param {string} channelId - Channel UUID
  * @returns {Promise<{ groupInfo: string, epoch: number }|null>}
  */
-export async function getMLSGroupInfo(token, channelId) {
-  const res = await fetchWithAuth(token, `/api/mls/groups/${encodeURIComponent(channelId)}/info`);
+export async function getMLSGroupInfo(token, channelId, baseUrl = '') {
+  const res = await fetchWithAuth(token, `/api/mls/groups/${encodeURIComponent(channelId)}/info`, {}, baseUrl);
   if (res.status === 404) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -1033,12 +1031,12 @@ export async function getMLSGroupInfo(token, channelId) {
  * @param {number} epoch - Current group epoch
  * @returns {Promise<void>}
  */
-export async function putMLSGroupInfo(token, channelId, groupInfoBase64, epoch) {
+export async function putMLSGroupInfo(token, channelId, groupInfoBase64, epoch, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/mls/groups/${encodeURIComponent(channelId)}/info`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ groupInfo: groupInfoBase64, epoch }),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `putMLSGroupInfo ${res.status}`);
@@ -1056,12 +1054,12 @@ export async function putMLSGroupInfo(token, channelId, groupInfoBase64, epoch) 
  * @param {number} epoch - Epoch after this commit
  * @returns {Promise<void>}
  */
-export async function postMLSCommit(token, channelId, commitBytesBase64, groupInfoBase64, epoch) {
+export async function postMLSCommit(token, channelId, commitBytesBase64, groupInfoBase64, epoch, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/mls/groups/${encodeURIComponent(channelId)}/commit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ commitBytes: commitBytesBase64, groupInfo: groupInfoBase64, epoch }),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `postMLSCommit ${res.status}`);
@@ -1078,10 +1076,12 @@ export async function postMLSCommit(token, channelId, commitBytesBase64, groupIn
  * @param {string} channelId - Channel UUID
  * @returns {Promise<{ groupInfo: string, epoch: number }|null>}
  */
-export async function getMLSVoiceGroupInfo(token, channelId) {
+export async function getMLSVoiceGroupInfo(token, channelId, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/mls/groups/${encodeURIComponent(channelId)}/info?type=voice`,
+    {},
+    baseUrl,
   );
   if (res.status === 404) return null;
   if (!res.ok) {
@@ -1101,7 +1101,7 @@ export async function getMLSVoiceGroupInfo(token, channelId) {
  * @param {number} epoch - Current group epoch
  * @returns {Promise<void>}
  */
-export async function putMLSVoiceGroupInfo(token, channelId, groupInfoBase64, epoch) {
+export async function putMLSVoiceGroupInfo(token, channelId, groupInfoBase64, epoch, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/mls/groups/${encodeURIComponent(channelId)}/info?type=voice`,
@@ -1110,6 +1110,7 @@ export async function putMLSVoiceGroupInfo(token, channelId, groupInfoBase64, ep
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ groupInfo: groupInfoBase64, epoch }),
     },
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -1128,7 +1129,7 @@ export async function putMLSVoiceGroupInfo(token, channelId, groupInfoBase64, ep
  * @param {string} [groupInfoBase64] - Optional Base64-encoded updated GroupInfo
  * @returns {Promise<void>}
  */
-export async function postMLSVoiceCommit(token, channelId, commitBytesBase64, epoch, groupInfoBase64) {
+export async function postMLSVoiceCommit(token, channelId, commitBytesBase64, epoch, groupInfoBase64, baseUrl = '') {
   const res = await fetchWithAuth(
     token,
     `/api/mls/groups/${encodeURIComponent(channelId)}/commit?type=voice`,
@@ -1137,6 +1138,7 @@ export async function postMLSVoiceCommit(token, channelId, commitBytesBase64, ep
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ commitBytes: commitBytesBase64, groupInfo: groupInfoBase64 ?? '', epoch }),
     },
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -1153,14 +1155,16 @@ export async function postMLSVoiceCommit(token, channelId, commitBytesBase64, ep
  * @param {number} [limit=100] - Max commits to return
  * @returns {Promise<{ commits: Array<{ epoch: number, commitBytes: string, senderId: string }> }>}
  */
-export async function getMLSCommitsSinceEpoch(token, channelId, sinceEpoch, limit = 100) {
+export async function getMLSCommitsSinceEpoch(token, channelId, sinceEpoch, limit = 100, baseUrl = '') {
   const params = new URLSearchParams({
     since_epoch: String(sinceEpoch),
     limit: String(limit),
   });
   const res = await fetchWithAuth(
     token,
-    `/api/mls/groups/${encodeURIComponent(channelId)}/commits?${params.toString()}`
+    `/api/mls/groups/${encodeURIComponent(channelId)}/commits?${params.toString()}`,
+    {},
+    baseUrl,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -1176,8 +1180,8 @@ export async function getMLSCommitsSinceEpoch(token, channelId, sinceEpoch, limi
  * @param {string} token - JWT
  * @returns {Promise<{ welcomes: Array<{ id: string, channelId: string, welcomeBytes: string, senderId: string, epoch: number }> }>}
  */
-export async function getMLSPendingWelcomes(token) {
-  const res = await fetchWithAuth(token, '/api/mls/pending-welcomes');
+export async function getMLSPendingWelcomes(token, baseUrl = '') {
+  const res = await fetchWithAuth(token, '/api/mls/pending-welcomes', {}, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `getMLSPendingWelcomes ${res.status}`);
@@ -1193,10 +1197,10 @@ export async function getMLSPendingWelcomes(token) {
  * @param {string} welcomeId - UUID of the pending Welcome record
  * @returns {Promise<void>}
  */
-export async function deleteMLSPendingWelcome(token, welcomeId) {
+export async function deleteMLSPendingWelcome(token, welcomeId, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/mls/pending-welcomes/${encodeURIComponent(welcomeId)}`, {
     method: 'DELETE',
-  });
+  }, baseUrl);
   if (!res.ok && res.status !== 404) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `deleteMLSPendingWelcome ${res.status}`);
@@ -1213,8 +1217,8 @@ export async function deleteMLSPendingWelcome(token, welcomeId) {
  * @param {string} guildId - Guild UUID
  * @returns {Promise<{ groupInfo: string, epoch: number }|null>}
  */
-export async function getGuildMetadataGroupInfo(token, guildId) {
-  const res = await fetchWithAuth(token, `/api/mls/guilds/${encodeURIComponent(guildId)}/group-info`);
+export async function getGuildMetadataGroupInfo(token, guildId, baseUrl = '') {
+  const res = await fetchWithAuth(token, `/api/mls/guilds/${encodeURIComponent(guildId)}/group-info`, {}, baseUrl);
   if (res.status === 404) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -1234,12 +1238,12 @@ export async function getGuildMetadataGroupInfo(token, guildId) {
  * @param {number} epoch - Current group epoch
  * @returns {Promise<void>}
  */
-export async function putGuildMetadataGroupInfo(token, guildId, groupInfoBase64, epoch) {
+export async function putGuildMetadataGroupInfo(token, guildId, groupInfoBase64, epoch, baseUrl = '') {
   const res = await fetchWithAuth(token, `/api/mls/guilds/${encodeURIComponent(guildId)}/group-info`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ groupInfoBytes: groupInfoBase64, epoch }),
-  });
+  }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `putGuildMetadataGroupInfo ${res.status}`);
