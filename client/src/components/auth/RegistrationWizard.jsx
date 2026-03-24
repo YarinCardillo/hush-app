@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { generateIdentityMnemonic } from '../../lib/bip39Identity';
+import { checkUsernameAvailable } from '../../lib/api';
 import { MnemonicGrid } from './MnemonicGrid';
 import { MnemonicConfirm } from './MnemonicConfirm';
 
@@ -170,9 +171,13 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
     setUsernameState('checking');
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      // Optimistic: mark as available since server-side check happens on submit.
-      // A 409 from the server on submit is handled in onComplete.
-      setUsernameState('ok');
+      try {
+        const available = await checkUsernameAvailable(username);
+        setUsernameState(available ? 'ok' : 'taken');
+      } catch {
+        // Network error — allow submission, server will reject if taken.
+        setUsernameState('ok');
+      }
     }, USERNAME_CHECK_DEBOUNCE_MS);
 
     return () => {

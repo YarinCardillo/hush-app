@@ -212,6 +212,19 @@ export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, d
  * @param {string} [inviteCode] - Optional invite code for invite_only registration mode.
  * @returns {Promise<{ token: string, user: object }>}
  */
+/**
+ * Check if a username is available for registration.
+ * @param {string} username
+ * @param {string} [baseUrl='']
+ * @returns {Promise<boolean>} true if available
+ */
+export async function checkUsernameAvailable(username, baseUrl = '') {
+  const res = await fetch(`${baseUrl}/api/auth/check-username/${encodeURIComponent(username)}`);
+  if (!res.ok) return false;
+  const data = await res.json();
+  return data.available === true;
+}
+
 export async function registerWithPublicKey(username, displayName, publicKeyBase64, deviceId, inviteCode, baseUrl = '') {
   const body = { username, displayName, publicKey: publicKeyBase64, deviceId };
   if (inviteCode) body.inviteCode = inviteCode;
