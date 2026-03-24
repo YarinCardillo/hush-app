@@ -4,35 +4,29 @@ import { motion, AnimatePresence } from 'motion/react';
 import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
 import { GUEST_SESSION_KEY } from '../hooks/useAuth';
+import { RegistrationWizard } from '../components/auth/RegistrationWizard';
+import { RecoveryPhraseInput } from '../components/auth/RecoveryPhraseInput';
+import { PinUnlockScreen } from '../components/auth/PinUnlockScreen';
+import { PinSetupModal } from '../components/auth/PinSetupModal';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your'];
 
 const _TYPEWRITER_POOL = [
   'secrets',
-  'aliases',       // was 'identity'
+  'aliases',
   'data',
   'silence',
-  'whispers',      // was 'manifesto'
-  'scrolls',       // was 'screen time'
-  'cookies',       // was 'browser history'
+  'whispers',
+  'scrolls',
+  'cookies',
   'DMs',
   'chats',
-  'burners',       // was 'burner phone'
-  'typing',        // was 'read receipts' (humor: "keep your typing.")
-  'thoughts',      // was 'inner monologue'
-  'flings',        // was 'situationship'
+  'burners',
+  'typing',
+  'thoughts',
+  'flings',
   'villain arc',
-  'binges',        // was 'guilty pleasures'
-  // 'identity',
-  // 'manifesto',
-  // 'screen time',
-  // 'browser history',
-  // 'burner phone',
-  // 'read receipts',
-  // 'inner monologue',
-  // 'situationship',
-
-  // 'guilty pleasures',
+  'binges',
 ];
 
 function _buildShuffledSequence() {
@@ -241,13 +235,13 @@ const styles = {
     fontSize: '0.9rem',
     fontWeight: 400,
   },
-  e2eeBadge: {
+  e2eeBadge: (active) => ({
     display: 'inline-flex',
     alignItems: 'center',
     gap: '5px',
     padding: '3px 10px',
-    background: 'var(--hush-amber-ghost)',
-    color: 'var(--hush-amber)',
+    background: active ? 'var(--hush-amber-ghost)' : 'rgba(85, 85, 104, 0.08)',
+    color: active ? 'var(--hush-amber)' : 'var(--hush-text-muted)',
     fontSize: '0.65rem',
     fontWeight: 500,
     letterSpacing: '0.06em',
@@ -255,7 +249,8 @@ const styles = {
     border: '1px solid transparent',
     borderRadius: 0,
     userSelect: 'none',
-  },
+    textDecoration: active ? 'none' : 'line-through',
+  }),
   form: {
     display: 'flex',
     flexDirection: 'column',
@@ -277,7 +272,6 @@ const styles = {
     overflowWrap: 'break-word',
     wordBreak: 'break-word',
   },
-  /** Toast: fixed position, no border, auto fade-out */
   errorToast: {
     position: 'fixed',
     bottom: '24px',
@@ -311,58 +305,90 @@ const styles = {
     color: 'var(--hush-text-ghost)',
     letterSpacing: '0.02em',
   },
-  statusDot: (online) => ({
-    display: 'inline-block',
-    width: 5,
-    height: 5,
-    borderRadius: '50%',
-    background: online ? 'var(--hush-live)' : 'var(--hush-danger)',
-    flexShrink: 0,
-  }),
   footerLink: {
     color: 'var(--hush-amber-dim)',
     textDecoration: 'none',
   },
+  sectionTitle: {
+    fontSize: '0.75rem',
+    fontWeight: 500,
+    color: 'var(--hush-text-muted)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    marginBottom: '12px',
+  },
 };
 
-const AUTH_VIEW = { CHOOSE: 'choose', LOGIN: 'login', REGISTER: 'register', GUEST: 'guest' };
+/**
+ * Auth UI view states. Drives what is shown in the glass card.
+ */
+const AUTH_VIEW = {
+  CHOOSE: 'choose',
+  RECOVERY: 'recovery',
+  REGISTER_WIZARD: 'register_wizard',
+  PIN_UNLOCK: 'pin_unlock',
+  PIN_SETUP: 'pin_setup',
+  GUEST: 'guest',
+};
 
 /** Maps raw auth/join errors to short, user-facing messages. */
 function getFriendlyError(err) {
+  if (!err) return '';
   const msg = err?.message || String(err);
   if (/not found|404/i.test(msg)) return 'Not found. Please try again.';
   if (/forbidden|403/i.test(msg)) return 'Access denied.';
-  if (/conflict|409|already/i.test(msg)) return 'Username already taken.';
+  if (/conflict|409|already/i.test(msg)) return 'Username already taken. Please choose another.';
   if (/unauthorized|401/i.test(msg)) return 'Invalid credentials.';
+  if (/no account found|key not found|unknown key/i.test(msg)) {
+    return 'No account found for this recovery phrase. If you have lost all your devices, you will need to create a new account.';
+  }
   return msg || 'Something went wrong. Please try again.';
 }
 
 export default function Home() {
   const navigate = useNavigate();
   const {
-    loginAsGuest,
-    login,
-    register,
-    logout,
+    vaultState,
+    user,
+    performRegister,
+    performRecovery,
+    performGuestLogin,
+    unlockVault,
+    lockVault,
+    setPIN,
+    performLogout,
     isAuthenticated,
-    isLoading: authLoading,
+    loading: authLoading,
     error: authError,
+    clearError,
   } = useAuth();
   const [searchParams] = useSearchParams();
   const joinParam = searchParams.get('join');
-  // Skip auth choice screen when joining via link — go straight to guest form
-  const [authView, setAuthView] = useState(joinParam ? AUTH_VIEW.GUEST : AUTH_VIEW.CHOOSE);
-  const [isGuestSession, setIsGuestSession] = useState(() => sessionStorage.getItem(GUEST_SESSION_KEY) === '1');
-  const [displayName, setDisplayName] = useState(() => localStorage.getItem('hush_displayName') || '');
-  const [error, setError] = useState('');
+
+  const [authView, setAuthView] = useState(
+    joinParam ? AUTH_VIEW.GUEST : AUTH_VIEW.CHOOSE,
+  );
+  const [hasPinSetup, setHasPinSetup] = useState(false);
+  const [isPinSetupLoading, setIsPinSetupLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [loginUsername, setLoginUsername] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [registerUsername, setRegisterUsername] = useState('');
-  const [registerPassword, setRegisterPassword] = useState('');
-  const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState('');
-  const [registerDisplayName, setRegisterDisplayName] = useState(() => localStorage.getItem('hush_displayName') || '');
+  const [guestDisplayName, setGuestDisplayName] = useState(
+    () => localStorage.getItem('hush_displayName') || '',
+  );
+  const [guestLoading, setGuestLoading] = useState(false);
+
+  // Handshake data — read from sessionStorage if available (populated by App.jsx).
+  const [handshakeData] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('hush_handshake');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const registrationMode = handshakeData?.registration_mode ?? 'open';
+  const e2eeActive =
+    handshakeData?.e2ee?.chat === true && handshakeData?.e2ee?.media === true;
 
   const spotlightRef = useRef(null);
   const rafRef = useRef(null);
@@ -373,17 +399,49 @@ export default function Home() {
   const [subtitleWidthPx, setSubtitleWidthPx] = useState(null);
   const [dotLeft, setDotLeft] = useState(null);
   const [spotlightEnabled, setSpotlightEnabled] = useState(
-    () => (typeof window !== 'undefined' ? !window.matchMedia('(pointer: coarse)').matches : false)
+    () => (typeof window !== 'undefined' ? !window.matchMedia('(pointer: coarse)').matches : false),
   );
 
-  // Sync error/authError to toast and auto-clear after delay
+  // ── Vault state -> view routing ─────────────────────────────────────────────
+
   useEffect(() => {
-    const msg = error || authError?.message || null;
+    if (authLoading) return;
+
+    if (vaultState === 'locked') {
+      setAuthView(AUTH_VIEW.PIN_UNLOCK);
+      return;
+    }
+
+    if (vaultState === 'unlocked' || vaultState === 'guest') {
+      // Navigate to channels / invite on successful auth.
+      const target = joinParam
+        ? `/invite/${encodeURIComponent(joinParam)}`
+        : '/channels';
+      navigate(target, { replace: true });
+      return;
+    }
+
+    // vaultState === 'none' — show login/register
+    if (authView === AUTH_VIEW.PIN_UNLOCK || authView === AUTH_VIEW.PIN_SETUP) {
+      setAuthView(AUTH_VIEW.CHOOSE);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaultState, authLoading]);
+
+  // ── Error toast ─────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const msg = authError ? getFriendlyError(authError) : null;
     setToastMessage(msg);
     if (!msg) return;
-    const id = setTimeout(() => setToastMessage(null), 4000);
+    const id = setTimeout(() => {
+      setToastMessage(null);
+      clearError?.();
+    }, 5000);
     return () => clearTimeout(id);
-  }, [error, authError]);
+  }, [authError, clearError]);
+
+  // ── Spotlight (cursor follow, desktop only) ─────────────────────────────────
 
   useEffect(() => {
     const m = window.matchMedia('(pointer: coarse)');
@@ -427,7 +485,6 @@ export default function Home() {
       setDotLeft(uCenter - 5);
     };
     document.fonts.ready.then(measure);
-    // Re-measure when the element resizes (e.g. after late font swap)
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
@@ -453,62 +510,245 @@ export default function Home() {
     posRef.current.y = e.clientY;
   }, []);
 
-  const handleLoginSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    sessionStorage.removeItem(GUEST_SESSION_KEY);
-    setIsGuestSession(false);
-    if (!loginUsername.trim() || !loginPassword) return;
-    try {
-      await login(loginUsername.trim(), loginPassword);
-      navigate(joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/channels', { replace: true });
-    } catch {
-      // Error shown via authError toast
-    }
-  };
+  // ── Auth action handlers ────────────────────────────────────────────────────
 
-  const handleRegisterSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    sessionStorage.removeItem(GUEST_SESSION_KEY);
-    setIsGuestSession(false);
-    if (!registerUsername.trim() || !registerPassword || !registerDisplayName.trim()) return;
-    if (registerPassword !== registerPasswordConfirm) {
-      setError('Passwords do not match');
-      return;
-    }
+  const handleRegisterComplete = useCallback(async ({ username, displayName, mnemonic, inviteCode }) => {
     try {
-      await register(registerUsername.trim(), registerPassword, registerDisplayName.trim());
-      navigate(joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/channels', { replace: true });
+      await performRegister(username, displayName, mnemonic, inviteCode);
+      // After successful register, prompt for PIN setup (vault is unlocked but no PIN yet).
+      setAuthView(AUTH_VIEW.PIN_SETUP);
     } catch {
-      // Error shown via authError toast
+      // Error surfaces via authError toast. Wizard stays on SUBMITTING for parent to handle.
     }
-  };
+  }, [performRegister]);
 
-  const handleGuestSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  const handleRecoverySubmit = useCallback(async (mnemonic, revokeOtherDevices) => {
     try {
-      localStorage.setItem('hush_displayName', displayName);
-      await loginAsGuest();
-      sessionStorage.setItem(GUEST_SESSION_KEY, '1');
-      setIsGuestSession(true);
-      const target = joinParam ? `/invite/${encodeURIComponent(joinParam)}` : '/channels';
+      await performRecovery(mnemonic, revokeOtherDevices);
+      // On success, vaultState becomes 'unlocked' and the useEffect above navigates.
+      // If no vault PIN was previously set, prompt for PIN setup.
+      setAuthView(AUTH_VIEW.PIN_SETUP);
+    } catch {
+      // Error surfaces via authError toast.
+    }
+  }, [performRecovery]);
+
+  const handlePinUnlock = useCallback(async (pin) => {
+    await unlockVault(pin);
+    // On success, vaultState becomes 'unlocked' and the useEffect navigates.
+  }, [unlockVault]);
+
+  const handleSwitchAccount = useCallback(async () => {
+    try {
+      await performLogout();
+    } catch {
+      // Best-effort; proceed regardless.
+    }
+    setAuthView(AUTH_VIEW.RECOVERY);
+  }, [performLogout]);
+
+  const handlePinSetup = useCallback(async (pin) => {
+    setIsPinSetupLoading(true);
+    try {
+      await setPIN(pin);
+      setHasPinSetup(true);
+      // Navigate to channels once PIN is saved.
+      const target = joinParam
+        ? `/invite/${encodeURIComponent(joinParam)}`
+        : '/channels';
       navigate(target, { replace: true });
     } catch (err) {
-      setError(getFriendlyError(err));
-      if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
-        logout().catch(() => {});
-      }
+      // Error shown in PinSetupModal.
+      throw err;
     } finally {
-      setLoading(false);
+      setIsPinSetupLoading(false);
     }
+  }, [setPIN, joinParam, navigate]);
+
+  const handlePinSetupSkip = useCallback(() => {
+    const target = joinParam
+      ? `/invite/${encodeURIComponent(joinParam)}`
+      : '/channels';
+    navigate(target, { replace: true });
+  }, [joinParam, navigate]);
+
+  const handleGuestSubmit = useCallback(async (e) => {
+    e.preventDefault();
+    setGuestLoading(true);
+    try {
+      localStorage.setItem('hush_displayName', guestDisplayName);
+      await performGuestLogin(joinParam || undefined);
+    } catch (err) {
+      setToastMessage(getFriendlyError(err));
+      setTimeout(() => setToastMessage(null), 4000);
+    } finally {
+      setGuestLoading(false);
+    }
+  }, [guestDisplayName, performGuestLogin, joinParam]);
+
+  // ── View content ─────────────────────────────────────────────────────────────
+
+  const renderFormContent = () => {
+    if (authLoading) {
+      return (
+        <div style={{ textAlign: 'center', color: 'var(--hush-text-muted)', padding: '24px 0', fontSize: '0.85rem' }}>
+          Loading...
+        </div>
+      );
+    }
+
+    if (authView === AUTH_VIEW.PIN_UNLOCK) {
+      return (
+        <PinUnlockScreen
+          username={user?.username || user?.display_name || 'Your account'}
+          avatarUrl={null}
+          onUnlock={handlePinUnlock}
+          onSwitchAccount={handleSwitchAccount}
+        />
+      );
+    }
+
+    if (authView === AUTH_VIEW.PIN_SETUP) {
+      return (
+        <>
+          <div style={{ marginBottom: '12px' }}>
+            <div style={styles.sectionTitle}>Secure your identity</div>
+          </div>
+          <PinSetupModal
+            onSetPin={handlePinSetup}
+            onSkip={handlePinSetupSkip}
+            isLoading={isPinSetupLoading}
+          />
+        </>
+      );
+    }
+
+    if (authView === AUTH_VIEW.REGISTER_WIZARD) {
+      return (
+        <RegistrationWizard
+          onComplete={handleRegisterComplete}
+          onCancel={() => { setAuthView(AUTH_VIEW.CHOOSE); clearError?.(); }}
+          registrationMode={registrationMode}
+          isLoading={authLoading}
+          error={authError}
+        />
+      );
+    }
+
+    if (authView === AUTH_VIEW.RECOVERY) {
+      return (
+        <>
+          <div style={{ marginBottom: '8px' }}>
+            <div style={styles.sectionTitle}>Sign in with recovery phrase</div>
+          </div>
+          <RecoveryPhraseInput
+            onSubmit={handleRecoverySubmit}
+            onCancel={() => { setAuthView(AUTH_VIEW.CHOOSE); clearError?.(); }}
+            isRecoveryMode={true}
+            isLoading={authLoading}
+          />
+        </>
+      );
+    }
+
+    if (authView === AUTH_VIEW.GUEST || joinParam) {
+      return (
+        <>
+          {!joinParam && (
+            <button
+              type="button"
+              className="back-link"
+              onClick={() => setAuthView(AUTH_VIEW.CHOOSE)}
+            >
+              ← Back
+            </button>
+          )}
+          <form style={styles.form} onSubmit={handleGuestSubmit}>
+            <div>
+              <label htmlFor="guest-display-name" style={styles.fieldLabel}>Your name</label>
+              <input
+                id="guest-display-name"
+                name="display-name"
+                className="input"
+                type="text"
+                placeholder="How others will see you"
+                value={guestDisplayName}
+                onChange={(e) => setGuestDisplayName(e.target.value)}
+                required
+                maxLength={30}
+                autoComplete="off"
+              />
+            </div>
+            <button
+              className="btn btn-primary"
+              type="submit"
+              disabled={guestLoading || authLoading}
+              style={{ width: '100%', padding: '12px' }}
+            >
+              {guestLoading || authLoading ? 'Connecting...' : joinParam ? 'Join' : 'Try Hush'}
+            </button>
+          </form>
+        </>
+      );
+    }
+
+    // Default: CHOOSE view
+    return (
+      <>
+        <div
+          className="home-auth-choices"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+            marginBottom: '16px',
+            background: 'var(--hush-surface)',
+            padding: '3px',
+            borderRadius: 'var(--radius-md)',
+          }}
+        >
+          <button
+            type="button"
+            className="home-auth-choice-btn"
+            onClick={() => setAuthView(AUTH_VIEW.RECOVERY)}
+          >
+            Sign in with recovery phrase
+          </button>
+          <button
+            type="button"
+            className="home-auth-choice-btn"
+            onClick={() => setAuthView(AUTH_VIEW.GUEST)}
+          >
+            Try as guest
+          </button>
+        </div>
+
+        {registrationMode !== 'closed' && (
+          <p style={{ fontSize: '0.82rem', color: 'var(--hush-text-muted)', textAlign: 'center', margin: 0 }}>
+            New here?{' '}
+            <button
+              type="button"
+              style={{
+                padding: 0,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                font: 'inherit',
+                color: 'var(--hush-amber-dim)',
+              }}
+              onClick={() => setAuthView(AUTH_VIEW.REGISTER_WIZARD)}
+            >
+              Create an account
+            </button>
+          </p>
+        )}
+      </>
+    );
   };
 
   return (
     <div style={styles.page} onMouseMove={handleMouseMove}>
-      {/* Cursor spotlight — single lerped circle, soft falloff (desktop only) */}
+      {/* Cursor spotlight */}
       {spotlightEnabled && (
         <div ref={spotlightRef} style={styles.spotlightWrapper}>
           <div style={styles.spotlight} />
@@ -516,7 +756,7 @@ export default function Home() {
       )}
 
       <div style={styles.container}>
-        {/* Logo — fade in with amber glow pulse */}
+        {/* Logo */}
         <motion.div
           style={styles.logo}
           initial={{ opacity: 0 }}
@@ -541,7 +781,7 @@ export default function Home() {
             />
           </div>
 
-          {/* Subtitle — fixed width so "share your screen. keep your privacy." is centered; longer words overflow right */}
+          {/* Subtitle */}
           <motion.div
             style={{
               ...styles.logoSub,
@@ -551,7 +791,7 @@ export default function Home() {
               overflow: 'visible',
               position: 'relative',
               whiteSpace: 'nowrap',
-              marginLeft: '-6px', // positive = shift right, negative = shift left (e.g. '12px' or '-8px')
+              marginLeft: '-6px',
             }}
             initial="hidden"
             animate="visible"
@@ -594,15 +834,14 @@ export default function Home() {
           </motion.div>
         </motion.div>
 
-
-        {/* E2EE badge — trust signal between logo and form */}
+        {/* E2EE badge */}
         <motion.div
           style={{ textAlign: 'center', marginBottom: '16px' }}
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1], delay: 0.6 }}
         >
-          <span style={styles.e2eeBadge}>
+          <span style={styles.e2eeBadge(e2eeActive)}>
             <svg
               width="10"
               height="10"
@@ -620,7 +859,8 @@ export default function Home() {
             end-to-end encrypted
           </span>
         </motion.div>
-        {/* Form card — slides up on mount, glass panel */}
+
+        {/* Form card */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -628,248 +868,7 @@ export default function Home() {
           className="glass"
           style={{ padding: '24px' }}
         >
-          {/* Logout only for persistent accounts; never show in guest flow (avoids flash before isGuestSession updates) */}
-          {isAuthenticated && !isGuestSession && authView !== AUTH_VIEW.GUEST && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-              <button
-                type="button"
-                onClick={() => logout()}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--hush-text-muted)',
-                  fontSize: '0.8rem',
-                  fontFamily: 'var(--font-sans)',
-                  cursor: 'pointer',
-                  padding: '4px 0',
-                }}
-              >
-                Logout
-              </button>
-            </div>
-          )}
-
-          {isAuthenticated || authView === AUTH_VIEW.GUEST ? (
-            <>
-              {authView === AUTH_VIEW.GUEST && !joinParam && (
-                <button
-                  type="button"
-                  className="back-link"
-                  onClick={() => { setAuthView(AUTH_VIEW.CHOOSE); setError(''); }}
-                >
-                  ← Back
-                </button>
-              )}
-
-              <form style={styles.form} onSubmit={handleGuestSubmit}>
-                <div>
-                  <label htmlFor="guest-display-name" style={styles.fieldLabel}>Your Name</label>
-                  <input
-                    id="guest-display-name"
-                    name="display-name"
-                    className="input"
-                    type="text"
-                    placeholder="How others will see you"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    required
-                    maxLength={30}
-                    autoComplete="off"
-                  />
-                </div>
-
-                <button
-                  className="btn btn-primary"
-                  type="submit"
-                  disabled={loading || authLoading}
-                  style={{ width: '100%', padding: '12px' }}
-                >
-                  {loading || authLoading ? 'connecting...' : (joinParam ? 'join' : 'try hush')}
-                </button>
-              </form>
-            </>
-          ) : authView === AUTH_VIEW.CHOOSE ? (
-            <>
-              <div className="home-auth-choices" style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '24px', background: 'var(--hush-surface)', padding: '3px', borderRadius: 'var(--radius-md)' }}>
-                <button
-                  type="button"
-                  className="home-auth-choice-btn"
-                  onClick={() => setAuthView(AUTH_VIEW.LOGIN)}
-                >
-                  Sign in
-                </button>
-                <button
-                  type="button"
-                  className="home-auth-choice-btn"
-                  onClick={() => setAuthView(AUTH_VIEW.GUEST)}
-                >
-                  Try as Guest
-                </button>
-              </div>
-            </>
-          ) : authView === AUTH_VIEW.LOGIN ? (
-            <>
-              <button
-                type="button"
-                className="back-link"
-                onClick={() => { setAuthView(AUTH_VIEW.CHOOSE); setError(''); }}
-              >
-                ← Back
-              </button>
-              <form style={styles.form} onSubmit={handleLoginSubmit}>
-                <div>
-                  <label htmlFor="login-username" style={styles.fieldLabel}>Username or email</label>
-                  <input
-                    id="login-username"
-                    name="username"
-                    className="input"
-                    type="text"
-                    placeholder="alice or alice@example.com"
-                    value={loginUsername}
-                    onChange={(e) => setLoginUsername(e.target.value)}
-                    required
-                    autoComplete="username"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="login-password" style={styles.fieldLabel}>Password</label>
-                  <input
-                    id="login-password"
-                    name="password"
-                    className="input"
-                    type="password"
-                    placeholder="Password"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    required
-                    autoComplete="current-password"
-                  />
-                </div>
-                <button
-                  className="btn btn-primary"
-                  type="submit"
-                  disabled={authLoading}
-                  style={{ width: '100%', padding: '12px' }}
-                >
-                  {authLoading ? 'Signing in...' : 'Sign in'}
-                </button>
-              </form>
-              <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginTop: '16px', textAlign: 'center' }}>
-                Don&apos;t have an account?{' '}
-                <button
-                  type="button"
-                  className="back-link"
-                  style={{
-                    padding: 0,
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    font: 'inherit',
-                    color: 'var(--hush-amber-dim)',
-                  }}
-                  onClick={() => setAuthView(AUTH_VIEW.REGISTER)}
-                >
-                  Sign up
-                </button>
-              </p>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="back-link"
-                onClick={() => { setAuthView(AUTH_VIEW.CHOOSE); setError(''); }}
-              >
-                ← Back
-              </button>
-              <form style={styles.form} onSubmit={handleRegisterSubmit}>
-                <div>
-                  <label htmlFor="register-username" style={styles.fieldLabel}>Username</label>
-                  <input
-                    id="register-username"
-                    name="username"
-                    className="input"
-                    type="text"
-                    placeholder="Choose a username (e.g. alice)"
-                    value={registerUsername}
-                    onChange={(e) => setRegisterUsername(e.target.value)}
-                    required
-                    autoComplete="username"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="register-password" style={styles.fieldLabel}>Password</label>
-                  <input
-                    id="register-password"
-                    name="new-password"
-                    className="input"
-                    type="password"
-                    placeholder="Min 8 characters"
-                    value={registerPassword}
-                    onChange={(e) => setRegisterPassword(e.target.value)}
-                    required
-                    minLength={8}
-                    autoComplete="new-password"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="register-password-confirm" style={styles.fieldLabel}>Confirm password</label>
-                  <input
-                    id="register-password-confirm"
-                    name="new-password-confirm"
-                    className="input"
-                    type="password"
-                    placeholder="Repeat your password"
-                    value={registerPasswordConfirm}
-                    onChange={(e) => setRegisterPasswordConfirm(e.target.value)}
-                    required
-                    minLength={8}
-                    autoComplete="new-password"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="register-display-name" style={styles.fieldLabel}>Display name</label>
-                  <input
-                    id="register-display-name"
-                    name="display-name"
-                    className="input"
-                    type="text"
-                    placeholder="How others will see you in rooms"
-                    value={registerDisplayName}
-                    onChange={(e) => setRegisterDisplayName(e.target.value)}
-                    required
-                    maxLength={30}
-                    autoComplete="off"
-                  />
-                </div>
-                <button
-                  className="btn btn-primary"
-                  type="submit"
-                  disabled={authLoading}
-                  style={{ width: '100%', padding: '12px' }}
-                >
-                  {authLoading ? 'Creating account...' : 'Create account'}
-                </button>
-              </form>
-              <p style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginTop: '16px', textAlign: 'center' }}>
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  style={{
-                    padding: 0,
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    font: 'inherit',
-                    color: 'var(--hush-amber-dim)',
-                  }}
-                  onClick={() => { setAuthView(AUTH_VIEW.LOGIN); setError(''); }}
-                >
-                  Sign in
-                </button>
-              </p>
-            </>
-          )}
+          {renderFormContent()}
 
           <div style={styles.footer}>
             <div>
@@ -896,7 +895,7 @@ export default function Home() {
         </motion.div>
       </div>
 
-      {/* Error toast: fixed position, auto fade-out after 4s */}
+      {/* Error toast */}
       <AnimatePresence>
         {toastMessage && (
           <motion.div
