@@ -447,6 +447,113 @@ export async function performSelfUpdate(deps, channelId) {
 }
 
 // ---------------------------------------------------------------------------
+// Guild metadata group lifecycle
+// Guild metadata groups use the guild UUID directly as the group ID.
+// They are created by the guild owner, joined by new members via External Commit,
+// and used to derive the symmetric key for encrypting guild/channel names.
+// ---------------------------------------------------------------------------
+
+/**
+ * Encodes a guild UUID to the UTF-8 bytes used as the guild metadata MLS group ID.
+ * No prefix — guild UUID is used directly.
+ *
+ * @param {string} guildId
+ * @returns {Uint8Array}
+ */
+export function guildMetadataIdToBytes(guildId) {
+  return new TextEncoder().encode(guildId);
+}
+
+/**
+ * Create a new MLS group for guild metadata.
+ * Called by the guild creator (the initial single member).
+ * Stores GroupInfo on the server for subsequent members to join.
+ *
+ * @param {object} deps
+ * @param {string} guildId
+ * @returns {Promise<{ groupInfoBytes: Uint8Array, epoch: number }>}
+ */
+export async function createGuildMetadataGroup(deps, guildId) {
+  const { db, token, mlsStore, hushCrypto, api } = deps;
+  const { sigPriv, sigPub, credBytes } = getCredFields(deps);
+  const groupIdBytes = guildMetadataIdToBytes(guildId);
+
+  await mlsStore.preloadGroupState(db);
+  const result = await hushCrypto.createGroup(groupIdBytes, sigPriv, sigPub, credBytes);
+  await mlsStore.flushStorageCache(db);
+
+  await api.putGuildMetadataGroupInfo(token, guildId, toBase64(result.groupInfoBytes), result.epoch);
+  await mlsStore.setGroupEpoch(db, `guild-meta:${guildId}`, result.epoch);
+
+  return { groupInfoBytes: result.groupInfoBytes, epoch: result.epoch };
+}
+
+/**
+ * Join an existing guild metadata MLS group via External Commit.
+ * Called by new members when they join a guild.
+ * Returns silently if no GroupInfo exists on the server (guild metadata group not yet created).
+ *
+ * @param {object} deps
+ * @param {string} guildId
+ * @returns {Promise<void>}
+ */
+export async function joinGuildMetadataGroup(deps, guildId) {
+  const { db, token, mlsStore, hushCrypto, api } = deps;
+  const { sigPriv, sigPub, credBytes } = getCredFields(deps);
+  const groupIdBytes = guildMetadataIdToBytes(guildId);
+
+  const serverInfo = await api.getGuildMetadataGroupInfo(token, guildId);
+  if (!serverInfo?.groupInfo) return; // No metadata group yet — skip silently.
+
+  const groupInfoBytes = fromBase64(serverInfo.groupInfo);
+
+  await mlsStore.preloadGroupState(db);
+  const joinResult = await hushCrypto.joinGroupExternal(groupInfoBytes, sigPriv, sigPub, credBytes);
+  await mlsStore.flushStorageCache(db);
+
+  // Export updated GroupInfo after External Commit.
+  const infoResult = await hushCrypto.exportGroupInfoBytes(groupIdBytes, sigPriv, sigPub, credBytes);
+  await mlsStore.flushStorageCache(db);
+
+  // Upload the commit and updated GroupInfo so subsequent joiners see the latest epoch.
+  await api.putGuildMetadataGroupInfo(token, guildId, toBase64(infoResult.groupInfoBytes), joinResult.epoch);
+  await mlsStore.setGroupEpoch(db, `guild-meta:${guildId}`, joinResult.epoch);
+}
+
+/**
+ * Export the 32-byte AES-256-GCM metadata key from the guild MLS group.
+ * Read-only — does not mutate group state.
+ *
+ * @param {object} deps
+ * @param {string} guildId
+ * @returns {Promise<{ metadataKeyBytes: Uint8Array, epoch: number }>}
+ */
+export async function exportGuildMetadataKey(deps, guildId) {
+  const { db, mlsStore, hushCrypto } = deps;
+  const { sigPriv, sigPub, credBytes } = getCredFields(deps);
+  const groupIdBytes = guildMetadataIdToBytes(guildId);
+
+  await mlsStore.preloadGroupState(db);
+  const result = await hushCrypto.exportMetadataKey(groupIdBytes, sigPriv, sigPub, credBytes);
+  // No flush — export_secret is read-only (same pattern as exportVoiceFrameKey).
+
+  return { metadataKeyBytes: result.metadataKeyBytes, epoch: result.epoch };
+}
+
+/**
+ * Remove local guild metadata MLS group state (called when leaving a guild).
+ * Does NOT send a leave proposal — the server handles epoch cleanup.
+ *
+ * @param {object} deps
+ * @param {string} guildId
+ * @returns {Promise<void>}
+ */
+export async function leaveGuildMetadataGroup(deps, guildId) {
+  const { db, mlsStore } = deps;
+  await mlsStore.deleteGroupEpoch(db, `guild-meta:${guildId}`);
+}
+
+// ---------------------------------------------------------------------------
 // Voice group lifecycle
 // Voice groups are independent of text channel groups. They use the same MLS
 // group machinery but with "voice:{channelId}" as the group ID and voice-specific
