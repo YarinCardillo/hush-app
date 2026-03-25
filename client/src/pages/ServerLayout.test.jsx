@@ -30,6 +30,7 @@ vi.mock('../lib/mlsStore', () => ({
 vi.mock('../lib/mlsGroup', () => ({
   createChannelGroup: vi.fn().mockResolvedValue({ groupInfoBytes: new Uint8Array(0), epoch: 0 }),
   joinChannelGroup: vi.fn().mockResolvedValue(undefined),
+  joinOrCreateChannelGroup: vi.fn().mockResolvedValue(undefined),
   joinAllChannelGroups: vi.fn().mockResolvedValue(undefined),
   joinGuildMetadataGroup: vi.fn().mockResolvedValue(undefined),
   leaveGuildMetadataGroup: vi.fn().mockResolvedValue(undefined),

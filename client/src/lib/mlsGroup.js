@@ -100,6 +100,13 @@ export async function createChannelGroup(deps, channelId) {
   const result = await hushCrypto.createGroup(channelIdBytes, sigPriv, sigPub, credBytes);
   await mlsStore.flushStorageCache(db);
 
+  if (!result.groupInfoBytes || result.groupInfoBytes.length === 0) {
+    throw new Error(
+      `[mlsGroup] createGroup returned empty groupInfoBytes for channel ${channelId}` +
+      ` (type=${typeof result.groupInfoBytes}, epoch=${result.epoch})`
+    );
+  }
+
   await api.putMLSGroupInfo(token, channelId, toBase64(result.groupInfoBytes), result.epoch);
   await mlsStore.setGroupEpoch(db, channelId, result.epoch);
 
@@ -141,6 +148,27 @@ export async function joinChannelGroup(deps, channelId) {
     joinResult.epoch
   );
   await mlsStore.setGroupEpoch(db, channelId, joinResult.epoch);
+}
+
+/**
+ * Join an existing channel group, or create it if no group exists on the server.
+ * Used by joinMissingGroups so template channels (created server-side with no MLS
+ * group) get their group created by the first member who enters the guild.
+ *
+ * @param {object} deps
+ * @param {string} channelId
+ * @returns {Promise<void>}
+ */
+export async function joinOrCreateChannelGroup(deps, channelId) {
+  const { token, api } = deps;
+  const serverInfo = await api.getMLSGroupInfo(token, channelId);
+  if (serverInfo?.groupInfo) {
+    // Group exists on server — join via External Commit.
+    await joinChannelGroup(deps, channelId);
+  } else {
+    // No group on server — create it (we are the first member to enter).
+    await createChannelGroup(deps, channelId);
+  }
 }
 
 /**
@@ -482,6 +510,13 @@ export async function createGuildMetadataGroup(deps, guildId) {
   const result = await hushCrypto.createGroup(groupIdBytes, sigPriv, sigPub, credBytes);
   await mlsStore.flushStorageCache(db);
 
+  if (!result.groupInfoBytes || result.groupInfoBytes.length === 0) {
+    throw new Error(
+      `[mlsGroup] createGroup returned empty groupInfoBytes for guild ${guildId}` +
+      ` (type=${typeof result.groupInfoBytes}, epoch=${result.epoch})`
+    );
+  }
+
   await api.putGuildMetadataGroupInfo(token, guildId, toBase64(result.groupInfoBytes), result.epoch);
   await mlsStore.setGroupEpoch(db, `guild-meta:${guildId}`, result.epoch);
 
@@ -577,6 +612,13 @@ export async function createVoiceGroup(deps, channelId) {
   await mlsStore.preloadGroupState(db);
   const result = await hushCrypto.createGroup(groupIdBytes, sigPriv, sigPub, credBytes);
   await mlsStore.flushStorageCache(db);
+
+  if (!result.groupInfoBytes || result.groupInfoBytes.length === 0) {
+    throw new Error(
+      `[mlsGroup] createGroup returned empty groupInfoBytes for voice:${channelId}` +
+      ` (type=${typeof result.groupInfoBytes}, epoch=${result.epoch})`
+    );
+  }
 
   await api.putMLSVoiceGroupInfo(token, channelId, toBase64(result.groupInfoBytes), result.epoch);
   await mlsStore.setGroupEpoch(db, `voice:${channelId}`, result.epoch);

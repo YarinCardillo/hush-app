@@ -780,39 +780,69 @@ export default function ServerLayout() {
 
   // ── MLS group joins when entering a guild ─────────────────────────────
 
+  // Track groups that failed to join — prevents infinite retry loops.
+  // Map<groupKey, failCount>. Reset when serverId changes.
+  const mlsJoinFailuresRef = useRef(new Map());
+  const mlsJoinRunningRef = useRef(false);
+  const prevMlsServerIdRef = useRef(null);
+
   useEffect(() => {
     if (!channels.length || !currentUserId || !authToken || !serverId) return;
-
-    const textChannelIds = channels.filter((c) => c.type === 'text').map((c) => c.id);
     if (!token) return;
 
+    // Reset failure tracking when switching guilds.
+    if (prevMlsServerIdRef.current !== serverId) {
+      mlsJoinFailuresRef.current = new Map();
+      prevMlsServerIdRef.current = serverId;
+    }
+
+    // Prevent concurrent runs (effect can re-fire while async work is in-flight).
+    if (mlsJoinRunningRef.current) return;
+
+    const MAX_JOIN_RETRIES = 3;
+    const textChannelIds = channels.filter((c) => c.type === 'text').map((c) => c.id);
+
     const joinMissingGroups = async () => {
+      mlsJoinRunningRef.current = true;
       try {
         const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
         const credential = await mlsStoreLib.getCredential(db);
         const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+        const failures = mlsJoinFailuresRef.current;
 
-        try {
-          const metaEpoch = await mlsStoreLib.getGroupEpoch(db, `guild-meta:${serverId}`);
-          if (metaEpoch == null) {
-            await mlsGroup.joinGuildMetadataGroup(deps, serverId);
+        // Guild metadata group
+        const metaKey = `guild-meta:${serverId}`;
+        if ((failures.get(metaKey) ?? 0) < MAX_JOIN_RETRIES) {
+          try {
+            const metaEpoch = await mlsStoreLib.getGroupEpoch(db, metaKey);
+            if (metaEpoch == null) {
+              await mlsGroup.joinGuildMetadataGroup(deps, serverId);
+            }
+          } catch (err) {
+            failures.set(metaKey, (failures.get(metaKey) ?? 0) + 1);
+            console.warn('[mls] Failed to join guild metadata group for', serverId,
+              `(attempt ${failures.get(metaKey)}/${MAX_JOIN_RETRIES})`, err);
           }
-        } catch (err) {
-          console.warn('[mls] Failed to join guild metadata group for', serverId, err);
         }
 
+        // Text channel groups
         for (const chId of textChannelIds) {
+          if ((failures.get(chId) ?? 0) >= MAX_JOIN_RETRIES) continue;
           const epoch = await mlsStoreLib.getGroupEpoch(db, chId);
           if (epoch == null) {
             try {
-              await mlsGroup.joinChannelGroup(deps, chId);
+              await mlsGroup.joinOrCreateChannelGroup(deps, chId);
             } catch (err) {
-              console.warn('[mls] Failed to join group for channel', chId, err);
+              failures.set(chId, (failures.get(chId) ?? 0) + 1);
+              console.warn('[mls] Failed to join/create group for channel', chId,
+                `(attempt ${failures.get(chId)}/${MAX_JOIN_RETRIES})`, err);
             }
           }
         }
       } catch (err) {
         console.warn('[mls] joinMissingGroups failed:', err);
+      } finally {
+        mlsJoinRunningRef.current = false;
       }
     };
 
@@ -1118,6 +1148,7 @@ export default function ServerLayout() {
       voiceParticipants={voiceParticipants}
       showToast={showToast}
       members={members}
+      currentUserId={currentUserId}
     />
   );
 

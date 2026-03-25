@@ -249,12 +249,22 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
             api: apiLib,
           };
 
-          // Determine whether to create or join: 404 from server = first participant
+          // Determine whether to create or join: 404 from server = first participant.
+          // Catch GroupAlreadyExists to handle React StrictMode double-fire in dev.
           const existingGroup = await apiLib.getMLSVoiceGroupInfo(accessToken, channelId).catch(() => null);
           if (existingGroup) {
             await mlsGroupLib.joinVoiceGroup(mlsDeps, channelId);
           } else {
-            await mlsGroupLib.createVoiceGroup(mlsDeps, channelId);
+            try {
+              await mlsGroupLib.createVoiceGroup(mlsDeps, channelId);
+            } catch (createErr) {
+              const msg = String(createErr?.message ?? createErr);
+              if (msg.includes('GroupAlreadyExists') || msg.includes('already exists')) {
+                console.warn('[livekit] Voice group already exists locally (StrictMode re-fire), continuing');
+              } else {
+                throw createErr;
+              }
+            }
           }
 
           // Derive frame key from MLS export_secret and apply to LiveKit key provider

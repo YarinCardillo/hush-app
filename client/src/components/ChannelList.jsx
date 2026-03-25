@@ -19,7 +19,12 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { getGuildChannels, createGuildChannel, createGuildInvite, moveChannel, deleteGuildChannel } from '../lib/api';
+import * as apiLib from '../lib/api';
 import { encodeGuildNameForInvite } from '../lib/guildMetadata';
+import * as mlsGroupLib from '../lib/mlsGroup';
+import * as mlsStoreLib from '../lib/mlsStore';
+import * as hushCryptoLib from '../lib/hushCrypto';
+import { getDeviceId } from '../hooks/useAuth';
 import modalStyles from './modalStyles';
 import ConfirmModal from './ConfirmModal';
 import ServerSettingsModal from './ServerSettingsModal';
@@ -241,7 +246,7 @@ function groupChannelsByParent(channels) {
   return ordered;
 }
 
-function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
+function CreateChannelModal({ getToken, serverId, currentUserId, onClose, onCreated }) {
   const [name, setName] = useState('');
   const [type, setType] = useState(CHANNEL_TYPE_TEXT);
   const [voiceMode, setVoiceMode] = useState('quality');
@@ -280,6 +285,31 @@ function CreateChannelModal({ getToken, serverId, onClose, onCreated }) {
       const body = { name: trimmed, type };
       if (type === CHANNEL_TYPE_VOICE) body.voiceMode = voiceMode;
       const channel = await createGuildChannel(token, serverId, body);
+
+      // Create the MLS group for text channels so encrypted chat works.
+      // Voice channels get their MLS group on-demand when users enter voice.
+      if (type === CHANNEL_TYPE_TEXT && currentUserId) {
+        try {
+          const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
+          if (db) {
+            const credential = await mlsStoreLib.getCredential(db);
+            const deps = {
+              db,
+              token,
+              credential,
+              mlsStore: mlsStoreLib,
+              hushCrypto: hushCryptoLib,
+              api: apiLib,
+            };
+            await mlsGroupLib.createChannelGroup(deps, channel.id);
+          }
+        } catch (mlsErr) {
+          // Channel exists on server; MLS group creation failed.
+          // joinMissingGroups in ServerLayout will retry later.
+          console.warn('[ChannelList] MLS group creation failed for channel', channel.id, mlsErr);
+        }
+      }
+
       onCreated(channel);
       onClose();
     } catch (err) {
@@ -884,6 +914,7 @@ export default function ChannelList({
   voiceParticipants,
   showToast,
   members,
+  currentUserId,
 }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
@@ -1280,6 +1311,7 @@ export default function ChannelList({
         <CreateChannelModal
           getToken={getToken}
           serverId={serverId}
+          currentUserId={currentUserId}
           onClose={() => setShowCreateModal(false)}
           onCreated={handleCreated}
         />
