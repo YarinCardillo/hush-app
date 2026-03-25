@@ -608,9 +608,29 @@ export function useAuth() {
       if (vaultUserId) {
         const userId = vaultUserId.slice(VAULT_USER_KEY_PREFIX.length);
         localStorage.setItem(`${VAULT_USER_KEY_PREFIX}_last_user`, userId);
-        setVaultState('locked');
-        setLoading(false);
-        return;
+
+        // Verify the vault actually has an encrypted key (PIN was set).
+        // If registration completed but PIN was never set (iOS killed page
+        // before PIN setup), the vault marker exists but no encrypted blob.
+        // In that case, fall through to 'none' so the user can re-register/recover.
+        let idbCheckCancelled = false;
+        (async () => {
+          try {
+            const result = await checkVaultExistsInIDB(userId);
+            if (idbCheckCancelled) return;
+            if (result.exists) {
+              setVaultState('locked');
+            } else {
+              // Vault marker set during registration but PIN never set — clear stale marker.
+              localStorage.removeItem(`${VAULT_USER_KEY_PREFIX}${userId}`);
+              setVaultState('none');
+            }
+          } catch {
+            if (!idbCheckCancelled) setVaultState('locked'); // Fallback: assume vault exists.
+          }
+          if (!idbCheckCancelled) setLoading(false);
+        })();
+        return () => { idbCheckCancelled = true; };
       }
 
       // localStorage marker missing — iOS non-Safari browsers may have evicted
