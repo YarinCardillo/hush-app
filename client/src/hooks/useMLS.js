@@ -67,18 +67,9 @@ export function useMLS({ getStore, getToken, channelId, _deps }) {
    */
   async function encryptForChannel(plaintext) {
     if (!channelId) throw new Error('[useMLS] channelId is required for encryptForChannel');
-    try {
-      const deps = await buildDeps();
-      const { messageBytes, localId } = await mlsGroup.encryptMessage(deps, channelId, plaintext);
-      return { ciphertext: messageBytes, localId };
-    } catch (mlsErr) {
-      // MLS group not available — send plaintext envelope as fallback.
-      // Server is a blind relay and doesn't inspect the payload.
-      console.warn('[useMLS] MLS encrypt failed, using plaintext fallback:', mlsErr?.message);
-      const envelope = JSON.stringify({ _hush_plaintext: true, content: plaintext });
-      const ciphertext = new TextEncoder().encode(envelope);
-      return { ciphertext, localId: crypto.randomUUID() };
-    }
+    const deps = await buildDeps();
+    const { messageBytes, localId } = await mlsGroup.encryptMessage(deps, channelId, plaintext);
+    return { ciphertext: messageBytes, localId };
   }
 
   /**

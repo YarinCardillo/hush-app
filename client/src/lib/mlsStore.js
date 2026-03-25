@@ -362,7 +362,13 @@ export async function preloadGroupState(db) {
     const rows = await getAll(db, storeName);
     for (const row of rows) {
       const cacheKey = `${storeName}:${row.key}`;
-      storageCache.set(cacheKey, new Uint8Array(row.value));
+      // Only populate from IDB if the cache doesn't already have a newer entry.
+      // writeBytes() updates the cache synchronously but its IDB transaction may
+      // not have committed yet — clobbering the cache with stale IDB data was the
+      // root cause of "Group not found" after createGroup.
+      if (!storageCache.has(cacheKey)) {
+        storageCache.set(cacheKey, new Uint8Array(row.value));
+      }
     }
   }
 }
@@ -387,6 +393,10 @@ export async function flushStorageCache(db) {
     try {
       const tx = db.transaction(storeName, 'readwrite');
       tx.objectStore(storeName).put({ key: hexKey, value: Array.from(value) });
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
     } catch {
       // Best-effort — individual store may not exist for older DBs during upgrade.
     }
