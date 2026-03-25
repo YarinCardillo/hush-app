@@ -1,6 +1,6 @@
 /**
  * BIP39 auth hook: challenge-response authentication, vault PIN management,
- * vault timeout, guest ephemeral sessions, and scorched-earth logout.
+ * vault timeout, and scorched-earth logout.
  *
  * Auth flow:
  *   1. Derive keypair from mnemonic via bip39Identity.mnemonicToIdentityKey
@@ -12,7 +12,6 @@
  *   'none'     — no vault exists, show login/register UI
  *   'locked'   — vault exists but PIN not entered
  *   'unlocked' — private key in memory, JWT valid
- *   'guest'    — ephemeral session, no IK stored in IDB
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
@@ -36,13 +35,11 @@ import {
   requestChallenge,
   verifyChallenge,
   registerWithPublicKey,
-  loginGuest as apiLoginGuest,
 } from '../lib/api';
 
 // ── Module-level constants ───────────────────────────────────────────────────
 
 export const JWT_KEY = 'hush_jwt';
-export const GUEST_SESSION_KEY = 'hush_guest_session';
 
 const DEVICE_ID_KEY = 'hush_device_id';
 const VAULT_USER_KEY_PREFIX = 'hush_vault_user_';
@@ -142,19 +139,18 @@ function clearPinAttempts(userId) {
 
 /**
  * BIP39 auth hook providing challenge-response login, vault PIN management,
- * vault timeout, guest ephemeral sessions, and scorched-earth logout.
+ * vault timeout, and scorched-earth logout.
  *
  * @returns {{
  *   user: object|null,
  *   token: string|null,
- *   vaultState: 'none'|'locked'|'unlocked'|'guest',
+ *   vaultState: 'none'|'locked'|'unlocked',
  *   isAuthenticated: boolean,
  *   loading: boolean,
  *   error: Error|null,
  *   performChallengeResponse: (privateKey: Uint8Array, publicKey: Uint8Array) => Promise<void>,
  *   performRegister: (username: string, displayName: string, mnemonic: string, inviteCode?: string) => Promise<void>,
  *   performRecovery: (mnemonic: string, revokeOtherDevices?: boolean) => Promise<void>,
- *   performGuestLogin: (joinCode?: string) => Promise<void>,
  *   unlockVault: (pin: string) => Promise<void>,
  *   lockVault: () => void,
  *   setPIN: (pin: string) => Promise<void>,
@@ -382,44 +378,6 @@ export function useAuth() {
     }
   }, [performChallengeResponse]);
 
-  // ── Guest login ────────────────────────────────────────────────────────────
-
-  /**
-   * Authenticates as a guest with an ephemeral session.
-   * Token is stored in sessionStorage only; no IK is persisted.
-   *
-   * @param {string} [joinCode]
-   */
-  const performGuestLogin = useCallback(async (joinCode) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await apiLoginGuest(joinCode);
-      const { token: jwt, user: u } = data;
-      if (!jwt || !u?.id) throw new Error('invalid guest auth response');
-
-      const deviceId = getDeviceId();
-      await uploadKeyPackagesAfterAuth(jwt, u.id, deviceId);
-
-      sessionStorage.setItem(JWT_KEY, jwt);
-      sessionStorage.setItem(GUEST_SESSION_KEY, '1');
-
-      setToken(jwt);
-      setUser(u);
-      setVaultState('guest');
-    } catch (err) {
-      setError(err);
-      clearSession();
-      sessionStorage.removeItem(GUEST_SESSION_KEY);
-      setToken(null);
-      setUser(null);
-      setVaultState('none');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   // ── Vault PIN management ───────────────────────────────────────────────────
 
   /**
@@ -610,7 +568,6 @@ export function useAuth() {
 
   useEffect(() => {
     const stored = sessionStorage.getItem(JWT_KEY);
-    const isGuest = sessionStorage.getItem(GUEST_SESSION_KEY) === '1';
     const sessionAlive = sessionStorage.getItem(VAULT_SESSION_FLAG) === '1';
 
     if (!stored) {
@@ -659,9 +616,7 @@ export function useAuth() {
 
           const vaultPublicKeyHex = localStorage.getItem(`${VAULT_USER_KEY_PREFIX}${u.id}`);
 
-          if (isGuest) {
-            setVaultState('guest');
-          } else if (vaultPublicKeyHex && sessionAlive) {
+          if (vaultPublicKeyHex && sessionAlive) {
             // Vault unlocked before the current session; treat as unlocked
             // since the session flag persisted (tab reload, not browser close).
             setVaultState('unlocked');
@@ -678,7 +633,7 @@ export function useAuth() {
       } catch {
         // Network error — keep token, keep as locked if vault exists.
         setToken(stored);
-        setVaultState(isGuest ? 'guest' : 'locked');
+        setVaultState('locked');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -750,7 +705,6 @@ export function useAuth() {
     performChallengeResponse,
     performRegister,
     performRecovery,
-    performGuestLogin,
     unlockVault,
     lockVault,
     setPIN,

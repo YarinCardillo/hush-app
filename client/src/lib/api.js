@@ -239,25 +239,6 @@ export async function registerWithPublicKey(username, displayName, publicKeyBase
 }
 
 /**
- * Authenticate as a guest (ephemeral, no mnemonic required).
- * Optionally accepts a joinCode to join a specific guild as a guest.
- *
- * @param {string} [joinCode] - Optional join/invite code.
- * @returns {Promise<{ token: string, user: object }>}
- */
-export async function loginGuest(joinCode, baseUrl = '') {
-  const body = joinCode ? { joinCode } : {};
-  const res = await fetch(`${baseUrl}/api/auth/guest`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `loginGuest ${res.status}`);
-  return data;
-}
-
-/**
  * List all registered device keys for the authenticated user.
  *
  * @param {string} token - JWT

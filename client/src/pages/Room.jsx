@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Track } from 'livekit-client';
 import { useAuth } from '../contexts/AuthContext';
-import { GUEST_SESSION_KEY, getDeviceId } from '../hooks/useAuth';
+import { getDeviceId } from '../hooks/useAuth';
 import { createWsClient } from '../lib/ws';
 import { useMLS } from '../hooks/useMLS';
 import * as mlsStore from '../lib/mlsStore';
@@ -378,11 +378,7 @@ export default function Room() {
     const channelId = sessionStorage.getItem('hush_channelId');
     const roomNameStored = sessionStorage.getItem('hush_roomName');
     if (!channelId || !roomNameStored) {
-      if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
-        logout().then(() => navigate(joinRedirect, { replace: true }));
-      } else {
-        navigate(joinRedirect, { replace: true });
-      }
+      navigate(joinRedirect, { replace: true });
       return;
     }
     hadSessionRef.current = true;
@@ -403,11 +399,7 @@ export default function Room() {
     }).catch((err) => {
       console.error('[room] Connection failed:', err);
       if (err.message === 'Room not found') {
-        if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
-          logout().then(() => navigate('/', { replace: true }));
-        } else {
-          navigate('/', { replace: true });
-        }
+        navigate('/', { replace: true });
       }
     });
 
@@ -505,8 +497,6 @@ export default function Room() {
     participants.forEach((p) => seenParticipantIdsRef.current.add(p.id));
   }, [participants, isReady]);
 
-  // TODO(Yarin, 2026-02-25): Guest room countdown — reimplemented in Phase E with Go backend room limits
-
   // Countdown tick: update remaining every second; redirect when expired
   useEffect(() => {
     if (roomEndTimeMs == null) return;
@@ -519,9 +509,6 @@ export default function Room() {
         sessionStorage.removeItem('hush_roomName');
         sessionStorage.removeItem('hush_channelId');
         sessionStorage.removeItem('hush_actualRoomName');
-        if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
-          logout().catch(() => {});
-        }
         navigate('/', { replace: true, state: { message: 'This room has ended.' } });
       }
     };
@@ -648,9 +635,6 @@ export default function Room() {
       sessionStorage.removeItem('hush_roomName');
       sessionStorage.removeItem('hush_channelId');
       sessionStorage.removeItem('hush_actualRoomName');
-      if (sessionStorage.getItem(GUEST_SESSION_KEY) === '1') {
-        await logout().catch(() => {});
-      }
       navigate('/');
     };
 

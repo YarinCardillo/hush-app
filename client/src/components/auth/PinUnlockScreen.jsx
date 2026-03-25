@@ -254,7 +254,7 @@ export function PinUnlockScreen({ username, avatarUrl, onUnlock, onSwitchAccount
         style={styles.switchLink}
         onClick={onSwitchAccount}
       >
-        Not you? Sign in with recovery phrase
+        Not you? Sign in
       </button>
     </div>
   );

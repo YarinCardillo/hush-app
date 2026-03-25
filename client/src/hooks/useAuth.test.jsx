@@ -5,7 +5,6 @@
  *   - performLogout wipes all storage
  *   - unlockVault correct/incorrect PIN
  *   - PIN attempt counter increments and progressive delays
- *   - Guest session uses sessionStorage only, not IDB
  *   - performRegister and performChallengeResponse happy path
  *   - Session rehydration: vault 'locked' when session flag absent
  */
@@ -13,7 +12,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
-import { JWT_KEY, GUEST_SESSION_KEY } from './useAuth';
+import { JWT_KEY } from './useAuth';
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
@@ -23,7 +22,6 @@ vi.mock('../lib/api', () => ({
   requestChallenge: vi.fn(),
   verifyChallenge: vi.fn(),
   registerWithPublicKey: vi.fn(),
-  loginGuest: vi.fn(),
   listDeviceKeys: vi.fn().mockResolvedValue([]),
   revokeDeviceKey: vi.fn().mockResolvedValue(undefined),
 }));
@@ -109,10 +107,6 @@ beforeEach(() => {
     token: 'jwt-register',
     user: { id: 'user-reg', username: 'newuser', displayName: 'New User' },
   });
-  vi.mocked(apiMod.loginGuest).mockResolvedValue({
-    token: 'jwt-guest',
-    user: { id: 'user-guest', username: 'guest', displayName: 'Guest' },
-  });
   vi.mocked(vaultMod.deleteVaultDatabase).mockClear();
   vi.mocked(vaultMod.saveEncryptedKey).mockClear();
   vi.mocked(vaultMod.encryptVault).mockClear();
@@ -196,49 +190,6 @@ describe('useAuth — performRegister', () => {
     expect(result.current.vaultState).toBe('none');
     expect(result.current.token).toBeNull();
     expect(result.current.user).toBeNull();
-  });
-});
-
-describe('useAuth — performGuestLogin', () => {
-  it('stores token in sessionStorage and sets vaultState=guest', async () => {
-    const { result } = renderHook(() => useAuth(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    await act(async () => {
-      await result.current.performGuestLogin();
-    });
-
-    expect(result.current.vaultState).toBe('guest');
-    expect(result.current.token).toBe('jwt-guest');
-    expect(result.current.user?.id).toBe('user-guest');
-    expect(sessionStorage.getItem(JWT_KEY)).toBe('jwt-guest');
-    expect(sessionStorage.getItem(GUEST_SESSION_KEY)).toBe('1');
-  });
-
-  it('does not persist identity key to IDB for guest session', async () => {
-    const { result } = renderHook(() => useAuth(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    await act(async () => {
-      await result.current.performGuestLogin('join-code-abc');
-    });
-
-    expect(vaultMod.saveEncryptedKey).not.toHaveBeenCalled();
-    expect(vaultMod.openVaultStore).not.toHaveBeenCalled();
-  });
-
-  it('does not set vault user key in localStorage for guest', async () => {
-    const { result } = renderHook(() => useAuth(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    await act(async () => {
-      await result.current.performGuestLogin();
-    });
-
-    expect(result.current.vaultState).toBe('guest');
-
-    const vaultKeys = Object.keys(localStorage).filter(k => k.startsWith('hush_vault_user_'));
-    expect(vaultKeys).toHaveLength(0);
   });
 });
 
@@ -502,20 +453,6 @@ describe('useAuth — session rehydration', () => {
 
     expect(result.current.vaultState).toBe('none');
     expect(sessionStorage.getItem(JWT_KEY)).toBeNull();
-  });
-
-  it('sets vaultState=guest when GUEST_SESSION_KEY is present', async () => {
-    sessionStorage.setItem(JWT_KEY, 'guest-jwt');
-    sessionStorage.setItem(GUEST_SESSION_KEY, '1');
-
-    vi.mocked(apiMod.fetchWithAuth).mockResolvedValue(
-      mockFetchOk({ id: 'user-guest', username: 'guest', displayName: 'Guest' }),
-    );
-
-    const { result } = renderHook(() => useAuth(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    expect(result.current.vaultState).toBe('guest');
   });
 
   it('sets vaultState=none when no JWT present', async () => {
