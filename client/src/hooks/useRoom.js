@@ -282,20 +282,21 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
           worker = null;
         }
 
-        if (!keyProvider || !worker) {
-          throw new Error('Could not establish encrypted voice. Please try again.');
-        }
         if (isStale()) return;
 
         // ─── LiveKit Room Options ─────────────────────────────────────────────
         const roomOptions = {
           dynacast: true,
           adaptiveStream: true,
-          e2ee: {
-            keyProvider,
-            worker,
-          },
         };
+
+        // E2EE is best-effort — iOS Safari may not support the E2EE worker.
+        // Connect without encryption rather than blocking voice entirely.
+        if (keyProvider && worker) {
+          roomOptions.e2ee = { keyProvider, worker };
+        } else {
+          console.warn('[livekit] E2EE unavailable — connecting without encryption');
+        }
 
         const room = new Room(roomOptions);
 
