@@ -67,8 +67,13 @@ function pickRandomPositions(max, count) {
  *   onBack: () => void
  * }} props
  */
-export function MnemonicConfirm({ words, onConfirm, onBack }) {
-  const [positions] = useState(() => pickRandomPositions(words.length, 3));
+export function MnemonicConfirm({ words, onConfirm, onBack, challengePositions, onPositionsSelected }) {
+  const [positions] = useState(() => {
+    if (challengePositions?.length === 3) return challengePositions;
+    const picked = pickRandomPositions(words.length, 3);
+    onPositionsSelected?.(picked);
+    return picked;
+  });
   const [inputs, setInputs] = useState(['', '', '']);
 
   const getFieldState = useCallback(

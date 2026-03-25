@@ -234,6 +234,7 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
   const [displayName, setDisplayName] = useState(syncSaved?.displayName ?? '');
   const [mnemonic, setMnemonic] = useState(() => syncSaved?.mnemonic ?? generateIdentityMnemonic());
   const [mnemonicWords, setMnemonicWords] = useState(() => mnemonic.split(' '));
+  const [challengePositions, setChallengePositions] = useState(syncSaved?.challengePositions ?? null);
   const [savedConfirmed, setSavedConfirmed] = useState(false);
   const [localError, setLocalError] = useState('');
   const idbRestoredRef = useRef(false);
@@ -252,13 +253,14 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
         setMnemonic(idbState.mnemonic);
         setMnemonicWords(idbState.mnemonic.split(' '));
       }
+      if (idbState.challengePositions?.length === 3) setChallengePositions(idbState.challengePositions);
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist wizard state on every change — dual-write to sessionStorage + IDB.
   useEffect(() => {
-    saveWizardState({ step, inviteCode, username, displayName, mnemonic });
-  }, [step, inviteCode, username, displayName, mnemonic]);
+    saveWizardState({ step, inviteCode, username, displayName, mnemonic, challengePositions });
+  }, [step, inviteCode, username, displayName, mnemonic, challengePositions]);
 
   // Username availability state: 'idle' | 'checking' | 'ok' | 'taken' | 'invalid'
   const [usernameState, setUsernameState] = useState('idle');
@@ -407,6 +409,8 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
           words={mnemonicWords}
           onConfirm={handleConfirmComplete}
           onBack={goBack}
+          challengePositions={challengePositions}
+          onPositionsSelected={setChallengePositions}
         />
       )}
 
