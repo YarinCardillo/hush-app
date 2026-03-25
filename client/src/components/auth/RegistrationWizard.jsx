@@ -139,16 +139,23 @@ function getVisibleSteps(registrationMode) {
  * }} props
  */
 const REG_SESSION_KEY = 'hush_reg_wizard';
+const REG_STATE_TTL_MS = 60_000;
 
 function loadSavedWizardState() {
   try {
     const raw = sessionStorage.getItem(REG_SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.savedAt && Date.now() - parsed.savedAt > REG_STATE_TTL_MS) {
+      sessionStorage.removeItem(REG_SESSION_KEY);
+      return null;
+    }
+    return parsed;
   } catch { return null; }
 }
 
 function saveWizardState(state) {
-  try { sessionStorage.setItem(REG_SESSION_KEY, JSON.stringify(state)); } catch { /* best-effort */ }
+  try { sessionStorage.setItem(REG_SESSION_KEY, JSON.stringify({ ...state, savedAt: Date.now() })); } catch { /* best-effort */ }
 }
 
 function clearWizardState() {
