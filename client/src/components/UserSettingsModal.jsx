@@ -275,11 +275,13 @@ function LogoutConfirmModal({ onConfirm, onCancel, loading }) {
           Sign out and wipe data?
         </div>
         <div style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginBottom: '8px', lineHeight: 1.6 }}>
-          Signing out will delete all local data including your encrypted
-          identity key, MLS group states, and session tokens.
+          This will permanently delete all local data on this device,
+          including your message history, encryption keys, and session.
+          Messages will become unreadable after signing out.
         </div>
         <div style={{ fontSize: '0.85rem', color: 'var(--hush-danger)', marginBottom: '24px', lineHeight: 1.6 }}>
           You will need your 12-word recovery phrase to sign back in.
+          This action cannot be undone.
         </div>
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={loading}>
