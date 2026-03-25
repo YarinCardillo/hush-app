@@ -264,22 +264,8 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     }
   }, [error, showToast, onLeave]);
 
-  // Voice connect effect — StrictMode resilient.
-  // StrictMode fires: mount(connect) → unmount(cleanup) → mount(cancel disconnect).
-  // The first mount's connect SUCCEEDS (101 WS upgrade) but cleanup would kill it.
-  // Fix: defer disconnect by 100ms. If StrictMode re-mounts within that window,
-  // cancel the pending disconnect. Real unmount doesn't re-mount → disconnect fires.
-  const pendingDisconnectRef = useRef(null);
   useEffect(() => {
     if (!wsClient || !channel?.id) return;
-
-    // Cancel any pending deferred disconnect from StrictMode cleanup
-    if (pendingDisconnectRef.current) {
-      clearTimeout(pendingDisconnectRef.current);
-      pendingDisconnectRef.current = null;
-      // First mount's connection is still alive — don't reconnect
-      return;
-    }
 
     connectRoomRef.current(roomName, displayName, channel.id).catch(() => {});
 
@@ -300,11 +286,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     }
 
     return () => {
-      // Defer disconnect — if StrictMode re-mounts within 100ms, it cancels this.
-      pendingDisconnectRef.current = setTimeout(() => {
-        pendingDisconnectRef.current = null;
-        disconnectRoomRef.current();
-      }, 100);
+      disconnectRoomRef.current();
     };
   }, [wsClient, channel?.id, roomName, displayName]);
 
