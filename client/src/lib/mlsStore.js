@@ -219,6 +219,8 @@ export function openStore(userId, deviceId) {
     req.onsuccess = () => {
       const db = req.result;
       initStorageBridge(db);
+      // Request persistent storage so iOS WKWebView doesn't evict MLS state.
+      navigator.storage?.persist?.().catch(() => {});
       resolve(db);
     };
     req.onupgradeneeded = (e) => {

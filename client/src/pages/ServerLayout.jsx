@@ -836,6 +836,13 @@ export default function ServerLayout() {
               console.warn('[mls] Failed to join/create group for channel', chId,
                 `(attempt ${failures.get(chId)}/${MAX_JOIN_RETRIES})`, err);
             }
+          } else {
+            // Epoch exists — catch up on any commits missed while page was killed (iOS).
+            try {
+              await mlsGroup.catchupCommits(deps, chId);
+            } catch (err) {
+              console.warn('[mls] Commit catchup failed for channel', chId, err);
+            }
           }
         }
       } catch (err) {
