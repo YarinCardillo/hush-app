@@ -266,28 +266,47 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
 
   useEffect(() => {
     if (!wsClient || !channel?.id) return;
-    connectRoomRef.current(roomName, displayName, channel.id).catch(() => {
-      // Connection errors are surfaced via useRoom's `error` state
-    });
 
-    const isLocalhost =
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    if (isLocalhost) {
-      setRecommendedQualityKey('source');
-      setRecommendedUploadMbps(100);
-      setQuality('source');
-    } else {
-      estimateUploadSpeed().then((speed) => {
-        const rec = getRecommendedQuality(speed);
-        setRecommendedQualityKey(rec.key);
-        setRecommendedUploadMbps(rec.uploadMbps);
-        setQuality(rec.key);
+    // Track whether this effect instance is still active (StrictMode guard).
+    // Prevents the first mount's cleanup from aborting a connection that the
+    // second mount hasn't started yet.
+    let active = true;
+
+    (async () => {
+      // Small delay so StrictMode's first mount/unmount cycle completes
+      // before we start the expensive connect (MLS + LiveKit WebSocket).
+      await new Promise(r => setTimeout(r, 50));
+      if (!active) return;
+
+      connectRoomRef.current(roomName, displayName, channel.id).catch(() => {
+        // Connection errors are surfaced via useRoom's `error` state
       });
-    }
+
+      const isLocalhost =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      if (isLocalhost) {
+        setRecommendedQualityKey('source');
+        setRecommendedUploadMbps(100);
+        setQuality('source');
+      } else {
+        estimateUploadSpeed().then((speed) => {
+          if (!active) return;
+          const rec = getRecommendedQuality(speed);
+          setRecommendedQualityKey(rec.key);
+          setRecommendedUploadMbps(rec.uploadMbps);
+          setQuality(rec.key);
+        });
+      }
+    })();
 
     return () => {
-      disconnectRoomRef.current();
+      active = false;
+      // Only disconnect if the room was actually established.
+      // Prevents StrictMode first-mount cleanup from aborting in-progress connects.
+      if (roomRef?.current) {
+        disconnectRoomRef.current();
+      }
     };
   }, [wsClient, channel?.id, roomName, displayName]);
 
