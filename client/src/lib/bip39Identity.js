@@ -17,6 +17,7 @@
 import { generateMnemonic, mnemonicToSeedSync, validateMnemonic } from '@scure/bip39';
 import { wordlist as englishWordlist } from '@scure/bip39/wordlists/english.js';
 import * as ed from '@noble/ed25519';
+import { encode as cborEncode } from 'cborg';
 
 // BIP39 entropy for 12 words (128 bits).
 const ENTROPY_BITS = 128;
@@ -83,4 +84,40 @@ export async function signChallenge(nonce, privateKey) {
  */
 export function getEnglishWordlist() {
   return englishWordlist;
+}
+
+/**
+ * Signs a transparency log entry with the Ed25519 private key.
+ *
+ * The payload is CBOR-encoded using integer map keys (1-4) matching the
+ * server's fxamacker/cbor CoreDetEncOptions with keyasint struct tags.
+ * Both sides use RFC 8949 Core Deterministic Encoding, which sorts integer
+ * keys numerically — this cross-platform consistency ensures leaf hashes match.
+ *
+ * Field mapping:
+ *   1 → operationType (text string)
+ *   2 → userPubKey    (bstr, 32 bytes)
+ *   3 → subjectKey    (bstr, 32 bytes, or null)
+ *   4 → timestamp     (integer, Unix seconds)
+ *
+ * @param {Uint8Array} privateKey     - 32-byte Ed25519 private key seed.
+ * @param {string}     operationType  - One of: register, key_update, device_add,
+ *                                      device_revoke, recovery, key_revoke.
+ * @param {Uint8Array} userPubKey     - 32-byte Ed25519 root public key.
+ * @param {Uint8Array|null} subjectKey - 32-byte subject device key, or null.
+ * @param {number}     timestamp      - Unix seconds (integer).
+ * @returns {Promise<{ cborBytes: Uint8Array, signature: Uint8Array }>}
+ */
+export async function signTransparencyEntry(privateKey, operationType, userPubKey, subjectKey, timestamp) {
+  // Build a Map with integer keys so cborg emits CBOR map with integer keys,
+  // matching fxamacker/cbor keyasint output (RFC 8949 §4.2.1 sorted by key).
+  const payload = new Map([
+    [1, operationType],
+    [2, userPubKey],
+    [3, subjectKey ?? null],
+    [4, timestamp],
+  ]);
+  const cborBytes = cborEncode(payload);
+  const signature = await ed.signAsync(cborBytes, privateKey);
+  return { cborBytes, signature };
 }

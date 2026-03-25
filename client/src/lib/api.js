@@ -162,6 +162,26 @@ export async function updateInstance(token, body, baseUrl = '') {
   }
 }
 
+// ── Transparency Log API ──────────────────────────────────────────────────────
+
+/**
+ * Fetch Merkle inclusion proofs for all transparency log entries for a public key.
+ *
+ * Called by TransparencyVerifier to independently verify that key operations
+ * were logged correctly by the server.
+ *
+ * @param {string} token      - JWT for authenticated API calls.
+ * @param {string} pubkeyHex  - Hex-encoded 32-byte Ed25519 public key.
+ * @param {string} [baseUrl]  - Optional base URL for cross-instance calls.
+ * @returns {Promise<{ entries: object[], proofs: object[], treeHead: object }>}
+ */
+export async function verifyTransparency(token, pubkeyHex, baseUrl = '') {
+  const url = `${baseUrl}/api/transparency/verify?pubkey=${encodeURIComponent(pubkeyHex)}`;
+  const r = await fetchWithAuth(token, url, {}, '');
+  if (!r.ok) throw new Error(`Transparency verify failed: ${r.status}`);
+  return r.json();
+}
+
 // ── BIP39 Auth API ────────────────────────────────────────────────────────────
 
 /**
@@ -225,9 +245,35 @@ export async function checkUsernameAvailable(username, baseUrl = '') {
   return data.available === true;
 }
 
-export async function registerWithPublicKey(username, displayName, publicKeyBase64, deviceId, inviteCode, baseUrl = '') {
+/**
+ * Register a new account with a BIP39-derived public key.
+ *
+ * @param {string} username
+ * @param {string} displayName
+ * @param {string} publicKeyBase64      - Base64-encoded Ed25519 public key.
+ * @param {string} deviceId             - Stable per-device identifier (UUID).
+ * @param {string} [inviteCode]         - Optional invite code.
+ * @param {string} [baseUrl='']         - Optional base URL for cross-instance calls.
+ * @param {string} [transparencySig]    - Base64-encoded Ed25519 signature over CBOR entry payload.
+ * @param {number} [transparencyTs]     - Unix seconds timestamp used in CBOR entry payload.
+ * @returns {Promise<{ token: string, user: object }>}
+ */
+export async function registerWithPublicKey(
+  username,
+  displayName,
+  publicKeyBase64,
+  deviceId,
+  inviteCode,
+  baseUrl = '',
+  transparencySig = null,
+  transparencyTs = null,
+) {
   const body = { username, displayName, publicKey: publicKeyBase64, deviceId };
   if (inviteCode) body.inviteCode = inviteCode;
+  if (transparencySig != null) {
+    body.transparency_sig = transparencySig;
+    body.transparency_ts = transparencyTs;
+  }
   const res = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -258,10 +304,30 @@ export async function listDeviceKeys(token, baseUrl = '') {
  * @param {string} deviceId - Device ID to revoke.
  * @returns {Promise<void>}
  */
-export async function revokeDeviceKey(token, deviceId, baseUrl = '') {
-  const res = await fetchWithAuth(token, `/api/auth/devices/${encodeURIComponent(deviceId)}`, {
+/**
+ * Revoke a registered device key. The device can no longer authenticate.
+ *
+ * @param {string} token             - JWT
+ * @param {string} deviceId          - Device ID to revoke.
+ * @param {string} [baseUrl='']      - Optional base URL for cross-instance calls.
+ * @param {string} [transparencySig] - Base64-encoded Ed25519 signature over CBOR entry payload.
+ * @param {number} [transparencyTs]  - Unix seconds timestamp used in CBOR entry payload.
+ * @returns {Promise<void>}
+ */
+export async function revokeDeviceKey(token, deviceId, baseUrl = '', transparencySig = null, transparencyTs = null) {
+  const body = {};
+  if (transparencySig != null) {
+    body.transparency_sig = transparencySig;
+    body.transparency_ts = transparencyTs;
+  }
+  const opts = {
     method: 'DELETE',
-  }, baseUrl);
+  };
+  if (Object.keys(body).length > 0) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetchWithAuth(token, `/api/auth/devices/${encodeURIComponent(deviceId)}`, opts, baseUrl);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || `revokeDeviceKey ${res.status}`);
@@ -290,17 +356,47 @@ export async function revokeDeviceKey(token, deviceId, baseUrl = '') {
  * @param {string} [label] - Optional human-readable label for the new device.
  * @returns {Promise<void>}
  */
-export async function certifyNewDevice(token, newDevicePublicKeyBase64, certificate, deviceId, signingDeviceId, label, baseUrl = '') {
+/**
+ * Register a new device key certified by an existing authenticated device.
+ * Used in the multi-device linking flow (Plan 06).
+ *
+ * @param {string} token                    - JWT of the certifying device.
+ * @param {string} newDevicePublicKeyBase64  - Base64-encoded Ed25519 public key of the new device.
+ * @param {string} certificate              - Base64-encoded signature: Sign(IK_existing_priv, IK_new_pub).
+ * @param {string} deviceId                 - Device ID for the new device.
+ * @param {string} signingDeviceId          - Device ID of the certifying (existing) device.
+ * @param {string} [label]                  - Optional human-readable label for the new device.
+ * @param {string} [baseUrl='']             - Optional base URL for cross-instance calls.
+ * @param {string} [transparencySig]        - Base64-encoded Ed25519 signature over CBOR entry payload.
+ * @param {number} [transparencyTs]         - Unix seconds timestamp used in CBOR entry payload.
+ * @returns {Promise<void>}
+ */
+export async function certifyNewDevice(
+  token,
+  newDevicePublicKeyBase64,
+  certificate,
+  deviceId,
+  signingDeviceId,
+  label,
+  baseUrl = '',
+  transparencySig = null,
+  transparencyTs = null,
+) {
+  const body = {
+    devicePublicKey: newDevicePublicKeyBase64,
+    certificate,
+    deviceId,
+    signingDeviceId,
+    label,
+  };
+  if (transparencySig != null) {
+    body.transparency_sig = transparencySig;
+    body.transparency_ts = transparencyTs;
+  }
   const res = await fetchWithAuth(token, '/api/auth/devices', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      devicePublicKey: newDevicePublicKeyBase64,
-      certificate,
-      deviceId,
-      signingDeviceId,
-      label,
-    }),
+    body: JSON.stringify(body),
   }, baseUrl);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
