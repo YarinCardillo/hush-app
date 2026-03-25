@@ -790,11 +790,9 @@ export default function ServerLayout() {
     if (!channels.length || !currentUserId || !authToken || !serverId) return;
     if (!token) return;
 
-    // Reset failure tracking when switching guilds.
-    if (prevMlsServerIdRef.current !== serverId) {
-      mlsJoinFailuresRef.current = new Map();
-      prevMlsServerIdRef.current = serverId;
-    }
+    // Track guild switch — no failure map reset. Failures persist across
+    // guild switches so a 404'd group doesn't get re-polled endlessly.
+    prevMlsServerIdRef.current = serverId;
 
     // Prevent concurrent runs (effect can re-fire while async work is in-flight).
     if (mlsJoinRunningRef.current) return;

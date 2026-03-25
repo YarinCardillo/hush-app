@@ -1256,7 +1256,7 @@ export async function putGuildMetadataGroupInfo(token, guildId, groupInfoBase64,
   const res = await fetchWithAuth(token, `/api/mls/guilds/${encodeURIComponent(guildId)}/group-info`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ groupInfoBytes: groupInfoBase64, epoch }),
+    body: JSON.stringify({ groupInfo: groupInfoBase64, epoch }),
   }, baseUrl);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
