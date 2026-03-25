@@ -5,7 +5,6 @@ import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
 import { useInstanceContext } from '../contexts/InstanceContext';
 import { slugify } from '../lib/slugify';
-import { GUEST_SESSION_KEY } from '../hooks/useAuth';
 import { RegistrationWizard } from '../components/auth/RegistrationWizard';
 import { RecoveryPhraseInput } from '../components/auth/RecoveryPhraseInput';
 import { PinUnlockScreen } from '../components/auth/PinUnlockScreen';
@@ -330,7 +329,6 @@ const AUTH_VIEW = {
   REGISTER_WIZARD: 'register_wizard',
   PIN_UNLOCK: 'pin_unlock',
   PIN_SETUP: 'pin_setup',
-  GUEST: 'guest',
 };
 
 /** Maps raw auth/join errors to short, user-facing messages. */
@@ -354,7 +352,6 @@ export default function Home() {
     user,
     performRegister,
     performRecovery,
-    performGuestLogin,
     unlockVault,
     lockVault,
     setPIN,
@@ -367,16 +364,10 @@ export default function Home() {
   const [searchParams] = useSearchParams();
   const joinParam = searchParams.get('join');
 
-  const [authView, setAuthView] = useState(
-    joinParam ? AUTH_VIEW.GUEST : AUTH_VIEW.CHOOSE,
-  );
+  const [authView, setAuthView] = useState(AUTH_VIEW.CHOOSE);
   const [hasPinSetup, setHasPinSetup] = useState(false);
   const [isPinSetupLoading, setIsPinSetupLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
-  const [guestDisplayName, setGuestDisplayName] = useState(
-    () => localStorage.getItem('hush_displayName') || '',
-  );
-  const [guestLoading, setGuestLoading] = useState(false);
 
   // Handshake data — read from sessionStorage if available (populated by App.jsx).
   const [handshakeData] = useState(() => {
@@ -418,7 +409,7 @@ export default function Home() {
       return;
     }
 
-    if (vaultState === 'unlocked' || vaultState === 'guest') {
+    if (vaultState === 'unlocked') {
       // Don't navigate away while PIN setup is in progress — let the user set a PIN first.
       if (authView === AUTH_VIEW.PIN_SETUP) return;
 
@@ -619,20 +610,6 @@ export default function Home() {
     navigate(target, { replace: true });
   }, [joinParam, navigate]);
 
-  const handleGuestSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    setGuestLoading(true);
-    try {
-      localStorage.setItem('hush_displayName', guestDisplayName);
-      await performGuestLogin(joinParam || undefined);
-    } catch (err) {
-      setToastMessage(getFriendlyError(err));
-      setTimeout(() => setToastMessage(null), 4000);
-    } finally {
-      setGuestLoading(false);
-    }
-  }, [guestDisplayName, performGuestLogin, joinParam]);
-
   // ── View content ─────────────────────────────────────────────────────────────
 
   const renderFormContent = () => {
@@ -686,7 +663,7 @@ export default function Home() {
       return (
         <>
           <div style={{ marginBottom: '8px' }}>
-            <div style={styles.sectionTitle}>Sign in with recovery phrase</div>
+            <div style={styles.sectionTitle}>Sign in</div>
           </div>
           <RecoveryPhraseInput
             onSubmit={handleRecoverySubmit}
@@ -694,47 +671,6 @@ export default function Home() {
             isRecoveryMode={true}
             isLoading={authLoading}
           />
-        </>
-      );
-    }
-
-    if (authView === AUTH_VIEW.GUEST || joinParam) {
-      return (
-        <>
-          {!joinParam && (
-            <button
-              type="button"
-              className="back-link"
-              onClick={() => setAuthView(AUTH_VIEW.CHOOSE)}
-            >
-              ← Back
-            </button>
-          )}
-          <form style={styles.form} onSubmit={handleGuestSubmit}>
-            <div>
-              <label htmlFor="guest-display-name" style={styles.fieldLabel}>Your name</label>
-              <input
-                id="guest-display-name"
-                name="display-name"
-                className="input"
-                type="text"
-                placeholder="How others will see you"
-                value={guestDisplayName}
-                onChange={(e) => setGuestDisplayName(e.target.value)}
-                required
-                maxLength={30}
-                autoComplete="off"
-              />
-            </div>
-            <button
-              className="btn btn-primary"
-              type="submit"
-              disabled={guestLoading || authLoading}
-              style={{ width: '100%', padding: '12px' }}
-            >
-              {guestLoading || authLoading ? 'Connecting...' : joinParam ? 'Join' : 'Try Hush'}
-            </button>
-          </form>
         </>
       );
     }
@@ -759,14 +695,7 @@ export default function Home() {
             className="home-auth-choice-btn"
             onClick={() => setAuthView(AUTH_VIEW.RECOVERY)}
           >
-            Sign in with recovery phrase
-          </button>
-          <button
-            type="button"
-            className="home-auth-choice-btn"
-            onClick={() => setAuthView(AUTH_VIEW.GUEST)}
-          >
-            Try as guest
+            Sign in
           </button>
         </div>
 
@@ -928,10 +857,6 @@ export default function Home() {
                 {' · '}
                 <Link to="/roadmap" style={styles.footerLink}>
                   roadmap
-                </Link>
-                {' · '}
-                <Link to="/mascot-demo" style={styles.footerLink}>
-                  meet vesper
                 </Link>
               </span>
             </div>

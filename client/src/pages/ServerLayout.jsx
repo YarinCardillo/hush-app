@@ -20,7 +20,6 @@ import * as hushCryptoLib from '../lib/hushCrypto';
 import * as mlsGroup from '../lib/mlsGroup';
 import { slugify } from '../lib/slugify';
 import ConfirmModal from '../components/ConfirmModal';
-import Vesper from '../components/Vesper';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
 
@@ -1330,11 +1329,27 @@ export default function ServerLayout() {
                 transition: 'padding-right var(--duration-fast) var(--ease-out)',
                 pointerEvents: 'none',
               }}>
-                <div style={{ pointerEvents: 'auto' }}>
-                  <Vesper
-                    phase={orbPhase}
-                    label={isViewingVoice ? undefined : 'select a channel'}
-                  />
+                <div style={{ pointerEvents: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                  <span style={{
+                    color: orbPhase === 'activating' ? 'var(--hush-amber)' : 'var(--hush-text-muted)',
+                    fontSize: 11,
+                    letterSpacing: '0.18em',
+                    marginRight: '-0.18em',
+                    textTransform: 'uppercase',
+                    fontFamily: 'var(--font-mono, monospace)',
+                    transition: 'color 0.6s ease',
+                  }}>
+                    {isViewingVoice
+                      ? (orbPhase === 'idle' ? 'connecting...' : orbPhase === 'waiting' ? 'waiting for others to join' : 'someone just joined')
+                      : 'select a channel'}
+                  </span>
+                  <div style={{
+                    width: 5,
+                    height: 5,
+                    borderRadius: '50%',
+                    background: orbPhase !== 'idle' ? 'var(--hush-amber)' : 'var(--hush-elevated)',
+                    transition: 'background 0.4s ease',
+                  }} />
                 </div>
               </div>
             )}

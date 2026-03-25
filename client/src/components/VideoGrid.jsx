@@ -217,8 +217,7 @@ export default function VideoGrid({
     <>
       <div style={{ ...styles.streamsArea(isMobile, totalCards), ...gridStyle }}>
         {totalCards === 0 ? (
-          // Vesper is rendered by ServerLayout as a persistent element.
-          // Empty div preserves the flex layout; the orb shows through via z-index.
+          // Empty div preserves the flex layout; status indicator shows through via z-index.
           <div style={styles.empty} />
         ) : (
           <>

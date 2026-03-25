@@ -43,14 +43,6 @@
   --hush-header-block-bg:    rgba(255, 255, 255, 0.03);
   --hush-header-block-border: rgba(255, 255, 255, 0.06);
 
-  /* ── Vesper — waiting state (dark theme defaults) ── */
-  --orb-waiting-from:   #5a2c14;
-  --orb-waiting-mid:    #3a1e0c;
-  --orb-waiting-to:     #1b1912;
-  --orb-waiting-shadow: 0 0 36px rgba(213,79,18,0.3), 0 0 12px rgba(213,79,18,0.18);
-  --orb-waiting-glow:   rgba(213,79,18,0.09);
-  --orb-waiting-ring:   rgba(213,79,18,0.2);
-
   /* ── Typography ── */
   --font-sans:  'Sora', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono:  'JetBrains Mono', 'SF Mono', Consolas, monospace;
@@ -98,12 +90,6 @@
     --hush-header-block-bg:    rgba(0, 0, 0, 0.04);
     --hush-header-block-border: rgba(0, 0, 0, 0.08);
 
-    --orb-waiting-from:   #b86450;
-    --orb-waiting-mid:    #cc9480;
-    --orb-waiting-to:     #ddc8c0;
-    --orb-waiting-shadow: 0 0 36px rgba(213,79,18,0.4), 0 0 14px rgba(213,79,18,0.25);
-    --orb-waiting-glow:   rgba(213,79,18,0.18);
-    --orb-waiting-ring:   rgba(213,79,18,0.35);
   }
 }
 
@@ -130,12 +116,6 @@
   --hush-header-block-bg:    rgba(0, 0, 0, 0.04);
   --hush-header-block-border: rgba(0, 0, 0, 0.08);
 
-  --orb-waiting-from:   #c8806a;
-  --orb-waiting-mid:    #d9b0a0;
-  --orb-waiting-to:     #e6e5e0;
-  --orb-waiting-shadow: 0 0 24px rgba(213,79,18,0.25);
-  --orb-waiting-glow:   rgba(213,79,18,0.12);
-  --orb-waiting-ring:   rgba(213,79,18,0.22);
 }
 
 [data-theme="dark"] {
@@ -161,52 +141,6 @@
   --hush-header-block-bg:    rgba(255, 255, 255, 0.03);
   --hush-header-block-border: rgba(255, 255, 255, 0.06);
 
-  --orb-waiting-from:   #5a2c14;
-  --orb-waiting-mid:    #3a1e0c;
-  --orb-waiting-to:     #1b1912;
-  --orb-waiting-shadow: 0 0 36px rgba(213,79,18,0.3), 0 0 12px rgba(213,79,18,0.18);
-  --orb-waiting-glow:   rgba(213,79,18,0.09);
-  --orb-waiting-ring:   rgba(213,79,18,0.2);
-}
-
-/* ── Vesper phase tokens — registered so CSS can interpolate gradients between phases ── */
-
-@property --ob-from           { syntax: '<color>';  inherits: true; initial-value: #26241e; }
-@property --ob-mid            { syntax: '<color>';  inherits: true; initial-value: #1b1912; }
-@property --ob-to             { syntax: '<color>';  inherits: true; initial-value: #13120a; }
-@property --ob-glow           { syntax: '<color>';  inherits: true; initial-value: rgba(213,79,18,0); }
-@property --ob-ring           { syntax: '<color>';  inherits: true; initial-value: rgba(213,79,18,0); }
-@property --ob-eye            { syntax: '<color>';  inherits: true; initial-value: #3a3a4e; }
-@property --ob-shadow-opacity { syntax: '<number>'; inherits: true; initial-value: 0; }
-
-[data-orb-phase="idle"] {
-  --ob-from:           var(--hush-elevated);
-  --ob-mid:            var(--hush-surface);
-  --ob-to:             var(--hush-black);
-  --ob-glow:           rgba(213,79,18,0);
-  --ob-ring:           rgba(213,79,18,0);
-  --ob-eye:            var(--hush-text-ghost);
-  --ob-shadow-opacity: 0;
-}
-
-[data-orb-phase="waiting"] {
-  --ob-from:           var(--orb-waiting-from);
-  --ob-mid:            var(--orb-waiting-mid);
-  --ob-to:             var(--orb-waiting-to);
-  --ob-glow:           var(--orb-waiting-glow);
-  --ob-ring:           var(--orb-waiting-ring);
-  --ob-eye:            #4a4a4a;
-  --ob-shadow-opacity: 0.3;
-}
-
-[data-orb-phase="activating"] {
-  --ob-from:           #e85a1a;
-  --ob-mid:            #d54f12;
-  --ob-to:             #a33d0e;
-  --ob-glow:           rgba(213,79,18,0.14);
-  --ob-ring:           rgba(213,79,18,0.28);
-  --ob-eye:            var(--hush-black);
-  --ob-shadow-opacity: 1;
 }
 
 /* ── Reset ─────────────────────────────────────── */
@@ -411,7 +345,7 @@ a[href]:active {
   transform: scale(0.98);
 }
 
-/* Home: auth choice buttons (Login / Register / Guest) — hover only.
+/* Home: auth choice buttons (Sign in / Register) — hover only.
    Base and hover in CSS so hover is not overridden by inline styles. */
 .home-auth-choice-btn {
   flex: 1;

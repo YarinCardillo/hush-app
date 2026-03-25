@@ -86,7 +86,7 @@ export const releases = [
           'Server settings: rename, leave, delete with ownership transfer',
           'Resizable sidebar with persistent width',
           'Collapsible categories with persistent state per server',
-          'Vesper ambient presence in voice channels and empty states',
+          'Status indicators for voice channels and empty states',
           'Server-authoritative voice state via LiveKit webhooks',
         ],
       },
