@@ -162,8 +162,13 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
       setError(null);
       try {
         if (roomRef.current) {
-          roomRef.current.disconnect();
+          await roomRef.current.disconnect();
           roomRef.current = null;
+          // Wait for iOS Safari to fully close the old WebSocket before opening a new one.
+          // Without this delay, the new room.connect() fails with ServerUnreachable because
+          // iOS doesn't release the old connection's resources fast enough.
+          await new Promise(r => setTimeout(r, 300));
+          if (isStale()) return;
         }
         // Cancel any in-flight voice WS listeners from a previous session
         if (voiceWsUnsubscribeRef.current) {
