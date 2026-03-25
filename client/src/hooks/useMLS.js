@@ -67,35 +67,19 @@ export function useMLS({ getStore, getToken, channelId, _deps }) {
    */
   async function encryptForChannel(plaintext) {
     if (!channelId) throw new Error('[useMLS] channelId is required for encryptForChannel');
-    try {
-      const deps = await buildDeps();
-      const { messageBytes, localId } = await mlsGroup.encryptMessage(deps, channelId, plaintext);
-      return { ciphertext: messageBytes, localId };
-    } catch (err) {
-      // MLS encryption failed (WASM issue, group not ready, iOS limitations).
-      // Fall back to plaintext envelope so chat works regardless.
-      console.warn('[useMLS] MLS encrypt failed, plaintext fallback:', err?.message);
-      const envelope = JSON.stringify({ _hush_plaintext: true, content: plaintext });
-      return { ciphertext: new TextEncoder().encode(envelope), localId: crypto.randomUUID() };
-    }
+    const deps = await buildDeps();
+    const { messageBytes, localId } = await mlsGroup.encryptMessage(deps, channelId, plaintext);
+    return { ciphertext: messageBytes, localId };
   }
 
   /**
    * Decrypt a received MLS message from the channel group.
-   * Falls back to plaintext envelope if MLS decryption fails.
    *
    * @param {Uint8Array} messageBytes
    * @returns {Promise<string>}
    */
   async function decryptFromChannel(messageBytes) {
     if (!channelId) throw new Error('[useMLS] channelId is required for decryptFromChannel');
-    // Check for plaintext envelope (JSON starting with '{')
-    if (messageBytes.length > 0 && messageBytes[0] === 0x7b) {
-      try {
-        const json = JSON.parse(new TextDecoder().decode(messageBytes));
-        if (json._hush_plaintext) return json.content;
-      } catch { /* not JSON — try MLS */ }
-    }
     const deps = await buildDeps();
     const result = await mlsGroup.decryptMessage(deps, channelId, messageBytes);
     if (result.plaintext == null) {
