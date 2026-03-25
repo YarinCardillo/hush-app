@@ -110,17 +110,15 @@ if (import.meta.env.DEV) {
   import('eruda').then(({ default: eruda }) => eruda.init());
 }
 
-// StrictMode disabled: its double-mount cycle is fundamentally incompatible
-// with LiveKit's WebSocket connection state on iOS Safari. After the first
-// room disconnect, the SDK changes strategy and never upgrades to WebSocket
-// again. Production builds don't have StrictMode — this only affects dev.
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <BrowserRouter
-    future={{
-      v7_startTransition: true,
-      v7_relativeSplatPath: true,
-    }}
-  >
-    <App />
-  </BrowserRouter>
+  <React.StrictMode>
+    <BrowserRouter
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
+      <App />
+    </BrowserRouter>
+  </React.StrictMode>
 );

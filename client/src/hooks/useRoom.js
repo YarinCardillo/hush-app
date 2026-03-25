@@ -162,14 +162,8 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
       setError(null);
       try {
         if (roomRef.current) {
-          await roomRef.current.disconnect(true); // stopTracks=true for clean teardown
+          roomRef.current.disconnect();
           roomRef.current = null;
-          e2eeKeyProviderRef.current = null;
-          // iOS Safari needs time to fully release the old WebSocket connection.
-          // Without this, the new room.connect() falls back to validate-only path
-          // which never upgrades to WebSocket on iOS.
-          await new Promise(r => setTimeout(r, 1000));
-          if (isStale()) return;
         }
         // Cancel any in-flight voice WS listeners from a previous session
         if (voiceWsUnsubscribeRef.current) {
