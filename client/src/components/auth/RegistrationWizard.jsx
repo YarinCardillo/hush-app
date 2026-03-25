@@ -139,7 +139,64 @@ function getVisibleSteps(registrationMode) {
  * }} props
  */
 const REG_SESSION_KEY = 'hush_reg_wizard';
-const REG_STATE_TTL_MS = 60_000;
+const REG_IDB_NAME = 'hush-reg-wizard';
+const REG_IDB_STORE = 'state';
+const REG_STATE_TTL_MS = 10 * 60_000; // 10 minutes — users need time to write down 12 words
+
+/**
+ * Open a tiny IDB database for registration wizard state.
+ * Survives iOS page discards where sessionStorage is wiped.
+ */
+function openRegIDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(REG_IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(REG_IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveWizardStateToIDB(state) {
+  try {
+    const db = await openRegIDB();
+    const tx = db.transaction(REG_IDB_STORE, 'readwrite');
+    tx.objectStore(REG_IDB_STORE).put({ ...state, savedAt: Date.now() }, 'wizard');
+    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+    db.close();
+  } catch { /* best-effort */ }
+}
+
+async function loadWizardStateFromIDB() {
+  try {
+    const db = await openRegIDB();
+    const tx = db.transaction(REG_IDB_STORE, 'readonly');
+    const req = tx.objectStore(REG_IDB_STORE).get('wizard');
+    const result = await new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+    db.close();
+    if (!result) return null;
+    if (result.savedAt && Date.now() - result.savedAt > REG_STATE_TTL_MS) {
+      await clearWizardStateFromIDB();
+      return null;
+    }
+    return result;
+  } catch { return null; }
+}
+
+async function clearWizardStateFromIDB() {
+  try {
+    const db = await openRegIDB();
+    const tx = db.transaction(REG_IDB_STORE, 'readwrite');
+    tx.objectStore(REG_IDB_STORE).delete('wizard');
+    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+    db.close();
+  } catch { /* best-effort */ }
+}
+
+/** Check if there's an interrupted registration in IDB (called from Home.jsx on mount). */
+export async function hasInterruptedRegistration() {
+  const state = await loadWizardStateFromIDB();
+  return state !== null;
+}
 
 function loadSavedWizardState() {
   try {
@@ -156,30 +213,49 @@ function loadSavedWizardState() {
 
 function saveWizardState(state) {
   try { sessionStorage.setItem(REG_SESSION_KEY, JSON.stringify({ ...state, savedAt: Date.now() })); } catch { /* best-effort */ }
+  saveWizardStateToIDB(state); // async, fire-and-forget from caller's perspective
 }
 
 function clearWizardState() {
   try { sessionStorage.removeItem(REG_SESSION_KEY); } catch { /* best-effort */ }
+  clearWizardStateFromIDB(); // async, fire-and-forget
 }
 
 export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'open', instanceName, isLoading = false, error }) {
   const visibleSteps = getVisibleSteps(registrationMode);
   const initialStep = visibleSteps[0];
 
-  // Restore state from sessionStorage so mobile Safari tab unload doesn't lose progress.
-  // Mnemonic is safe to persist here: no account exists yet, sessionStorage clears on tab close.
-  const saved = useRef(loadSavedWizardState()).current;
+  // Try sessionStorage first (sync), then IDB fallback (async) for iOS page discards.
+  const syncSaved = useRef(loadSavedWizardState()).current;
 
-  const [step, setStep] = useState(saved?.step && visibleSteps.includes(saved.step) ? saved.step : initialStep);
-  const [inviteCode, setInviteCode] = useState(saved?.inviteCode ?? '');
-  const [username, setUsername] = useState(saved?.username ?? '');
-  const [displayName, setDisplayName] = useState(saved?.displayName ?? '');
-  const [mnemonic] = useState(() => saved?.mnemonic ?? generateIdentityMnemonic());
-  const [mnemonicWords] = useState(() => mnemonic.split(' '));
+  const [step, setStep] = useState(syncSaved?.step && visibleSteps.includes(syncSaved.step) ? syncSaved.step : initialStep);
+  const [inviteCode, setInviteCode] = useState(syncSaved?.inviteCode ?? '');
+  const [username, setUsername] = useState(syncSaved?.username ?? '');
+  const [displayName, setDisplayName] = useState(syncSaved?.displayName ?? '');
+  const [mnemonic, setMnemonic] = useState(() => syncSaved?.mnemonic ?? generateIdentityMnemonic());
+  const [mnemonicWords, setMnemonicWords] = useState(() => mnemonic.split(' '));
   const [savedConfirmed, setSavedConfirmed] = useState(false);
   const [localError, setLocalError] = useState('');
+  const idbRestoredRef = useRef(false);
 
-  // Persist wizard state on every change so it survives mobile tab unloads.
+  // Async IDB fallback: if sessionStorage was empty (iOS page discard), try IDB.
+  useEffect(() => {
+    if (syncSaved || idbRestoredRef.current) return;
+    idbRestoredRef.current = true;
+    loadWizardStateFromIDB().then((idbState) => {
+      if (!idbState) return;
+      if (idbState.step && visibleSteps.includes(idbState.step)) setStep(idbState.step);
+      if (idbState.inviteCode) setInviteCode(idbState.inviteCode);
+      if (idbState.username) setUsername(idbState.username);
+      if (idbState.displayName) setDisplayName(idbState.displayName);
+      if (idbState.mnemonic) {
+        setMnemonic(idbState.mnemonic);
+        setMnemonicWords(idbState.mnemonic.split(' '));
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist wizard state on every change — dual-write to sessionStorage + IDB.
   useEffect(() => {
     saveWizardState({ step, inviteCode, username, displayName, mnemonic });
   }, [step, inviteCode, username, displayName, mnemonic]);

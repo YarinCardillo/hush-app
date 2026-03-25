@@ -5,7 +5,7 @@ import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
 import { useInstanceContext } from '../contexts/InstanceContext';
 import { slugify } from '../lib/slugify';
-import { RegistrationWizard } from '../components/auth/RegistrationWizard';
+import { RegistrationWizard, hasInterruptedRegistration } from '../components/auth/RegistrationWizard';
 import { RecoveryPhraseInput } from '../components/auth/RecoveryPhraseInput';
 import { PinUnlockScreen } from '../components/auth/PinUnlockScreen';
 import { PinSetupModal } from '../components/auth/PinSetupModal';
@@ -398,6 +398,14 @@ export default function Home() {
   // ── Multi-instance state ──────────────────────────────────────────────────
 
   const { mergedGuilds, registerLocalInstance } = useInstanceContext();
+
+  // ── Resume interrupted registration (iOS page discard recovery) ────────────
+  useEffect(() => {
+    if (authLoading || vaultState === 'locked' || vaultState === 'unlocked') return;
+    hasInterruptedRegistration().then((has) => {
+      if (has) setAuthView(AUTH_VIEW.REGISTER_WIZARD);
+    });
+  }, [authLoading, vaultState]);
 
   // ── Vault state -> view routing ─────────────────────────────────────────────
 
