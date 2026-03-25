@@ -458,9 +458,9 @@ export function useAuth() {
       // with challenge-response to get a fresh session.
       const existingJwt = sessionStorage.getItem(JWT_KEY);
       if (!existingJwt && publicKey && privateKey) {
-        await performChallengeResponse(privateKey, publicKey);
+        const authResult = await performChallengeResponse(privateKey, publicKey);
         // performChallengeResponse sets token, user, vaultState='unlocked', applyVaultTimeout.
-        return;
+        return authResult;
       }
 
       setVaultState('unlocked');

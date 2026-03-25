@@ -571,9 +571,19 @@ export default function Home() {
   }, [performRecovery, registerLocalInstance]);
 
   const handlePinUnlock = useCallback(async (pin) => {
-    await unlockVault(pin);
-    // On success, vaultState becomes 'unlocked' and the useEffect navigates.
-  }, [unlockVault]);
+    const result = await unlockVault(pin);
+    // If unlockVault re-authenticated (tab was closed), boot the local instance
+    // so guilds appear immediately.
+    const authUser = result?.user;
+    if (authUser) {
+      const jwt = sessionStorage.getItem('hush_jwt');
+      if (jwt) {
+        registerLocalInstance(jwt, { id: authUser.id, username: authUser.username }).catch((err) => {
+          console.warn('[Home] registerLocalInstance after PIN unlock failed:', err);
+        });
+      }
+    }
+  }, [unlockVault, registerLocalInstance]);
 
   const handleSwitchAccount = useCallback(async () => {
     try {
