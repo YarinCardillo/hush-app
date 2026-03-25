@@ -70,13 +70,14 @@ async function decryptMessageRow(m, currentUserId, { decryptFromChannel, getCach
       }
       return { id: m.id, sender: m.senderId, content: pendingContent, timestamp: ts, decryptionFailed: false };
     }
-    // Own message from another device — content not available on this device per CONTEXT.md.
+    // Own message — local plaintext cache lost (logout/session change).
+    // MLS ciphertext can't be self-decrypted; keys may no longer exist.
     return {
       id: m.id,
       sender: m.senderId,
-      content: '[sent from another device, content not available here]',
+      content: null,
       timestamp: ts,
-      decryptionFailed: false,
+      decryptionFailed: true,
     };
   }
   let content = null;
@@ -601,8 +602,8 @@ export default function Chat({
                   </div>
                   <div style={styles.messageText}>
                     {msg.decryptionFailed ? (
-                      <span style={{ color: 'var(--hush-text-muted)', fontStyle: 'italic' }}>
-                        [Could not decrypt]
+                      <span style={{ color: 'var(--hush-text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>
+                        Message encrypted — decryption key no longer available
                       </span>
                     ) : (
                       msg.content
