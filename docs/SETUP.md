@@ -528,3 +528,19 @@ The Go binary must be restarted. Unlike Vite, Go does not hot-reload. Kill the p
 | Postgres password | `hush` | `openssl rand -hex 16` |
 | COOP header | Vite dev server | Caddy (Caddyfile.prod) |
 | Ports exposed | 5173 (Vite), 8080 (Go) | 80, 443 (Caddy only) |
+
+---
+
+## Known Issues
+
+### iCloud Private Relay breaks voice channels on iOS Safari
+
+**Symptom:** Voice channels show "Connecting..." indefinitely, then fail with `ServerUnreachable` after 15 seconds. Console shows `could not establish signal connection: Abort handler called`.
+
+**Cause:** Apple's iCloud Private Relay (enabled by default on iOS 15+) routes traffic through MASQUE/QUIC relay nodes that inconsistently block WebSocket upgrades. The LiveKit signaling WebSocket (`wss://host/livekit/rtc/v1`) never receives a 101 Switching Protocols response — some relay nodes forward the upgrade, others silently drop it.
+
+**Diagnosis:** Check nginx access logs for the client IP. If the IP is in the `172.225.x.x` or `172.226.x.x` range, the user is behind Private Relay.
+
+**Workaround:** Disable iCloud Private Relay: Settings > Apple Account > iCloud > Private Relay > turn off. Alternatively, the user can add the instance domain to Safari's Private Relay exceptions.
+
+**Long-term fix:** Configure LiveKit with TURN/TCP fallback so signaling can work through HTTP proxies. This requires a TURN server (e.g., coturn) configured alongside LiveKit.
