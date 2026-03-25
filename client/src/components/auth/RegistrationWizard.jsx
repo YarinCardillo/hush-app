@@ -138,18 +138,44 @@ function getVisibleSteps(registrationMode) {
  *   error?: Error|null,
  * }} props
  */
+const REG_SESSION_KEY = 'hush_reg_wizard';
+
+function loadSavedWizardState() {
+  try {
+    const raw = sessionStorage.getItem(REG_SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveWizardState(state) {
+  try { sessionStorage.setItem(REG_SESSION_KEY, JSON.stringify(state)); } catch { /* best-effort */ }
+}
+
+function clearWizardState() {
+  try { sessionStorage.removeItem(REG_SESSION_KEY); } catch { /* best-effort */ }
+}
+
 export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'open', instanceName, isLoading = false, error }) {
   const visibleSteps = getVisibleSteps(registrationMode);
   const initialStep = visibleSteps[0];
 
-  const [step, setStep] = useState(initialStep);
-  const [inviteCode, setInviteCode] = useState('');
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [mnemonic] = useState(() => generateIdentityMnemonic());
+  // Restore state from sessionStorage so mobile Safari tab unload doesn't lose progress.
+  // Mnemonic is safe to persist here: no account exists yet, sessionStorage clears on tab close.
+  const saved = useRef(loadSavedWizardState()).current;
+
+  const [step, setStep] = useState(saved?.step && visibleSteps.includes(saved.step) ? saved.step : initialStep);
+  const [inviteCode, setInviteCode] = useState(saved?.inviteCode ?? '');
+  const [username, setUsername] = useState(saved?.username ?? '');
+  const [displayName, setDisplayName] = useState(saved?.displayName ?? '');
+  const [mnemonic] = useState(() => saved?.mnemonic ?? generateIdentityMnemonic());
   const [mnemonicWords] = useState(() => mnemonic.split(' '));
   const [savedConfirmed, setSavedConfirmed] = useState(false);
   const [localError, setLocalError] = useState('');
+
+  // Persist wizard state on every change so it survives mobile tab unloads.
+  useEffect(() => {
+    saveWizardState({ step, inviteCode, username, displayName, mnemonic });
+  }, [step, inviteCode, username, displayName, mnemonic]);
 
   // Username availability state: 'idle' | 'checking' | 'ok' | 'taken' | 'invalid'
   const [usernameState, setUsernameState] = useState('idle');
@@ -188,6 +214,7 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
   const goBack = useCallback(() => {
     const prevIndex = currentStepIndex - 1;
     if (prevIndex < 0) {
+      clearWizardState();
       onCancel();
       return;
     }
@@ -231,6 +258,7 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
   }, [savedConfirmed, goNext]);
 
   const handleConfirmComplete = useCallback(() => {
+    clearWizardState();
     setStep(STEP.SUBMITTING);
     onComplete({
       username: username.trim(),
