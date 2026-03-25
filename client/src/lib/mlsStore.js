@@ -13,7 +13,7 @@ const DB_NAME_PREFIX = 'hush-mls-';
 const STORE_CREDENTIAL = 'credential';
 const STORE_KEY_PACKAGES = 'keyPackages';
 const STORE_LAST_RESORT = 'lastResort';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 const CREDENTIAL_KEY = 'credential';
 const LAST_RESORT_KEY = 'lastResort';
@@ -23,25 +23,30 @@ const LAST_RESORT_KEY = 'lastResort';
 // Names must match the constants in hush-crypto/src/storage_bridge.rs.
 // ---------------------------------------------------------------------------
 
+// Complete list of object stores used by OpenMLS WASM StorageProvider.
+// Extracted from hush_crypto_bg.wasm binary — must match exactly.
 const STORAGE_PROVIDER_STORES = [
-  'mls_groups',
-  'mls_key_packages',
-  'mls_epoch_secrets',
-  'mls_proposals',
-  'mls_encryption_keys',
-  'mls_psk',
-  'mls_tree_sync',
-  // v3 — stores required by OpenMLS createGroup/joinGroup WASM operations.
-  'mls_signature_key_pairs',
   'mls_confirmation_tag',
-  'mls_group_context',
-  'mls_interim_transcript_hash',
-  'mls_own_leaf_index',
-  'mls_message_secrets',
-  'mls_resumption_psk',
-  'mls_join_config',
-  'mls_group_state',
+  'mls_encryption_key_pairs',
+  'mls_encryption_keys',
   'mls_epoch_key_pairs',
+  'mls_epoch_secrets',
+  'mls_group_context',
+  'mls_group_state',
+  'mls_groups',
+  'mls_interim_transcript_hash',
+  'mls_join_config',
+  'mls_key_packages',
+  'mls_message_secrets',
+  'mls_own_leaf_index',
+  'mls_own_leaf_nodes',
+  'mls_proposal_queue_refs',
+  'mls_proposals',
+  'mls_psk',
+  'mls_queued_proposals',
+  'mls_resumption_psk',
+  'mls_signature_key_pairs',
+  'mls_tree_sync',
 ];
 
 // Synchronous Map cache backed by IndexedDB. WASM reads/writes happen synchronously
