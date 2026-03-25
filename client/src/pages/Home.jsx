@@ -539,13 +539,12 @@ export default function Home() {
 
   const handleRegisterComplete = useCallback(async ({ username, displayName, mnemonic, inviteCode }) => {
     try {
-      await performRegister(username, displayName, mnemonic, inviteCode);
-      // Register the current origin as a connected instance using the JWT
-      // that performRegister just stored. Read token/user from sessionStorage
-      // since React state may not have flushed yet.
+      const result = await performRegister(username, displayName, mnemonic, inviteCode);
+      // Use the returned user — React state (setUser) hasn't flushed yet.
       const jwt = sessionStorage.getItem('hush_jwt');
-      if (jwt) {
-        registerLocalInstance(jwt, { id: user?.id, username: username.trim() }).catch((err) => {
+      const authUser = result?.user;
+      if (jwt && authUser) {
+        registerLocalInstance(jwt, { id: authUser.id, username: authUser.username }).catch((err) => {
           console.warn('[Home] registerLocalInstance after register failed:', err);
         });
       }
@@ -553,14 +552,15 @@ export default function Home() {
     } catch {
       // Error surfaces via authError toast.
     }
-  }, [performRegister, registerLocalInstance, user]);
+  }, [performRegister, registerLocalInstance]);
 
   const handleRecoverySubmit = useCallback(async (mnemonic, revokeOtherDevices) => {
     try {
-      await performRecovery(mnemonic, revokeOtherDevices);
+      const result = await performRecovery(mnemonic, revokeOtherDevices);
       const jwt = sessionStorage.getItem('hush_jwt');
-      if (jwt) {
-        registerLocalInstance(jwt, { id: user?.id, username: user?.username }).catch((err) => {
+      const authUser = result?.user;
+      if (jwt && authUser) {
+        registerLocalInstance(jwt, { id: authUser.id, username: authUser.username }).catch((err) => {
           console.warn('[Home] registerLocalInstance after recovery failed:', err);
         });
       }
@@ -568,7 +568,7 @@ export default function Home() {
     } catch {
       // Error surfaces via authError toast.
     }
-  }, [performRecovery, registerLocalInstance, user]);
+  }, [performRecovery, registerLocalInstance]);
 
   const handlePinUnlock = useCallback(async (pin) => {
     await unlockVault(pin);

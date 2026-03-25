@@ -291,6 +291,7 @@ export function useAuth() {
     localStorage.setItem(`${VAULT_USER_KEY_PREFIX}${u.id}`, bytesToHex(publicKey));
     setVaultState('unlocked');
     applyVaultTimeout(u.id);
+    return { user: u };
   }, [finishAuth, applyVaultTimeout]);
 
   // ── Register ───────────────────────────────────────────────────────────────
@@ -327,6 +328,7 @@ export function useAuth() {
       localStorage.setItem(`${VAULT_USER_KEY_PREFIX}${u.id}`, bytesToHex(publicKey));
       setVaultState('unlocked');
       applyVaultTimeout(u.id);
+      return { user: u };
     } catch (err) {
       setError(err);
       clearSession();
@@ -354,7 +356,7 @@ export function useAuth() {
     try {
       const { privateKey, publicKey } = await mnemonicToIdentityKey(mnemonic);
 
-      await performChallengeResponse(privateKey, publicKey);
+      const authResult = await performChallengeResponse(privateKey, publicKey);
 
       if (revokeOtherDevices) {
         const jwt = sessionStorage.getItem(JWT_KEY);
@@ -367,6 +369,7 @@ export function useAuth() {
             .map(d => revokeDeviceKey(jwt, d.deviceId)),
         );
       }
+      return authResult;
     } catch (err) {
       setError(err);
       clearSession();
