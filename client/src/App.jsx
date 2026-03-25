@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { InstanceProvider } from './contexts/InstanceContext';
 import AppBackground from './components/AppBackground';
 import { applyThemeMode, getStoredThemeMode } from './components/UserSettingsModal';
@@ -20,6 +20,28 @@ const fallback = (
     background: 'var(--hush-black)',
   }} />
 );
+
+/**
+ * Auth guard for protected routes. Redirects to "/" (Home/PIN screen)
+ * when the user is unauthenticated or the vault is locked. Without this,
+ * iOS page evictions leave the user on a guild URL with no auth context,
+ * showing an empty layout instead of the PIN unlock screen.
+ *
+ * @param {{ children: React.ReactNode }} props
+ */
+function AuthGuard({ children }) {
+  const { vaultState, isAuthenticated, loading } = useAuth();
+
+  // While auth is rehydrating, show the same blank fallback to avoid flash.
+  if (loading) return fallback;
+
+  // Vault locked or no session — redirect to Home for PIN unlock or login.
+  if (vaultState === 'locked' || vaultState === 'none' || !isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
 
 /** Syncs favicon and apple-touch-icon with theme (prefers-color-scheme or data-theme). */
 function FaviconThemeSync() {
@@ -61,7 +83,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
 
             {/* DM landing / no-guild empty state */}
-            <Route path="/home" element={<ServerLayout />} />
+            <Route path="/home" element={<AuthGuard><ServerLayout /></AuthGuard>} />
 
             {/* Cross-instance invite */}
             <Route path="/join/:instance/:code" element={<Invite />} />
@@ -70,10 +92,10 @@ export default function App() {
             <Route path="/invite/:code" element={<Invite />} />
 
             {/* Instance-aware guild route: /:instance/:guildSlug/:channelSlug? */}
-            <Route path="/:instance/:guildSlug/:channelSlug?" element={<ServerLayout />} />
+            <Route path="/:instance/:guildSlug/:channelSlug?" element={<AuthGuard><ServerLayout /></AuthGuard>} />
 
             {/* Legacy: /servers/:serverId/* — still works via ServerLayout legacy lookup */}
-            <Route path="/servers/:serverId/*" element={<ServerLayout />} />
+            <Route path="/servers/:serverId/*" element={<AuthGuard><ServerLayout /></AuthGuard>} />
 
             {/* Legacy: /guilds — redirect to /home */}
             <Route path="/guilds" element={<Navigate to="/home" replace />} />

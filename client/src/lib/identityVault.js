@@ -3,13 +3,13 @@
  *
  * Provides AES-256-GCM encryption of the identity private key (IK_priv),
  * keyed by a PIN-derived PBKDF2-SHA256 key. The encrypted blob is persisted
- * in IndexedDB per user. Salt is stored in localStorage and must be preserved
- * across sessions for deterministic key derivation.
+ * in IndexedDB per user. Salt is stored in both localStorage and IndexedDB
+ * for resilience against iOS storage eviction on non-Safari browsers.
  *
  * Blob format: [12-byte nonce][ciphertext][16-byte GCM tag]
  *
  * Key derivation: PBKDF2-SHA256, 200,000 iterations, 256-bit output.
- * Salt: 16 bytes, generated once and stored in localStorage under SALT_KEY.
+ * Salt: 16 bytes, generated once and dual-stored in localStorage + IDB.
  */
 
 /** PBKDF2 iteration count — OWASP minimum for PBKDF2-SHA256 (2023). */
@@ -26,6 +26,12 @@ const OBJECT_STORE_NAME = 'vault';
 
 /** IDB record key under which the encrypted private key is stored. */
 const ENCRYPTED_KEY_RECORD = 'ik_priv_encrypted';
+
+/** IDB record key under which the PBKDF2 salt backup is stored. */
+const SALT_IDB_RECORD = 'pbkdf2_salt';
+
+/** IDB record key for the vault marker (public key hex) backup. */
+const VAULT_MARKER_IDB_RECORD = 'vault_marker';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -205,6 +211,114 @@ export function saveEncryptedKey(db, blob) {
     request.onsuccess = () => resolve();
     request.onerror = event => reject(event.target.error);
   });
+}
+
+/**
+ * Persists the PBKDF2 salt to IndexedDB as a backup.
+ * Called alongside saveEncryptedKey so the salt survives localStorage eviction
+ * on iOS non-Safari browsers (Chrome iOS, Google in-app, etc.).
+ *
+ * @param {IDBDatabase} db - Open vault IDB handle.
+ * @param {Uint8Array} salt - 16-byte PBKDF2 salt.
+ * @returns {Promise<void>}
+ */
+export function saveSaltToIDB(db, salt) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OBJECT_STORE_NAME, 'readwrite');
+    const store = tx.objectStore(OBJECT_STORE_NAME);
+    const request = store.put(salt, SALT_IDB_RECORD);
+    request.onsuccess = () => resolve();
+    request.onerror = event => reject(event.target.error);
+  });
+}
+
+/**
+ * Loads the PBKDF2 salt backup from IndexedDB.
+ *
+ * @param {IDBDatabase} db - Open vault IDB handle.
+ * @returns {Promise<Uint8Array|null>} Salt bytes or null.
+ */
+export function loadSaltFromIDB(db) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OBJECT_STORE_NAME, 'readonly');
+    const store = tx.objectStore(OBJECT_STORE_NAME);
+    const request = store.get(SALT_IDB_RECORD);
+    request.onsuccess = event => {
+      const value = event.target.result ?? null;
+      if (value === null) resolve(null);
+      else if (value instanceof Uint8Array) resolve(value);
+      else resolve(new Uint8Array(value));
+    };
+    request.onerror = event => reject(event.target.error);
+  });
+}
+
+/**
+ * Persists the vault marker (public key hex) to IndexedDB as a backup.
+ * Used during boot to detect vault existence when localStorage is evicted.
+ *
+ * @param {IDBDatabase} db - Open vault IDB handle.
+ * @param {string} publicKeyHex - Hex-encoded public key.
+ * @returns {Promise<void>}
+ */
+export function saveVaultMarkerToIDB(db, publicKeyHex) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OBJECT_STORE_NAME, 'readwrite');
+    const store = tx.objectStore(OBJECT_STORE_NAME);
+    const request = store.put(publicKeyHex, VAULT_MARKER_IDB_RECORD);
+    request.onsuccess = () => resolve();
+    request.onerror = event => reject(event.target.error);
+  });
+}
+
+/**
+ * Loads the vault marker (public key hex) from IndexedDB.
+ *
+ * @param {IDBDatabase} db - Open vault IDB handle.
+ * @returns {Promise<string|null>} Public key hex or null.
+ */
+export function loadVaultMarkerFromIDB(db) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OBJECT_STORE_NAME, 'readonly');
+    const store = tx.objectStore(OBJECT_STORE_NAME);
+    const request = store.get(VAULT_MARKER_IDB_RECORD);
+    request.onsuccess = event => resolve(event.target.result ?? null);
+    request.onerror = event => reject(event.target.error);
+  });
+}
+
+/**
+ * Checks whether a vault IDB database exists for the given user and contains
+ * an encrypted key. Used at boot time to detect vaults when localStorage
+ * markers have been evicted by iOS.
+ *
+ * @param {string} userId
+ * @returns {Promise<{ exists: boolean, publicKeyHex: string|null }>}
+ */
+export async function checkVaultExistsInIDB(userId) {
+  try {
+    const db = await openVaultStore(userId);
+    const blob = await loadEncryptedKey(db);
+    if (!blob) {
+      db.close();
+      return { exists: false, publicKeyHex: null };
+    }
+    // Vault has encrypted data — try to load the marker too.
+    const marker = await loadVaultMarkerFromIDB(db);
+
+    // If localStorage lost the salt, try to restore it from IDB.
+    if (!localStorage.getItem(SALT_KEY)) {
+      const saltBackup = await loadSaltFromIDB(db);
+      if (saltBackup) {
+        localStorage.setItem(SALT_KEY, bytesToHex(saltBackup));
+      }
+    }
+
+    db.close();
+    return { exists: true, publicKeyHex: typeof marker === 'string' ? marker : null };
+  } catch {
+    return { exists: false, publicKeyHex: null };
+  }
 }
 
 /**

@@ -72,6 +72,10 @@ vi.mock('../lib/identityVault', () => ({
     }
     return result;
   }),
+  saveSaltToIDB: vi.fn().mockResolvedValue(undefined),
+  saveVaultMarkerToIDB: vi.fn().mockResolvedValue(undefined),
+  checkVaultExistsInIDB: vi.fn().mockResolvedValue({ exists: false, publicKeyHex: null }),
+  loadVaultMarkerFromIDB: vi.fn().mockResolvedValue(null),
 }));
 
 // ── Imports after mocks ────────────────────────────────────────────────────────

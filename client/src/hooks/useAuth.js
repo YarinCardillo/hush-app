@@ -28,6 +28,11 @@ import {
   deleteVaultDatabase,
   getVaultConfig,
   bytesToHex,
+  hexToBytes as vaultHexToBytes,
+  saveSaltToIDB,
+  saveVaultMarkerToIDB,
+  checkVaultExistsInIDB,
+  loadVaultMarkerFromIDB,
 } from '../lib/identityVault';
 import {
   fetchWithAuth,
@@ -399,14 +404,26 @@ export function useAuth() {
     try {
       const db = await openVaultStore(userId);
       const blob = await loadEncryptedKey(db);
-      db.close();
 
-      if (!blob) throw new Error('vault is empty');
+      if (!blob) {
+        db.close();
+        throw new Error('vault is empty');
+      }
 
       const privateKey = await decryptVault(blob, pin);
 
-      // Derive public key from stored hex marker.
-      const storedHex = localStorage.getItem(`${VAULT_USER_KEY_PREFIX}${userId}`);
+      // Derive public key from stored hex marker. If localStorage was evicted
+      // (iOS non-Safari), fall back to IDB backup.
+      let storedHex = localStorage.getItem(`${VAULT_USER_KEY_PREFIX}${userId}`);
+      if (!storedHex) {
+        const idbMarker = await loadVaultMarkerFromIDB(db);
+        if (typeof idbMarker === 'string' && idbMarker) {
+          storedHex = idbMarker;
+          localStorage.setItem(`${VAULT_USER_KEY_PREFIX}${userId}`, storedHex);
+        }
+      }
+      db.close();
+
       const publicKey = storedHex ? hexToBytes(storedHex) : null;
 
       identityKeyRef.current = { privateKey, publicKey };
@@ -475,6 +492,18 @@ export function useAuth() {
     const blob = await encryptVault(identityKeyRef.current.privateKey, pin);
     const db = await openVaultStore(user.id);
     await saveEncryptedKey(db, blob);
+
+    // Back up PBKDF2 salt and vault marker to IDB so they survive
+    // localStorage eviction on iOS non-Safari browsers.
+    const saltHex = localStorage.getItem('hush_vault_salt');
+    if (saltHex) {
+      await saveSaltToIDB(db, vaultHexToBytes(saltHex));
+    }
+    const pubKeyHex = localStorage.getItem(`${VAULT_USER_KEY_PREFIX}${user.id}`);
+    if (pubKeyHex) {
+      await saveVaultMarkerToIDB(db, pubKeyHex);
+    }
+
     db.close();
   }, [user]);
 
@@ -583,10 +612,54 @@ export function useAuth() {
         setLoading(false);
         return;
       }
-      // No vault at all — show login/register.
-      setLoading(false);
-      setVaultState('none');
-      return;
+
+      // localStorage marker missing — iOS non-Safari browsers may have evicted
+      // localStorage while IndexedDB survives. Check IDB for vault existence.
+      // Also try to find userId from the last_user hint in localStorage.
+      const lastUser = localStorage.getItem(`${VAULT_USER_KEY_PREFIX}_last_user`);
+      let idbCancelled = false;
+      (async () => {
+        try {
+          // Try known userId first, then scan IDB databases for vault pattern.
+          const candidates = lastUser ? [lastUser] : [];
+
+          // indexedDB.databases() returns all IDB databases — scan for vault DBs.
+          if (!candidates.length && typeof indexedDB.databases === 'function') {
+            const dbs = await indexedDB.databases();
+            for (const db of dbs) {
+              const match = db.name?.match(/^hush-vault-(.+)$/);
+              if (match) candidates.push(match[1]);
+            }
+          }
+
+          if (idbCancelled) return;
+
+          for (const userId of candidates) {
+            const result = await checkVaultExistsInIDB(userId);
+            if (idbCancelled) return;
+            if (result.exists) {
+              // Vault found in IDB — restore localStorage markers from IDB backup.
+              if (result.publicKeyHex) {
+                localStorage.setItem(`${VAULT_USER_KEY_PREFIX}${userId}`, result.publicKeyHex);
+              }
+              localStorage.setItem(`${VAULT_USER_KEY_PREFIX}_last_user`, userId);
+              setVaultState('locked');
+              setLoading(false);
+              return;
+            }
+          }
+        } catch {
+          // IDB check failed — fall through to no-vault state.
+        }
+
+        if (!idbCancelled) {
+          // No vault at all — show login/register.
+          setLoading(false);
+          setVaultState('none');
+        }
+      })();
+      // eslint-disable-next-line no-return-assign
+      return () => { idbCancelled = true; };
     }
 
     let cancelled = false;
@@ -641,6 +714,17 @@ export function useAuth() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Request persistent storage ───────────────────────────────────────────
+  // Opt out of best-effort eviction on iOS. Without this, non-Safari browsers
+  // (Chrome iOS, Google in-app) may lose localStorage and IDB under memory
+  // pressure because WKWebView apps get lower storage quotas.
+
+  useEffect(() => {
+    if (navigator.storage?.persist) {
+      navigator.storage.persist().catch(() => { /* best-effort */ });
+    }
   }, []);
 
   // ── Visibility change re-verification ─────────────────────────────────────
