@@ -576,14 +576,12 @@ export default function Home() {
     }
   }, [unlockVault, registerLocalInstance]);
 
-  const handleSwitchAccount = useCallback(async () => {
-    try {
-      await performLogout();
-    } catch {
-      // Best-effort; proceed regardless.
-    }
+  const handleSwitchAccount = useCallback(() => {
+    // Don't wipe the vault yet — user might press Back.
+    // Vault is only wiped if the recovery phrase login succeeds
+    // (performRecovery will overwrite the vault with the new identity).
     setAuthView(AUTH_VIEW.RECOVERY);
-  }, [performLogout]);
+  }, []);
 
   const handlePinSetup = useCallback(async (pin) => {
     setIsPinSetupLoading(true);
@@ -667,7 +665,12 @@ export default function Home() {
           </div>
           <RecoveryPhraseInput
             onSubmit={handleRecoverySubmit}
-            onCancel={() => { setAuthView(AUTH_VIEW.CHOOSE); clearError?.(); }}
+            onCancel={() => {
+              clearError?.();
+              // If vault still exists (user came from PIN screen via "Not you?"),
+              // go back to PIN — don't wipe anything.
+              setAuthView(vaultState === 'locked' ? AUTH_VIEW.PIN_UNLOCK : AUTH_VIEW.CHOOSE);
+            }}
             isRecoveryMode={true}
             isLoading={authLoading}
           />
