@@ -36,10 +36,10 @@ if (import.meta.env.DEV) {
   btn.textContent = 'Copy Console';
   btn.onclick = () => window.__copyConsole();
   Object.assign(btn.style, {
-    position: 'fixed', top: '4px', right: '4px', zIndex: '99999',
-    padding: '6px 10px', fontSize: '11px', fontFamily: 'monospace',
+    position: 'fixed', bottom: '70px', left: '4px', zIndex: '99999',
+    padding: '4px 8px', fontSize: '10px', fontFamily: 'monospace',
     background: '#1a1a2e', color: '#eee', border: '1px solid #444',
-    borderRadius: '4px', opacity: '0.7', cursor: 'pointer',
+    borderRadius: '4px', opacity: '0.5', cursor: 'pointer',
   });
   document.addEventListener('DOMContentLoaded', () => document.body.appendChild(btn));
 
