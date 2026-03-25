@@ -454,6 +454,15 @@ export function useAuth() {
       identityKeyRef.current = { privateKey, publicKey };
       clearPinAttempts(userId);
 
+      // If no JWT (tab was closed, sessionStorage wiped), re-authenticate
+      // with challenge-response to get a fresh session.
+      const existingJwt = sessionStorage.getItem(JWT_KEY);
+      if (!existingJwt && publicKey && privateKey) {
+        await performChallengeResponse(privateKey, publicKey);
+        // performChallengeResponse sets token, user, vaultState='unlocked', applyVaultTimeout.
+        return;
+      }
+
       setVaultState('unlocked');
       applyVaultTimeout(userId);
     } catch (err) {
@@ -605,7 +614,19 @@ export function useAuth() {
     const sessionAlive = sessionStorage.getItem(VAULT_SESSION_FLAG) === '1';
 
     if (!stored) {
-      // No JWT at all — show login/register.
+      // No JWT — but vault may still exist (tab closed, sessionStorage wiped).
+      // Check localStorage for vault marker. If found, show PIN unlock;
+      // after unlock, challenge-response auth gets a fresh JWT.
+      const vaultUserId = Object.keys(localStorage)
+        .find(k => k.startsWith(VAULT_USER_KEY_PREFIX) && !k.endsWith('_last_user') && localStorage.getItem(k));
+      if (vaultUserId) {
+        const userId = vaultUserId.slice(VAULT_USER_KEY_PREFIX.length);
+        localStorage.setItem(`${VAULT_USER_KEY_PREFIX}_last_user`, userId);
+        setVaultState('locked');
+        setLoading(false);
+        return;
+      }
+      // No vault at all — show login/register.
       setLoading(false);
       setVaultState('none');
       return;
