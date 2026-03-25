@@ -162,12 +162,13 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
       setError(null);
       try {
         if (roomRef.current) {
-          await roomRef.current.disconnect();
+          await roomRef.current.disconnect(true); // stopTracks=true for clean teardown
           roomRef.current = null;
-          // Wait for iOS Safari to fully close the old WebSocket before opening a new one.
-          // Without this delay, the new room.connect() fails with ServerUnreachable because
-          // iOS doesn't release the old connection's resources fast enough.
-          await new Promise(r => setTimeout(r, 300));
+          e2eeKeyProviderRef.current = null;
+          // iOS Safari needs time to fully release the old WebSocket connection.
+          // Without this, the new room.connect() falls back to validate-only path
+          // which never upgrades to WebSocket on iOS.
+          await new Promise(r => setTimeout(r, 1000));
           if (isStale()) return;
         }
         // Cancel any in-flight voice WS listeners from a previous session
