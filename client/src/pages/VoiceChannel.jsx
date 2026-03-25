@@ -304,7 +304,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
       active = false;
       // Only disconnect if the room was actually established.
       // Prevents StrictMode first-mount cleanup from aborting in-progress connects.
-      if (roomRef?.current) {
+      if (isReady) {
         disconnectRoomRef.current();
       }
     };
