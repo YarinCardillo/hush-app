@@ -274,7 +274,6 @@ export default function ServerLayout() {
 
   // Persistent voice session — survives channel navigation until Leave is clicked.
   const [activeVoiceChannel, setActiveVoiceChannel] = useState(null);
-  const [voiceMountKey, setVoiceMountKey] = useState(0);
   const [pendingVoiceSwitch, setPendingVoiceSwitch] = useState(null);
   const activeVoiceMemberIdsRef = useRef([]);
   const leavingVoiceRef = useRef(false);
@@ -1002,7 +1001,6 @@ export default function ServerLayout() {
   // Auto-join when navigating directly to a voice channel URL.
   if (currentChannel?.type === 'voice' && currentChannel.id !== activeVoiceChannel?.id && !leavingVoiceRef.current) {
     activeVoiceMemberIdsRef.current = memberIds;
-    setVoiceMountKey((k) => k + 1);
     setActiveVoiceChannel(currentChannel);
   }
 
@@ -1029,7 +1027,6 @@ export default function ServerLayout() {
     }
     if (channel.type === 'voice') {
       activeVoiceMemberIdsRef.current = memberIds;
-      setVoiceMountKey((k) => k + 1);
       setActiveVoiceChannel(channel);
     }
   };
@@ -1052,7 +1049,6 @@ export default function ServerLayout() {
       navigateRef.current(`/servers/${serverId}/channels/${channel.id}`);
     }
     activeVoiceMemberIdsRef.current = memberIds;
-    setVoiceMountKey((k) => k + 1);
     setActiveVoiceChannel(channel);
   }, [pendingVoiceSwitch, memberIds, serverId, activeGuild, instanceParam]);
 
@@ -1203,7 +1199,7 @@ export default function ServerLayout() {
             {activeVoiceChannel && (
               <div style={layoutStyles.voiceWrapper(isViewingVoice)}>
                 <VoiceChannel
-                  key={`${activeVoiceChannel.id}-${voiceMountKey}`}
+                  key={activeVoiceChannel.id}
                   channel={activeVoiceChannel}
                   serverId={serverId}
                   getToken={getToken}
