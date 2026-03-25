@@ -290,6 +290,13 @@ export async function encryptMessage(deps, channelId, plaintext) {
   // Store plaintext in local cache BEFORE encrypting.
   await mlsStore.setLocalPlaintext(db, localId, { plaintext, timestamp: Date.now() });
 
+  // Lazy join: if the group hasn't been set up yet (user sent before
+  // joinMissingGroups finished), join now before encrypting.
+  const epoch = await mlsStore.getGroupEpoch(db, channelId);
+  if (epoch == null) {
+    await joinOrCreateChannelGroup(deps, channelId);
+  }
+
   await mlsStore.preloadGroupState(db);
   const result = await hushCrypto.createMessage(
     channelIdBytes,
@@ -317,6 +324,12 @@ export async function decryptMessage(deps, channelId, messageBytes) {
   const { db, mlsStore, hushCrypto } = deps;
   const { sigPriv, sigPub, credBytes } = getCredFields(deps);
   const channelIdBytes = channelIdToBytes(channelId);
+
+  // Lazy join: ensure group exists before attempting decrypt.
+  const epoch = await mlsStore.getGroupEpoch(db, channelId);
+  if (epoch == null) {
+    await joinOrCreateChannelGroup(deps, channelId);
+  }
 
   await mlsStore.preloadGroupState(db);
   const result = await hushCrypto.processMessage(channelIdBytes, sigPriv, sigPub, credBytes, messageBytes);
