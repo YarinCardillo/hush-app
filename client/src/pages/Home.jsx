@@ -370,14 +370,14 @@ export default function Home() {
   const [toastMessage, setToastMessage] = useState(null);
 
   // Handshake data — read from sessionStorage if available (populated by App.jsx).
-  const [handshakeData] = useState(() => {
-    try {
-      const raw = sessionStorage.getItem('hush_handshake');
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [handshakeData, setHandshakeData] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/handshake')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setHandshakeData(data); })
+      .catch(() => {});
+  }, []);
 
   const registrationMode = handshakeData?.registration_mode ?? 'open';
   const caps = handshakeData?.capabilities ?? handshakeData?.Capabilities ?? {};
