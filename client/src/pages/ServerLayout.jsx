@@ -797,7 +797,10 @@ export default function ServerLayout() {
     if (mlsJoinRunningRef.current) return;
 
     const MAX_JOIN_RETRIES = 3;
-    const textChannelIds = channels.filter((c) => c.type === 'text').map((c) => c.id);
+    // Text AND voice channels need text MLS groups (voice channels have built-in chat).
+    const chatChannelIds = channels
+      .filter((c) => c.type === 'text' || c.type === 'voice')
+      .map((c) => c.id);
 
     const joinMissingGroups = async () => {
       mlsJoinRunningRef.current = true;
@@ -822,8 +825,8 @@ export default function ServerLayout() {
           }
         }
 
-        // Text channel groups
-        for (const chId of textChannelIds) {
+        // Text channel groups (includes voice channels — they have built-in chat)
+        for (const chId of chatChannelIds) {
           if ((failures.get(chId) ?? 0) >= MAX_JOIN_RETRIES) continue;
           const epoch = await mlsStoreLib.getGroupEpoch(db, chId);
           if (epoch == null) {

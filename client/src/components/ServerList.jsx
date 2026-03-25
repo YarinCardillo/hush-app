@@ -523,18 +523,30 @@ export default function ServerList({
       decryptingRef.current.add(guildId);
       (async () => {
         try {
+          // Check if metadata is plaintext JSON fallback (not AES-GCM encrypted).
+          // Plaintext blobs start with '{' (0x7b), encrypted start with 0x01 version byte.
+          const raw = fromBase64(guild.encryptedMetadata);
+          if (raw.length > 0 && raw[0] === 0x7b) {
+            // Plaintext JSON — parse directly, skip MLS decryption.
+            const parsed = JSON.parse(new TextDecoder().decode(raw));
+            setMetadataCache((prev) => {
+              const next = new Map(prev);
+              next.set(guildId, { name: parsed.n || parsed.name || '', icon: parsed.icon || null });
+              return next;
+            });
+            return;
+          }
           const keyBytes = await getMetadataKey(guildId);
           if (!keyBytes) return;
           const cryptoKey = await importMetadataKey(keyBytes);
-          const blob = fromBase64(guild.encryptedMetadata);
-          const { name, icon } = await decryptGuildMetadata(cryptoKey, blob);
+          const { name, icon } = await decryptGuildMetadata(cryptoKey, raw);
           setMetadataCache((prev) => {
             const next = new Map(prev);
             next.set(guildId, { name, icon });
             return next;
           });
         } catch (err) {
-          console.warn('[ServerList] Failed to decrypt guild metadata for', guildId, err);
+          // Silently ignore — metadata may not be decryptable yet (MLS group not joined).
         } finally {
           decryptingRef.current.delete(guildId);
         }
