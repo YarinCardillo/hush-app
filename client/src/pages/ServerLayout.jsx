@@ -12,6 +12,8 @@ import { importMetadataKey, fromBase64, decryptGuildMetadata } from '../lib/guil
 import { useAuth } from '../contexts/AuthContext';
 import { useInstanceContext } from '../contexts/InstanceContext';
 import { JWT_KEY, getDeviceId } from '../hooks/useAuth';
+import { bytesToHex } from '../lib/identityVault';
+import { TransparencyVerifier } from '../lib/transparencyVerifier';
 import { useKeyPackageMaintenance } from '../hooks/useKeyPackageMaintenance';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useSidebarResize } from '../hooks/useSidebarResize';
@@ -186,7 +188,7 @@ export default function ServerLayout() {
 
   // ── Auth ────────────────────────────────────────────────────────────────
 
-  const { token: authToken, user } = useAuth();
+  const { token: authToken, user, identityKeyRef, transparencyError, setTransparencyError } = useAuth();
   const currentUserId = user?.id ?? '';
 
   // ── URL param resolution ────────────────────────────────────────────────
@@ -920,6 +922,95 @@ export default function ServerLayout() {
       });
   }, [token, instanceUrl]);
 
+  // ── Transparency log: own-key verification on handshake load ──────────
+
+  /**
+   * Run own-key verification immediately after handshakeData is loaded
+   * (post-login and post-instance-switch). This is the primary detection
+   * point for server-side key manipulation.
+   *
+   * HARD FAIL: sets transparencyError which blocks the app UI.
+   * Network errors are non-fatal — transparency is optional infrastructure.
+   */
+  useEffect(() => {
+    if (!handshakeData?.transparency_url || !handshakeData?.log_public_key) return;
+    if (!token || !identityKeyRef?.current?.publicKey) return;
+
+    const pubKeyHex = bytesToHex(identityKeyRef.current.publicKey);
+    const verifier = new TransparencyVerifier(
+      handshakeData.transparency_url,
+      handshakeData.log_public_key,
+    );
+
+    verifier.verifyOwnKey(pubKeyHex, token)
+      .then(result => {
+        if (!result.ok) {
+          setTransparencyError(result.error);
+        }
+      })
+      .catch(err => {
+        console.warn('[transparency] login verification failed:', err);
+      });
+  // Run once per handshakeData load — intentionally not re-running on token change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handshakeData]);
+
+  // ── Transparency log: periodic 24h background check ───────────────────
+
+  useEffect(() => {
+    if (!handshakeData?.transparency_url || !handshakeData?.log_public_key) return;
+    if (!token || !identityKeyRef?.current?.publicKey) return;
+
+    const check = async () => {
+      try {
+        const pubKeyHex = bytesToHex(identityKeyRef.current.publicKey);
+        const verifier = new TransparencyVerifier(
+          handshakeData.transparency_url,
+          handshakeData.log_public_key,
+        );
+        const result = await verifier.verifyOwnKey(pubKeyHex, token);
+        if (!result.ok) {
+          setTransparencyError(result.error);
+        }
+      } catch (err) {
+        console.warn('[transparency] periodic check failed:', err);
+      }
+    };
+
+    // Don't run immediately — login verification already ran in the effect above.
+    const id = setInterval(check, 24 * 60 * 60 * 1000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handshakeData?.transparency_url, token]);
+
+  // ── Transparency log: WS transparency.key_change handler ─────────────
+
+  useEffect(() => {
+    if (!wsClient) return;
+
+    const handler = (data) => {
+      console.warn('[transparency] key change detected:', data.operation, 'leafIndex:', data.leafIndex);
+
+      if (!handshakeData?.transparency_url || !handshakeData?.log_public_key) return;
+      if (!token || !identityKeyRef?.current?.publicKey) return;
+
+      const pubKeyHex = bytesToHex(identityKeyRef.current.publicKey);
+      const verifier = new TransparencyVerifier(
+        handshakeData.transparency_url,
+        handshakeData.log_public_key,
+      );
+      verifier.verifyOwnKey(pubKeyHex, token)
+        .then(result => {
+          if (!result.ok) setTransparencyError(result.error);
+        })
+        .catch(err => console.warn('[transparency] key change verification failed:', err));
+    };
+
+    wsClient.on('transparency.key_change', handler);
+    return () => wsClient.off('transparency.key_change', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsClient, handshakeData, token]);
+
   // ── Fetch channels + members when serverId changes (guild switch) ──────
 
   useEffect(() => {
@@ -1088,7 +1179,72 @@ export default function ServerLayout() {
     ?? activeGuild?.permissionLevel
     ?? ({ owner: 3, admin: 2, mod: 1, member: 0 }[myRole] ?? 0);
 
+  // Whether the current instance has no transparency log configured.
+  // Used to show the non-blocking warning badge in the sidebar.
+  const hasNoTransparencyLog = handshakeData !== null && !handshakeData?.transparency_url;
+
   // ── Render ────────────────────────────────────────────────────────────
+
+  // Transparency hard-fail: key mismatch detected — block the app.
+  if (transparencyError) {
+    return (
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--hush-black)',
+        color: 'var(--hush-text-primary)',
+        padding: '32px',
+        textAlign: 'center',
+        zIndex: 9999,
+      }}>
+        <div style={{
+          maxWidth: '480px',
+          padding: '32px',
+          background: 'var(--hush-surface)',
+          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--hush-danger)',
+        }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: '16px' }}>&#9888;</div>
+          <h2 style={{ color: 'var(--hush-danger)', marginBottom: '12px', fontSize: '1.2rem' }}>
+            Key Verification Failed
+          </h2>
+          <p style={{ color: 'var(--hush-text-secondary)', marginBottom: '8px', lineHeight: 1.6 }}>
+            {transparencyError}
+          </p>
+          <p style={{ color: 'var(--hush-text-muted)', fontSize: '0.85rem', marginBottom: '24px', lineHeight: 1.5 }}>
+            Your account may be compromised. Do not continue using this session.
+            Contact your instance administrator.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              // Sign out — leave local vault intact for recovery.
+              import('../contexts/AuthContext').then(({ useAuth: _ }) => {
+                sessionStorage.clear();
+                window.location.href = '/';
+              });
+            }}
+            style={{
+              padding: '10px 24px',
+              background: 'var(--hush-danger)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '0.9rem',
+            }}
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // No guild selected — show empty state with guild strip and welcome message.
   if (!serverId) {
@@ -1118,6 +1274,30 @@ export default function ServerLayout() {
         }}>
           Create a server or join one with an invite link.
         </div>
+        {hasNoTransparencyLog && authToken && (
+          <div
+            title="Transparency log not configured — key operations cannot be independently verified"
+            aria-label="Transparency log not configured"
+            style={{
+              position: 'fixed',
+              bottom: '12px',
+              left: '12px',
+              zIndex: 10,
+              width: '20px',
+              height: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--hush-amber, #f59e0b)',
+              cursor: 'default',
+              opacity: 0.85,
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 14h2v2h-2v-2zm0-8h2v6h-2V7z" />
+            </svg>
+          </div>
+        )}
         <Toast toasts={toasts} />
       </div>
     );
@@ -1393,6 +1573,40 @@ export default function ServerLayout() {
           onConfirm={handleVoiceSwitchConfirmed}
           onCancel={() => setPendingVoiceSwitch(null)}
         />
+      )}
+      {/* ── Transparency log warning badge ── */}
+      {/* Shown when the instance has no transparency log configured.
+          Non-blocking — informational only. Positioned in the bottom-left
+          corner overlapping the server list footer area. */}
+      {hasNoTransparencyLog && authToken && (
+        <div
+          title="Transparency log not configured — key operations cannot be independently verified"
+          aria-label="Transparency log not configured"
+          style={{
+            position: 'fixed',
+            bottom: '12px',
+            left: '12px',
+            zIndex: 10,
+            width: '20px',
+            height: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--hush-amber, #f59e0b)',
+            cursor: 'default',
+            opacity: 0.85,
+          }}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 14h2v2h-2v-2zm0-8h2v6h-2V7z" />
+          </svg>
+        </div>
       )}
       <Toast toasts={toasts} />
     </div>

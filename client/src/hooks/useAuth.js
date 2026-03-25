@@ -18,6 +18,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   mnemonicToIdentityKey,
   signChallenge,
+  signTransparencyEntry,
 } from '../lib/bip39Identity';
 import {
   encryptVault,
@@ -170,6 +171,16 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  /**
+   * Set when transparency log verification detects a key mismatch.
+   * Non-null value blocks the app UI — see transparencyError in the return value.
+   *
+   * Owned here so any component in the tree can read the error via useAuth().
+   * Set externally by ServerLayout after fetching handshakeData and running
+   * TransparencyVerifier.verifyOwnKey().
+   */
+  const [transparencyError, setTransparencyError] = useState(null);
+
   // In-memory identity key — never persisted to any storage as plaintext.
   const identityKeyRef = useRef(null);
 
@@ -314,12 +325,33 @@ export function useAuth() {
       const deviceId = getDeviceId();
       const publicKeyBase64 = toBase64(publicKey);
 
+      // Sign a transparency entry so the server can append it to the log.
+      // The server ignores transparency_sig if the instance has no log configured.
+      const transparencyTs = Math.floor(Date.now() / 1000);
+      let transparencySigBase64 = null;
+      try {
+        const { signature } = await signTransparencyEntry(
+          privateKey,
+          'register',
+          publicKey,
+          null,
+          transparencyTs,
+        );
+        transparencySigBase64 = toBase64(signature);
+      } catch (sigErr) {
+        // Non-fatal: log warning and proceed without transparency sig.
+        console.warn('[transparency] Failed to sign registration entry:', sigErr);
+      }
+
       const data = await registerWithPublicKey(
         username,
         displayName,
         publicKeyBase64,
         deviceId,
         inviteCode,
+        '', // baseUrl: default to local instance during registration
+        transparencySigBase64,
+        transparencySigBase64 ? transparencyTs : null,
       );
 
       identityKeyRef.current = { privateKey, publicKey };
@@ -817,6 +849,11 @@ export function useAuth() {
     // Ref to the in-memory identity keypair. Used by useInstances for
     // challenge-response auth on remote instances. Never serialized.
     identityKeyRef,
+    // Transparency log error state. Set externally by ServerLayout when
+    // TransparencyVerifier.verifyOwnKey() detects a key mismatch.
+    // Non-null value blocks the app UI (hard-fail policy).
+    transparencyError,
+    setTransparencyError,
     // Legacy aliases preserved for compatibility with existing consumers.
     isLoading: loading,
   };
