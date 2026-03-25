@@ -914,23 +914,14 @@ export default function ServerLayout() {
 
   // ── Fetch channels + members when serverId changes (guild switch) ──────
 
-  // Track the previous serverId so we only tear down voice on actual guild switch,
-  // not on token refresh or other dep changes that re-trigger the fetch effect.
-  const prevFetchServerIdRef = useRef(null);
-
   useEffect(() => {
     if (!authToken || !serverId) return;
     if (!token) return;
 
-    const isGuildSwitch = prevFetchServerIdRef.current != null && prevFetchServerIdRef.current !== serverId;
-    prevFetchServerIdRef.current = serverId;
-
     // Clear stale state immediately to prevent channel lookup across guilds.
+    // Voice connection is NEVER torn down by navigation — only by explicit Leave
+    // or voice channel switch (Discord model).
     setChannels([]);
-    if (isGuildSwitch) {
-      setActiveVoiceChannel(null);
-      activeVoiceMemberIdsRef.current = [];
-    }
     setMembers([]);
     setLoading(true);
 
