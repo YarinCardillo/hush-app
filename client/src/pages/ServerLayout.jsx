@@ -979,9 +979,11 @@ export default function ServerLayout() {
   }, [navigateToGuild]);
 
   /** Called by GuildCreateModal on success — refresh guilds and navigate to new guild. */
-  const handleGuildCreated = useCallback((newGuild) => {
+  const handleGuildCreated = useCallback(async (newGuild) => {
+    // Await refreshGuilds so mergedGuilds includes the new guild BEFORE navigating.
+    // Without this, activeGuild=null during the transition → wsClient=null → voice drops.
     if (instanceUrl) {
-      refreshGuilds(instanceUrl).catch(() => {});
+      await refreshGuilds(instanceUrl).catch(() => {});
     }
     if (newGuild?.id) {
       navigateToGuild(newGuild.id);
