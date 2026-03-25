@@ -39,6 +39,7 @@ import {
   verifyChallenge,
   registerWithPublicKey,
   getMyGuilds,
+  fetchWithAuth,
 } from '../lib/api.js';
 import { signChallenge } from '../lib/bip39Identity.js';
 import { getDeviceId } from './useAuth.js';
@@ -604,9 +605,30 @@ export function useInstances() {
         }
 
         // Boot all instances in parallel.
-        await Promise.allSettled(
+        const results = await Promise.allSettled(
           storedInstances.map(({ instanceUrl }) => bootInstance(instanceUrl)),
         );
+
+        // Fallback: if bootInstance failed (no identity key after page refresh)
+        // but a local JWT exists in sessionStorage, use it directly.
+        const localJwt = sessionStorage.getItem('hush_jwt');
+        if (localJwt && !cancelled) {
+          const localUrl = window.location.origin;
+          const localEntry = instancesRef.current.get(localUrl);
+          if (!localEntry || localEntry.connectionState === 'offline') {
+            try {
+              const res = await fetchWithAuth(localJwt, '/api/auth/me');
+              if (res.ok) {
+                const u = await res.json();
+                if (!cancelled) {
+                  await registerLocalInstance(localJwt, { id: u.id, username: u.username });
+                }
+              }
+            } catch {
+              // JWT invalid or network error — will show empty state.
+            }
+          }
+        }
       } catch (err) {
         console.error('[useInstances] mount failed:', err);
       }
