@@ -380,8 +380,8 @@ export default function Home() {
   });
 
   const registrationMode = handshakeData?.registration_mode ?? 'open';
-  const e2eeActive =
-    handshakeData?.e2ee?.chat === true && handshakeData?.e2ee?.media === true;
+  const caps = handshakeData?.capabilities ?? handshakeData?.Capabilities ?? {};
+  const e2eeActive = caps['e2ee.chat'] === true && caps['e2ee.media'] === true;
 
   const spotlightRef = useRef(null);
   const rafRef = useRef(null);
