@@ -160,14 +160,29 @@ export async function joinChannelGroup(deps, channelId) {
  * @returns {Promise<void>}
  */
 export async function joinOrCreateChannelGroup(deps, channelId) {
-  const { token, api } = deps;
+  const { db, token, mlsStore, api } = deps;
+
+  // If we already have the group locally (epoch stored), skip entirely.
+  const localEpoch = await mlsStore.getGroupEpoch(db, channelId);
+  if (localEpoch != null) return;
+
   const serverInfo = await api.getMLSGroupInfo(token, channelId);
   if (serverInfo?.groupInfo) {
     // Group exists on server — join via External Commit.
     await joinChannelGroup(deps, channelId);
   } else {
     // No group on server — create it (we are the first member to enter).
-    await createChannelGroup(deps, channelId);
+    try {
+      await createChannelGroup(deps, channelId);
+    } catch (err) {
+      const msg = String(err?.message ?? err);
+      if (msg.includes('GroupAlreadyExists') || msg.includes('already exists')) {
+        // Race: another code path (e.g. ChannelList) already created this group.
+        // The epoch may not be stored yet — let the other path finish.
+        return;
+      }
+      throw err;
+    }
   }
 }
 
