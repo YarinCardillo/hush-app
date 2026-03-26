@@ -6,63 +6,6 @@ import { useInstanceContext } from '../contexts/InstanceContext';
 import { slugify } from '../lib/slugify';
 import { decodeGuildNameFromInvite } from '../lib/guildMetadata';
 
-const styles = {
-  page: {
-    minHeight: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '20px',
-    fontFamily: 'var(--font-sans)',
-  },
-  card: {
-    padding: '24px',
-    maxWidth: '400px',
-    width: '100%',
-  },
-  title: {
-    fontSize: '1rem',
-    fontWeight: 500,
-    color: 'var(--hush-text-secondary)',
-    marginBottom: '8px',
-  },
-  guildName: {
-    fontSize: '1.4rem',
-    fontWeight: 300,
-    color: 'var(--hush-text)',
-    marginBottom: '8px',
-    letterSpacing: '-0.02em',
-  },
-  instanceHost: {
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-muted)',
-    marginBottom: '24px',
-    fontFamily: 'var(--font-mono)',
-  },
-  memberCount: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-text-muted)',
-    marginBottom: '24px',
-  },
-  error: {
-    padding: '10px 14px',
-    background: 'var(--hush-danger-ghost)',
-    color: 'var(--hush-danger)',
-    fontSize: '0.85rem',
-    marginBottom: '16px',
-    overflowWrap: 'break-word',
-  },
-  actions: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  link: {
-    color: 'var(--hush-amber-dim)',
-    textDecoration: 'none',
-    fontSize: '0.9rem',
-  },
-};
 
 function inviteErrorMessage(err) {
   const msg = err?.message || '';
@@ -244,8 +187,8 @@ export default function Invite() {
 
   if (loading) {
     return (
-      <div style={styles.page}>
-        <div className="glass" style={styles.card}>
+      <div className="invite-page">
+        <div className="glass invite-card">
           <p style={{ color: 'var(--hush-text-muted)', fontSize: '0.9rem' }}>Loading invite…</p>
         </div>
       </div>
@@ -254,10 +197,10 @@ export default function Invite() {
 
   if (error && !invite) {
     return (
-      <div style={styles.page}>
-        <div className="glass" style={styles.card}>
-          <p style={styles.error}>{error}</p>
-          <a href="/" style={styles.link}>Return to home</a>
+      <div className="invite-page">
+        <div className="glass invite-card">
+          <p className="invite-error">{error}</p>
+          <a href="/" className="invite-link">Return to home</a>
         </div>
       </div>
     );
@@ -272,17 +215,17 @@ export default function Invite() {
     const isConnecting = booting || joining;
 
     return (
-      <div style={styles.page}>
-        <div className="glass" style={styles.card}>
-          <p style={styles.title}>You're invited to join</p>
-          <p style={styles.guildName}>{guildName}</p>
-          <p style={styles.instanceHost}>hosted on {instanceParam}</p>
+      <div className="invite-page">
+        <div className="glass invite-card">
+          <p className="invite-title">You're invited to join</p>
+          <p className="invite-guild-name">{guildName}</p>
+          <p className="invite-instance-host">hosted on {instanceParam}</p>
           {memberCount != null && (
-            <p style={styles.memberCount}>{memberCount} member{memberCount !== 1 ? 's' : ''}</p>
+            <p className="invite-member-count">{memberCount} member{memberCount !== 1 ? 's' : ''}</p>
           )}
-          {error && <p style={styles.error}>{error}</p>}
+          {error && <p className="invite-error">{error}</p>}
           {!isAuthenticated ? (
-            <div style={styles.actions}>
+            <div className="invite-actions">
               <button
                 type="button"
                 className="btn btn-primary"
@@ -291,10 +234,10 @@ export default function Invite() {
               >
                 Sign in to join
               </button>
-              <a href="/" style={styles.link}>Return to home</a>
+              <a href="/" className="invite-link">Return to home</a>
             </div>
           ) : (
-            <div style={styles.actions}>
+            <div className="invite-actions">
               <button
                 type="button"
                 className="btn btn-primary"
@@ -304,7 +247,7 @@ export default function Invite() {
               >
                 {booting ? 'Connecting to instance…' : joining ? 'Joining…' : 'Join'}
               </button>
-              <a href="/" style={styles.link}>Return to home</a>
+              <a href="/" className="invite-link">Return to home</a>
             </div>
           )}
         </div>
@@ -316,17 +259,17 @@ export default function Invite() {
 
   if (isAuthenticated) {
     return (
-      <div style={styles.page}>
-        <div className="glass" style={styles.card}>
-          <p style={styles.title}>You're invited to join</p>
-          <p style={styles.guildName}>{guildName}</p>
-          {error && <p style={styles.error}>{error}</p>}
+      <div className="invite-page">
+        <div className="glass invite-card">
+          <p className="invite-title">You're invited to join</p>
+          <p className="invite-guild-name">{guildName}</p>
+          {error && <p className="invite-error">{error}</p>}
           {!error && (
             <p style={{ color: 'var(--hush-text-muted)', fontSize: '0.9rem' }}>Joining…</p>
           )}
           {error && (
-            <div style={styles.actions}>
-              <a href="/" style={styles.link}>Return to home</a>
+            <div className="invite-actions">
+              <a href="/" className="invite-link">Return to home</a>
             </div>
           )}
         </div>
@@ -336,12 +279,12 @@ export default function Invite() {
 
   // Unauthenticated same-instance: redirect to home with invite queued.
   return (
-    <div style={styles.page}>
-      <div className="glass" style={styles.card}>
-        <p style={styles.title}>You're invited to join</p>
-        <p style={styles.guildName}>{guildName}</p>
-        {error && <p style={styles.error}>{error}</p>}
-        <div style={styles.actions}>
+    <div className="invite-page">
+      <div className="glass invite-card">
+        <p className="invite-title">You're invited to join</p>
+        <p className="invite-guild-name">{guildName}</p>
+        {error && <p className="invite-error">{error}</p>}
+        <div className="invite-actions">
           <button
             type="button"
             className="btn btn-primary"
@@ -350,7 +293,7 @@ export default function Invite() {
           >
             Sign in to join
           </button>
-          <a href="/" style={styles.link}>Return to home</a>
+          <a href="/" className="invite-link">Return to home</a>
         </div>
       </div>
     </div>

@@ -163,163 +163,6 @@ function TypewriterSlot() {
   );
 }
 
-const styles = {
-  page: {
-    minHeight: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '20px',
-    userSelect: 'none',
-    position: 'relative',
-    overflowY: 'auto',
-  },
-  spotlightWrapper: {
-    position: 'fixed',
-    inset: 0,
-    pointerEvents: 'none',
-    zIndex: 0,
-    '--sx': '-1000px',
-    '--sy': '-1000px',
-  },
-  spotlight: {
-    position: 'fixed',
-    inset: 0,
-    pointerEvents: 'none',
-    background:
-      'radial-gradient(280px circle at var(--sx) var(--sy), rgba(213,79,18,0.06) 0%, rgba(213,79,18,0.02) 45%, transparent 75%)',
-  },
-  container: {
-    width: '100%',
-    maxWidth: '420px',
-    position: 'relative',
-    zIndex: 2,
-  },
-  logo: {
-    marginBottom: '56px',
-    textAlign: 'center',
-  },
-  logoInner: {
-    position: 'relative',
-    display: 'inline-block',
-  },
-  logoTitle: {
-    fontFamily: "'Cormorant Garamond', Georgia, serif",
-    fontStyle: 'italic',
-    fontWeight: 400,
-    fontSize: '8rem',
-    letterSpacing: '0.06em',
-    color: 'var(--hush-text)',
-    textTransform: 'lowercase',
-  },
-  logoDot: (left) => ({
-    position: 'absolute',
-    top: '20px',
-    left: left != null ? `${left}px` : '38%',
-    width: '14px',
-    height: '14px',
-    borderRadius: '50%',
-    background: 'var(--hush-amber)',
-    boxShadow: '0 0 12px var(--hush-amber), 0 0 28px rgba(213, 79, 18, 0.3)',
-  }),
-  logoGlow: {
-    position: 'absolute',
-    inset: '-30px',
-    background: 'radial-gradient(circle, rgba(213, 79, 18, 0.3) 0%, transparent 70%)',
-    borderRadius: '50%',
-    zIndex: -1,
-    pointerEvents: 'none',
-  },
-  logoSub: {
-    marginTop: '0px',
-    color: 'var(--hush-text-secondary)',
-    fontSize: '0.9rem',
-    fontWeight: 400,
-  },
-  e2eeBadge: (active) => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '5px',
-    padding: '3px 10px',
-    background: active ? 'var(--hush-amber-ghost)' : 'rgba(85, 85, 104, 0.08)',
-    color: active ? 'var(--hush-amber)' : 'var(--hush-text-muted)',
-    fontSize: '0.65rem',
-    fontWeight: 500,
-    letterSpacing: '0.06em',
-    textTransform: 'uppercase',
-    border: '1px solid transparent',
-    borderRadius: 0,
-    userSelect: 'none',
-    textDecoration: active ? 'none' : 'line-through',
-  }),
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  fieldLabel: {
-    display: 'block',
-    marginBottom: '4px',
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-secondary)',
-    fontWeight: 500,
-  },
-  error: {
-    padding: '10px 14px',
-    background: 'var(--hush-danger-ghost)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--hush-danger)',
-    fontSize: '0.85rem',
-    overflowWrap: 'break-word',
-    wordBreak: 'break-word',
-  },
-  errorToast: {
-    position: 'fixed',
-    bottom: '24px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    maxWidth: 'min(420px, calc(100vw - 32px))',
-    padding: '12px 16px',
-    background: 'var(--hush-danger-ghost)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--hush-danger)',
-    fontSize: '0.85rem',
-    overflowWrap: 'break-word',
-    wordBreak: 'break-word',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-    zIndex: 1000,
-  },
-  footer: {
-    marginTop: '32px',
-    textAlign: 'center',
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-muted)',
-  },
-  footerMeta: {
-    marginTop: '6px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    fontSize: '0.65rem',
-    fontFamily: 'var(--font-mono)',
-    color: 'var(--hush-text-ghost)',
-    letterSpacing: '0.02em',
-  },
-  footerLink: {
-    color: 'var(--hush-amber-dim)',
-    textDecoration: 'none',
-  },
-  sectionTitle: {
-    fontSize: '0.75rem',
-    fontWeight: 500,
-    color: 'var(--hush-text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-    marginBottom: '12px',
-  },
-};
-
 /**
  * Auth UI view states. Drives what is shown in the glass card.
  */
@@ -621,7 +464,7 @@ export default function Home() {
   const renderFormContent = () => {
     if (authLoading) {
       return (
-        <div style={{ textAlign: 'center', color: 'var(--hush-text-muted)', padding: '24px 0', fontSize: '0.85rem' }}>
+        <div className="home-loading">
           Loading...
         </div>
       );
@@ -641,8 +484,8 @@ export default function Home() {
     if (authView === AUTH_VIEW.PIN_SETUP) {
       return (
         <>
-          <div style={{ marginBottom: '12px' }}>
-            <div style={styles.sectionTitle}>Secure your identity</div>
+          <div className="home-pin-setup-header">
+            <div className="home-section-title">Secure your identity</div>
           </div>
           <PinSetupModal
             onSetPin={handlePinSetup}
@@ -668,8 +511,8 @@ export default function Home() {
     if (authView === AUTH_VIEW.RECOVERY) {
       return (
         <>
-          <div style={{ marginBottom: '8px' }}>
-            <div style={styles.sectionTitle}>Sign in</div>
+          <div className="home-recovery-header">
+            <div className="home-section-title">Sign in</div>
           </div>
           <RecoveryPhraseInput
             onSubmit={handleRecoverySubmit}
@@ -689,18 +532,7 @@ export default function Home() {
     // Default: CHOOSE view
     return (
       <>
-        <div
-          className="home-auth-choices"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '2px',
-            marginBottom: '16px',
-            background: 'var(--hush-surface)',
-            padding: '3px',
-            borderRadius: 'var(--radius-md)',
-          }}
-        >
+        <div className="home-auth-choices">
           <button
             type="button"
             className="home-auth-choice-btn"
@@ -711,18 +543,11 @@ export default function Home() {
         </div>
 
         {registrationMode !== 'closed' && (
-          <p style={{ fontSize: '0.82rem', color: 'var(--hush-text-muted)', textAlign: 'center', margin: 0 }}>
+          <p className="home-register-hint">
             New here?{' '}
             <button
               type="button"
-              style={{
-                padding: 0,
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                font: 'inherit',
-                color: 'var(--hush-amber-dim)',
-              }}
+              className="home-register-link"
               onClick={() => setAuthView(AUTH_VIEW.REGISTER_WIZARD)}
             >
               Create an account
@@ -734,34 +559,43 @@ export default function Home() {
   };
 
   return (
-    <div style={styles.page} onMouseMove={handleMouseMove}>
+    <div className="home-page" onMouseMove={handleMouseMove}>
       {/* Cursor spotlight */}
       {spotlightEnabled && (
-        <div ref={spotlightRef} style={styles.spotlightWrapper}>
-          <div style={styles.spotlight} />
+        <div ref={spotlightRef} className="home-spotlight-wrapper">
+          <div className="home-spotlight" />
         </div>
       )}
 
-      <div style={styles.container}>
+      <div className="home-container">
         {/* Logo */}
         <motion.div
-          style={styles.logo}
+          className="home-logo"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.4 }}
         >
-          <div style={styles.logoInner}>
-            <div style={{ ...styles.logoTitle, position: 'relative' }} ref={wordmarkRef}>
+          <div className="home-logo-inner">
+            <div className="home-logo-title" ref={wordmarkRef}>
               hush
               <motion.div
-                style={styles.logoDot(dotLeft)}
+                style={{
+                  position: 'absolute',
+                  top: '20px',
+                  left: dotLeft != null ? `${dotLeft}px` : '38%',
+                  width: '14px',
+                  height: '14px',
+                  borderRadius: '50%',
+                  background: 'var(--hush-amber)',
+                  boxShadow: '0 0 12px var(--hush-amber), 0 0 28px rgba(213, 79, 18, 0.3)',
+                }}
                 initial={{ scale: 0, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ duration: 0.4, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
               />
             </div>
             <motion.div
-              style={styles.logoGlow}
+              className="home-logo-glow"
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: [0, 0.7, 0.15], scale: [0.8, 1.2, 1] }}
               transition={{ duration: 1.2, delay: 0.2, ease: 'easeOut' }}
@@ -770,8 +604,8 @@ export default function Home() {
 
           {/* Subtitle */}
           <motion.div
+            className="home-logo-sub"
             style={{
-              ...styles.logoSub,
               display: 'inline-block',
               width: subtitleWidthPx ?? 'auto',
               textAlign: 'left',
@@ -823,12 +657,12 @@ export default function Home() {
 
         {/* E2EE badge */}
         <motion.div
-          style={{ textAlign: 'center', marginBottom: '16px' }}
+          className="home-e2ee-badge-wrap"
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1], delay: 0.6 }}
         >
-          <span style={styles.e2eeBadge(e2eeActive)}>
+          <span className={`home-e2ee-badge ${e2eeActive ? 'home-e2ee-badge--active' : 'home-e2ee-badge--inactive'}`}>
             <svg
               width="10"
               height="10"
@@ -852,26 +686,25 @@ export default function Home() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
-          className="glass"
-          style={{ padding: '24px' }}
+          className="glass home-form-card"
         >
           {renderFormContent()}
 
-          <div style={styles.footer}>
+          <div className="home-footer">
             <div>
               <span style={{ display: 'inline-block' }}>hush is open source and self-hostable.</span>
               {' '}
               <span style={{ display: 'inline-block' }}>
-                <a href="https://github.com/YarinCardillo/hush-app" style={styles.footerLink}>
+                <a href="https://github.com/YarinCardillo/hush-app" className="home-footer-link">
                   github
                 </a>
                 {' · '}
-                <Link to="/roadmap" style={styles.footerLink}>
+                <Link to="/roadmap" className="home-footer-link">
                   roadmap
                 </Link>
               </span>
             </div>
-            <div style={styles.footerMeta}>
+            <div className="home-footer-meta">
               <span style={{ display: 'inline-block' }}>v{APP_VERSION}</span>
             </div>
           </div>
@@ -883,7 +716,7 @@ export default function Home() {
         {toastMessage && (
           <motion.div
             key="toast"
-            style={styles.errorToast}
+            className="home-error-toast"
             role="alert"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

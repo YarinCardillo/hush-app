@@ -19,134 +19,16 @@ import DevicePickerModal from '../components/DevicePickerModal';
 import Chat from '../components/Chat';
 import MemberList from '../components/MemberList';
 
-const styles = {
-  page: {
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 16px',
-    height: '48px',
-    background: 'var(--hush-surface)',
-    borderBottom: '1px solid var(--hush-border)',
-    flexShrink: 0,
-  },
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    minWidth: 0,
-  },
-  roomTitle: {
-    fontSize: '0.9rem',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  headerBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '4px 8px',
-    fontSize: '0.8rem',
-    fontWeight: 500,
-    background: 'var(--hush-badge-live-bg)',
-    color: 'var(--hush-live)',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    flexShrink: 0,
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  participantCount: {
-    fontSize: '0.8rem',
-    fontWeight: 500,
-    color: 'var(--hush-text-secondary)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-    padding: '4px 8px',
-    borderRadius: 'var(--radius-sm)',
-  },
-  membersToggle: {
-    padding: '4px 8px',
-    fontSize: '0.8rem',
-    fontFamily: 'var(--font-sans)',
-    background: 'none',
-    border: '1px solid var(--hush-border)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--hush-text-secondary)',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-  main: {
-    flex: 1,
-    display: 'flex',
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  sidebar: (isMobile) => ({
-    ...(isMobile
-      ? {
-          position: 'fixed',
-          top: '48px',
-          right: 0,
-          bottom: 0,
-          width: '280px',
-          zIndex: 50,
-          boxShadow: '-4px 0 24px rgba(0,0,0,0.4)',
-        }
-      : {
-          width: '260px',
-          flexShrink: 0,
-          borderLeft: '1px solid var(--hush-border)',
-        }),
-    background: 'var(--hush-surface)',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'auto',
-    padding: '16px',
-  }),
-  sidebarSection: {
-    marginBottom: '20px',
-  },
-  sidebarLabel: {
-    fontSize: '0.7rem',
-    fontWeight: 600,
-    color: 'var(--hush-text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    marginBottom: '8px',
-  },
-  peerItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '6px 0',
-    fontSize: '0.85rem',
-  },
-  peerDot: (isStreaming) => ({
+/** Returns inline style for a peer dot based on streaming state. */
+function peerDotStyle(isStreaming) {
+  return {
     width: '6px',
     height: '6px',
     borderRadius: '50%',
     background: isStreaming ? 'var(--hush-live)' : 'var(--hush-text-muted)',
     boxShadow: isStreaming ? '0 0 6px var(--hush-live-glow)' : 'none',
-  }),
-};
+  };
+}
 
 function getFriendlyRoomError(errorMessage) {
   if (!errorMessage || typeof errorMessage !== 'string') return 'Something went wrong. Please try again.';
@@ -449,45 +331,10 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   if (error) {
     const displayError = getFriendlyRoomError(error);
     return (
-      <div style={styles.page}>
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '24px',
-            padding: '24px',
-          }}
-        >
-          <p
-            style={{
-              color: 'var(--hush-danger)',
-              fontSize: '1rem',
-              fontWeight: 500,
-              textAlign: 'center',
-              maxWidth: '360px',
-              overflowWrap: 'break-word',
-              wordBreak: 'break-word',
-            }}
-          >
-            {displayError}
-          </p>
-          <button
-            type="button"
-            onClick={handleLeave}
-            style={{
-              padding: '10px 20px',
-              background: 'var(--hush-amber)',
-              color: 'var(--hush-black)',
-              border: 'none',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '0.9rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
+      <div className="vc-page">
+        <div className="vc-error-center">
+          <p className="vc-error-text">{displayError}</p>
+          <button type="button" className="btn btn-primary" onClick={handleLeave} style={{ padding: '10px 20px' }}>
             Leave
           </button>
         </div>
@@ -496,10 +343,10 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <span style={styles.roomTitle}>#{channel._displayName ?? channel.name ?? ''}</span>
+    <div className="vc-page">
+      <div className="vc-header">
+        <div className="vc-header-left">
+          <span className="vc-room-title">#{channel._displayName ?? channel.name ?? ''}</span>
           {isE2EEEnabled && !isVoiceReconnecting && (
             <span
               title={`Encrypted${voiceEpoch != null ? ` \u00b7 Epoch ${voiceEpoch}` : ''}`}
@@ -518,30 +365,18 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
             </span>
           )}
           {isVoiceReconnecting && (
-            <div
-              role="status"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 12px',
-                backgroundColor: 'var(--hush-warning-bg, rgba(234, 179, 8, 0.1))',
-                color: 'var(--hush-warning, #eab308)',
-                borderRadius: '6px',
-                fontSize: '0.85rem',
-              }}
-            >
+            <div role="status" className="vc-reconnecting">
               Reconnecting...
             </div>
           )}
-          <span style={styles.headerBadge}>
+          <span className="vc-header-badge">
             <span className="live-dot" />
             Live
           </span>
         </div>
-        <div style={styles.headerRight}>
+        <div className="vc-header-right">
           <button
-            style={{ ...styles.participantCount, position: 'relative' }}
+            className="vc-participant-count"
             title="Chat"
             onClick={() => onTogglePanel('chat')}
           >
@@ -549,23 +384,10 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
             Chat
-            {unreadChatCount > 0 && (
-              <span
-                style={{
-                  position: 'absolute',
-                  top: '3px',
-                  right: '3px',
-                  width: '7px',
-                  height: '7px',
-                  background: 'var(--hush-amber)',
-                  borderRadius: '50%',
-                  pointerEvents: 'none',
-                }}
-              />
-            )}
+            {unreadChatCount > 0 && <span className="vc-unread-dot" />}
           </button>
           <button
-            style={{ ...styles.participantCount, position: 'relative' }}
+            className="vc-participant-count"
             title="Participants"
             onClick={() => onTogglePanel('participants')}
           >
@@ -576,23 +398,10 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
             {totalParticipantCount || 1}
-            {participantsBadge && (
-              <span
-                style={{
-                  position: 'absolute',
-                  top: '3px',
-                  right: '3px',
-                  width: '7px',
-                  height: '7px',
-                  background: 'var(--hush-amber)',
-                  borderRadius: '50%',
-                  pointerEvents: 'none',
-                }}
-              />
-            )}
+            {participantsBadge && <span className="vc-unread-dot" />}
           </button>
           <button
-            style={styles.membersToggle}
+            className="vc-members-toggle"
             title="Members"
             onClick={() => onTogglePanel('members')}
             aria-pressed={showMembers}
@@ -602,8 +411,8 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
         </div>
       </div>
 
-      <div style={styles.main}>
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="vc-main">
+        <div className="vc-content">
           <VideoGrid
             localTracks={localTracks}
             remoteTracks={remoteTracks}
@@ -647,15 +456,15 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
               aria-hidden={!showParticipantsPanel}
             />
             <div className={`sidebar-panel-right ${showParticipantsPanel ? 'sidebar-panel-open' : ''}`}>
-              <div style={styles.sidebarSection}>
-                <div style={styles.sidebarLabel}>Participants ({totalParticipantCount || 1})</div>
-                <div style={styles.peerItem}>
-                  <div style={styles.peerDot(isScreenSharing)} />
+              <div className="vc-sidebar-section">
+                <div className="vc-sidebar-label">Participants ({totalParticipantCount || 1})</div>
+                <div className="vc-peer-item">
+                  <div style={peerDotStyle(isScreenSharing)} />
                   <span>You</span>
                 </div>
                 {displayParticipants.map((p) => (
-                  <div key={p.userId} style={styles.peerItem}>
-                    <div style={styles.peerDot(true)} />
+                  <div key={p.userId} className="vc-peer-item">
+                    <div style={peerDotStyle(true)} />
                     <span>{p.displayName}</span>
                   </div>
                 ))}
@@ -667,8 +476,8 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
               aria-hidden={!showChatPanel}
             />
             <div className={`sidebar-panel-right ${showChatPanel ? 'sidebar-panel-open' : ''}`}>
-              <div style={styles.sidebarSection}>
-                <div style={styles.sidebarLabel}>Chat</div>
+              <div className="vc-sidebar-section">
+                <div className="vc-sidebar-label">Chat</div>
                 <Chat
                   channelId={channel.id}
                   serverId={serverId}
@@ -701,16 +510,16 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
         ) : (
           <>
             <div className={`sidebar-desktop ${showParticipantsPanel ? 'sidebar-desktop-open' : ''}`}>
-              <div className="sidebar-desktop-inner" style={styles.sidebar(false)}>
-                <div style={styles.sidebarSection}>
-                  <div style={styles.sidebarLabel}>Participants ({totalParticipantCount || 1})</div>
-                  <div style={styles.peerItem}>
-                    <div style={styles.peerDot(isScreenSharing)} />
+              <div className="sidebar-desktop-inner vc-sidebar-inner">
+                <div className="vc-sidebar-section">
+                  <div className="vc-sidebar-label">Participants ({totalParticipantCount || 1})</div>
+                  <div className="vc-peer-item">
+                    <div style={peerDotStyle(isScreenSharing)} />
                     <span>You</span>
                   </div>
                   {displayParticipants.map((p) => (
-                    <div key={p.userId} style={styles.peerItem}>
-                      <div style={styles.peerDot(true)} />
+                    <div key={p.userId} className="vc-peer-item">
+                      <div style={peerDotStyle(true)} />
                       <span>{p.displayName}</span>
                     </div>
                   ))}
@@ -718,9 +527,9 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
               </div>
             </div>
             <div className={`sidebar-desktop ${showChatPanel ? 'sidebar-desktop-open' : ''}`}>
-              <div className="sidebar-desktop-inner" style={styles.sidebar(false)}>
-                <div style={styles.sidebarSection}>
-                  <div style={styles.sidebarLabel}>Chat</div>
+              <div className="sidebar-desktop-inner vc-sidebar-inner">
+                <div className="vc-sidebar-section">
+                  <div className="vc-sidebar-label">Chat</div>
                   <Chat
                     channelId={channel.id}
                     serverId={serverId}

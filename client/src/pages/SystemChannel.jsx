@@ -4,55 +4,6 @@ import SystemMessageRow from '../components/SystemMessageRow';
 
 const PAGE_SIZE = 50;
 
-const styles = {
-  root: {
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 16px',
-    height: '48px',
-    background: 'var(--hush-surface)',
-    borderBottom: '1px solid var(--hush-border)',
-    flexShrink: 0,
-  },
-  channelName: {
-    fontSize: '0.9rem',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-  },
-  messageList: {
-    flex: 1,
-    overflowY: 'auto',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    padding: '8px 0',
-  },
-  empty: {
-    flex: 1,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'var(--hush-text-muted)',
-    fontSize: '0.85rem',
-  },
-  loadingMore: {
-    textAlign: 'center',
-    padding: '8px',
-    color: 'var(--hush-text-muted)',
-    fontSize: '0.75rem',
-  },
-};
-
 /**
  * SystemChannel: read-only view of system/moderation messages.
  * No message input, no encryption. Fetches from GET /api/servers/:id/system-messages.
@@ -168,20 +119,14 @@ export default function SystemChannel({ channel, serverId, getToken, wsClient, m
   }, [hasMore, loadingMore, messages, getToken, serverId]);
 
   return (
-    <div style={styles.root}>
-      <header style={styles.header}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+    <div className="sc-root">
+      <header className="sc-header">
+        <div className="sc-header-left">
           {onToggleDrawer && (
             <button
               type="button"
+              className="sc-drawer-toggle"
               onClick={onToggleDrawer}
-              style={{
-                width: 44, height: 44,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'none', border: 'none',
-                color: 'var(--hush-text-secondary)', cursor: 'pointer',
-                padding: 0, flexShrink: 0,
-              }}
               aria-label="Toggle channels"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -189,7 +134,7 @@ export default function SystemChannel({ channel, serverId, getToken, wsClient, m
               </svg>
             </button>
           )}
-          <span style={styles.channelName}>
+          <span className="sc-channel-name">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
             </svg>
@@ -199,16 +144,16 @@ export default function SystemChannel({ channel, serverId, getToken, wsClient, m
       </header>
 
       {loading ? (
-        <div style={styles.empty}>Loading...</div>
+        <div className="sc-empty">Loading...</div>
       ) : messages.length === 0 ? (
-        <div style={styles.empty}>No system messages yet</div>
+        <div className="sc-empty">No system messages yet</div>
       ) : (
         <div
           ref={listRef}
-          style={styles.messageList}
+          className="sc-message-list"
           onScroll={handleScroll}
         >
-          {loadingMore && <div style={styles.loadingMore}>Loading older messages...</div>}
+          {loadingMore && <div className="sc-loading-more">Loading older messages...</div>}
           {messages.map((msg) => (
             <SystemMessageRow key={msg.id} message={msg} members={members} />
           ))}

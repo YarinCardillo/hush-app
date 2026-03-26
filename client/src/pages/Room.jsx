@@ -4,7 +4,6 @@ import { Track } from 'livekit-client';
 import { useAuth } from '../contexts/AuthContext';
 import { getDeviceId } from '../hooks/useAuth';
 import { createWsClient } from '../lib/ws';
-import { useMLS } from '../hooks/useMLS';
 import * as mlsStore from '../lib/mlsStore';
 import { useRoom } from '../hooks/useRoom';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -22,76 +21,20 @@ import QualityPickerModal from '../components/QualityPickerModal';
 import DevicePickerModal from '../components/DevicePickerModal';
 import Chat from '../components/Chat';
 
-const styles = {
-  page: {
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 16px',
-    height: '48px',
-    background: 'var(--hush-surface)',
-    borderBottom: '1px solid var(--hush-border)',
-    flexShrink: 0,
-  },
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    minWidth: 0,
-  },
-  roomTitle: {
-    fontSize: '0.9rem',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  headerBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '4px 8px',
-    fontSize: '0.8rem',
-    fontWeight: 500,
-    background: 'var(--hush-badge-live-bg)',
-    color: 'var(--hush-live)',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    flexShrink: 0,
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  participantCount: {
-    fontSize: '0.8rem',
-    fontWeight: 500,
-    color: 'var(--hush-text-secondary)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-    padding: '4px 8px',
-    borderRadius: 'var(--radius-sm)',
-  },
-  main: {
-    flex: 1,
-    display: 'flex',
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  streamsArea: (isMobile, count) => ({
+/** Returns inline style for a peer dot based on streaming state. */
+function peerDotStyle(isStreaming) {
+  return {
+    width: '6px',
+    height: '6px',
+    borderRadius: '50%',
+    background: isStreaming ? 'var(--hush-live)' : 'var(--hush-text-muted)',
+    boxShadow: isStreaming ? '0 0 6px var(--hush-live-glow)' : 'none',
+  };
+}
+
+/** Returns inline style for the streams area grid based on mobile and card count. */
+function streamsAreaStyle(isMobile, count) {
+  return {
     flex: 1,
     display: 'grid',
     gap: '6px',
@@ -101,92 +44,8 @@ const styles = {
     alignContent: isMobile && count !== 2 ? 'start' : undefined,
     justifyItems: 'stretch',
     minHeight: 0,
-  }),
-  sidebar: (isMobile) => ({
-    ...(isMobile
-      ? {
-          position: 'fixed',
-          top: '48px',
-          right: 0,
-          bottom: 0,
-          width: '280px',
-          zIndex: 50,
-          boxShadow: '-4px 0 24px rgba(0,0,0,0.4)',
-        }
-      : {
-          width: '260px',
-          flexShrink: 0,
-          borderLeft: '1px solid var(--hush-border)',
-        }),
-    background: 'var(--hush-surface)',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'auto',
-    padding: '16px',
-  }),
-  sidebarOverlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0,0,0,0.5)',
-    zIndex: 49,
-  },
-  sidebarSection: {
-    marginBottom: '20px',
-  },
-  sidebarLabel: {
-    fontSize: '0.7rem',
-    fontWeight: 600,
-    color: 'var(--hush-text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    marginBottom: '8px',
-  },
-  peerItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '6px 0',
-    fontSize: '0.85rem',
-  },
-  peerDot: (isStreaming) => ({
-    width: '6px',
-    height: '6px',
-    borderRadius: '50%',
-    background: isStreaming ? 'var(--hush-live)' : 'var(--hush-text-muted)',
-    boxShadow: isStreaming ? '0 0 6px var(--hush-live-glow)' : 'none',
-  }),
-  empty: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    color: 'var(--hush-text-muted)',
-    gap: '16px',
-    textAlign: 'center',
-    padding: '40px',
-  },
-  emptyIcon: {
-    width: '56px',
-    height: '56px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 'var(--radius-lg)',
-    background: 'var(--hush-surface)',
-    border: '1px solid transparent',
-  },
-  emptyTitle: {
-    fontSize: '1rem',
-    fontWeight: 500,
-    color: 'var(--hush-text-secondary)',
-  },
-  emptyDescription: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-text-muted)',
-    maxWidth: '280px',
-  },
-};
+  };
+}
 
 function formatCountdown(remainingMs) {
   const totalSeconds = Math.floor(remainingMs / 1000);
@@ -314,11 +173,6 @@ export default function Room() {
 
   const { user } = useAuth();
 
-  const { encryptForUser, decryptFromUser } = useMLS({
-    getStore: () => mlsStore.openStore(user?.id ?? '', getDeviceId()),
-    getToken,
-  });
-
   const {
     isReady,
     error,
@@ -339,14 +193,11 @@ export default function Room() {
     loadingScreens,
     watchScreen,
     unwatchScreen,
-    mediaE2EEUnavailable,
-    keyExchangeMessage,
   } = useRoom({
     wsClient,
     getToken,
     currentUserId: user?.id ?? '',
-    encryptForUser,
-    decryptFromUser,
+    getStore: () => mlsStore.openStore(user?.id ?? '', getDeviceId()),
   });
 
   const { isAuthenticated, rehydrationAttempted, logout } = useAuth();
@@ -765,7 +616,7 @@ export default function Room() {
 
   if (!rehydrationAttempted) {
     return (
-      <div style={{ ...styles.page, alignItems: 'center', justifyContent: 'center' }}>
+      <div className="room-page" style={{ alignItems: 'center', justifyContent: 'center' }}>
         <span style={{ color: 'var(--hush-text-muted)' }}>Loading…</span>
       </div>
     );
@@ -778,40 +629,14 @@ export default function Room() {
   if (error) {
     const displayError = getFriendlyRoomError(error);
     return (
-      <div style={styles.page}>
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '24px',
-          padding: '24px',
-        }}>
-          <p style={{
-            color: 'var(--hush-danger)',
-            fontSize: '1rem',
-            fontWeight: 500,
-            textAlign: 'center',
-            maxWidth: '360px',
-            overflowWrap: 'break-word',
-            wordBreak: 'break-word',
-          }}>
-            {displayError}
-          </p>
+      <div className="room-page">
+        <div className="room-error-center">
+          <p className="room-error-text">{displayError}</p>
           <button
             type="button"
             onClick={handleLeave}
-            style={{
-              padding: '10px 20px',
-              background: 'var(--hush-amber)',
-              color: 'var(--hush-black)',
-              border: 'none',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '0.9rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
+            className="btn btn-primary"
+            style={{ padding: '10px 20px' }}
           >
             Leave
           </button>
@@ -821,18 +646,18 @@ export default function Room() {
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <span style={styles.roomTitle}>{roomDisplayName}</span>
-          <span style={styles.headerBadge}>
+    <div className="room-page">
+      <div className="room-header">
+        <div className="room-header-left">
+          <span className="room-title">{roomDisplayName}</span>
+          <span className="room-header-badge">
             <span className="live-dot" />
             Live
           </span>
         </div>
-        <div style={styles.headerRight}>
+        <div className="room-header-right">
           <button
-            style={styles.participantCount}
+            className="room-participant-count"
             title="Copy room link"
             onClick={async () => {
               try {
@@ -851,7 +676,7 @@ export default function Room() {
             {linkCopied ? 'copied!' : 'Link'}
           </button>
           <button
-            style={{ ...styles.participantCount, position: 'relative' }}
+            className="room-participant-count"
             title="Chat"
             onClick={() => {
               setShowQualityPanel(false);
@@ -862,12 +687,10 @@ export default function Room() {
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
             Chat
-            {unreadChatCount > 0 && (
-              <span style={{ position: 'absolute', top: '3px', right: '3px', width: '7px', height: '7px', background: 'var(--hush-amber)', borderRadius: '50%', pointerEvents: 'none' }} />
-            )}
+            {unreadChatCount > 0 && <span className="room-unread-dot" />}
           </button>
           <button
-            style={{ ...styles.participantCount, position: 'relative' }}
+            className="room-participant-count"
             title="Room panel"
             onClick={() => {
               setShowChatPanel(false);
@@ -881,44 +704,29 @@ export default function Room() {
               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
             {participants.length + 1}
-            {participantsBadge && (
-              <span style={{ position: 'absolute', top: '3px', right: '3px', width: '7px', height: '7px', background: 'var(--hush-amber)', borderRadius: '50%', pointerEvents: 'none' }} />
-            )}
+            {participantsBadge && <span className="room-unread-dot" />}
           </button>
         </div>
       </div>
 
-      <div style={styles.main}>
+      <div className="room-main">
         {countdownRemainingMs != null && countdownRemainingMs > 0 && (
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '12px',
-              right: '12px',
-              fontSize: '0.75rem',
-              fontWeight: 500,
-              color: 'var(--hush-text-muted)',
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: '0.02em',
-              zIndex: 10,
-            }}
-            aria-live="polite"
-          >
+          <div className="room-countdown" aria-live="polite">
             {formatCountdown(countdownRemainingMs)}
           </div>
         )}
-        <div style={{ ...styles.streamsArea(isMobile, totalCards), ...gridStyle }}>
+        <div style={{ ...streamsAreaStyle(isMobile, totalCards), ...gridStyle }}>
           {totalCards === 0 ? (
-            <div style={styles.empty}>
-              <div style={styles.emptyIcon}>
+            <div className="room-empty">
+              <div className="room-empty-icon">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--hush-text-ghost)" strokeWidth="1.5">
                   <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                   <line x1="8" y1="21" x2="16" y2="21" />
                   <line x1="12" y1="17" x2="12" y2="21" />
                 </svg>
               </div>
-              <div style={styles.emptyTitle}>no active streams</div>
-              <div style={styles.emptyDescription}>
+              <div className="room-empty-title">no active streams</div>
+              <div className="room-empty-description">
                 click share to start streaming
               </div>
             </div>
@@ -972,15 +780,15 @@ export default function Room() {
             <div
               className={`sidebar-panel-right ${showQualityPanel ? 'sidebar-panel-open' : ''}`}
             >
-              <div style={styles.sidebarSection}>
-                <div style={styles.sidebarLabel}>Participants ({participants.length + 1})</div>
-                <div style={styles.peerItem}>
-                  <div style={styles.peerDot(isScreenSharing)} />
+              <div className="room-sidebar-section">
+                <div className="room-sidebar-label">Participants ({participants.length + 1})</div>
+                <div className="room-peer-item">
+                  <div style={peerDotStyle(isScreenSharing)} />
                   <span>You</span>
                 </div>
                 {participants.map((participant) => (
-                  <div key={participant.id} style={styles.peerItem}>
-                    <div style={styles.peerDot(true)} />
+                  <div key={participant.id} className="room-peer-item">
+                    <div style={peerDotStyle(true)} />
                     <span>{participant.displayName}</span>
                   </div>
                 ))}
@@ -994,8 +802,8 @@ export default function Room() {
             <div
               className={`sidebar-panel-right ${showChatPanel ? 'sidebar-panel-open' : ''}`}
             >
-              <div style={styles.sidebarSection}>
-                <div style={styles.sidebarLabel}>Chat</div>
+              <div className="room-sidebar-section">
+                <div className="room-sidebar-label">Chat</div>
                 <Chat
                   channelId={sessionStorage.getItem('hush_channelId')}
                   serverId={roomServerId}
@@ -1026,16 +834,16 @@ export default function Room() {
             <div
               className={`sidebar-desktop ${showQualityPanel ? 'sidebar-desktop-open' : ''}`}
             >
-              <div className="sidebar-desktop-inner" style={styles.sidebar(false)}>
-                <div style={styles.sidebarSection}>
-                  <div style={styles.sidebarLabel}>Participants ({participants.length + 1})</div>
-                  <div style={styles.peerItem}>
-                    <div style={styles.peerDot(isScreenSharing)} />
+              <div className="sidebar-desktop-inner room-sidebar-inner">
+                <div className="room-sidebar-section">
+                  <div className="room-sidebar-label">Participants ({participants.length + 1})</div>
+                  <div className="room-peer-item">
+                    <div style={peerDotStyle(isScreenSharing)} />
                     <span>You</span>
                   </div>
                   {participants.map((participant) => (
-                    <div key={participant.id} style={styles.peerItem}>
-                      <div style={styles.peerDot(true)} />
+                    <div key={participant.id} className="room-peer-item">
+                      <div style={peerDotStyle(true)} />
                       <span>{participant.displayName}</span>
                     </div>
                   ))}
@@ -1045,9 +853,9 @@ export default function Room() {
             <div
               className={`sidebar-desktop ${showChatPanel ? 'sidebar-desktop-open' : ''}`}
             >
-              <div className="sidebar-desktop-inner" style={styles.sidebar(false)}>
-                <div style={styles.sidebarSection}>
-                  <div style={styles.sidebarLabel}>Chat</div>
+              <div className="sidebar-desktop-inner room-sidebar-inner">
+                <div className="room-sidebar-section">
+                  <div className="room-sidebar-label">Chat</div>
                   <Chat
                     channelId={sessionStorage.getItem('hush_channelId')}
                     serverId={roomServerId}
@@ -1109,7 +917,6 @@ export default function Room() {
         isWebcamOn={isWebcamOn}
         quality={quality}
         isMobile={isMobile}
-        mediaE2EEUnavailable={mediaE2EEUnavailable}
         onScreenShare={handleScreenShare}
         onOpenQualityOrWindow={() => setShowQualityPicker(true)}
         onMic={handleMic}
@@ -1119,11 +926,6 @@ export default function Room() {
         onLeave={handleLeave}
       />
 
-      {keyExchangeMessage && (
-        <div className="toast" role="alert">
-          {keyExchangeMessage}
-        </div>
-      )}
       {qualityChangeError && (
         <div className="toast" role="alert">
           {qualityChangeError}

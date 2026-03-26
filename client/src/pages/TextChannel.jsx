@@ -4,57 +4,6 @@ import { getDeviceId } from '../hooks/useAuth';
 import * as mlsStore from '../lib/mlsStore';
 import Chat from '../components/Chat';
 
-const styles = {
-  root: {
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 16px',
-    height: '48px',
-    background: 'var(--hush-surface)',
-    borderBottom: '1px solid var(--hush-border)',
-    flexShrink: 0,
-  },
-  membersToggle: {
-    padding: '4px 8px',
-    fontSize: '0.8rem',
-    fontFamily: 'var(--font-sans)',
-    background: 'none',
-    border: '1px solid var(--hush-border)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--hush-text-secondary)',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-  channelName: {
-    fontSize: '0.9rem',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  main: {
-    flex: 1,
-    minHeight: 0,
-    display: 'flex',
-    overflow: 'hidden',
-  },
-  chatArea: {
-    flex: 1,
-    minWidth: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-};
-
 /**
  * Text-only channel view: header bar + Chat panel.
  * Used by ServerLayout when currentChannel.type === 'text'.
@@ -77,20 +26,14 @@ export default function TextChannel({
   }, [user?.id]);
 
   return (
-    <div style={styles.root}>
-      <header style={styles.header}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+    <div className="tc-root">
+      <header className="tc-header">
+        <div className="tc-header-left">
           {onToggleDrawer && (
             <button
               type="button"
+              className="tc-drawer-toggle"
               onClick={onToggleDrawer}
-              style={{
-                width: 44, height: 44,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'none', border: 'none',
-                color: 'var(--hush-text-secondary)', cursor: 'pointer',
-                padding: 0, flexShrink: 0,
-              }}
               aria-label="Toggle channels"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -98,12 +41,12 @@ export default function TextChannel({
               </svg>
             </button>
           )}
-          <span style={styles.channelName}>#{channel._displayName ?? channel.name ?? ''}</span>
+          <span className="tc-channel-name">#{channel._displayName ?? channel.name ?? ''}</span>
         </div>
         {onToggleMembers && (
           <button
             type="button"
-            style={styles.membersToggle}
+            className="tc-members-toggle"
             onClick={onToggleMembers}
             aria-pressed={showMembers}
           >
@@ -111,8 +54,8 @@ export default function TextChannel({
           </button>
         )}
       </header>
-      <div style={styles.main}>
-        <div style={styles.chatArea}>
+      <div className="tc-main">
+        <div className="tc-chat-area">
           <Chat
             channelId={channel.id}
             serverId={serverId}
