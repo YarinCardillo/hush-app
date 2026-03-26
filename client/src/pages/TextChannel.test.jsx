@@ -52,7 +52,7 @@ describe('TextChannel', () => {
         wsClient={{}}
       />,
     );
-    const main = container.querySelector('[style*="flex: 1"]');
+    const main = container.querySelector('.tc-main');
     expect(main).toBeInTheDocument();
     const chat = main?.querySelector('[data-testid="chat-panel"]');
     expect(chat).toBeInTheDocument();
