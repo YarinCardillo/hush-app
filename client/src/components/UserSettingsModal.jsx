@@ -579,12 +579,15 @@ function AudioVideoTab() {
 // ─── Devices Tab ──────────────────────────────────────────
 
 function DevicesTab() {
-  const { token } = useAuth();
+  const { token, identityKeyRef, handshakeData, setTransparencyError } = useAuth();
   const currentDeviceId = getDeviceId();
   return (
     <DeviceManagement
       token={token}
       currentDeviceId={currentDeviceId}
+      identityKeyRef={identityKeyRef}
+      handshakeData={handshakeData}
+      setTransparencyError={setTransparencyError}
     />
   );
 }

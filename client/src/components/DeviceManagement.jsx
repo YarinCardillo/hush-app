@@ -11,6 +11,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { listDeviceKeys, revokeDeviceKey } from '../lib/api.js';
 import DeviceLinkModal from './auth/DeviceLinkModal.jsx';
+import { TransparencyVerifier } from '../lib/transparencyVerifier.js';
+import { bytesToHex } from '../lib/identityVault.js';
 
 const styles = {
   table: {
@@ -145,7 +147,7 @@ function RevokeConfirm({ deviceLabel, onConfirm, onCancel, loading }) {
   );
 }
 
-export default function DeviceManagement({ token, currentDeviceId }) {
+export default function DeviceManagement({ token, currentDeviceId, identityKeyRef, handshakeData, setTransparencyError }) {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -170,11 +172,33 @@ export default function DeviceManagement({ token, currentDeviceId }) {
     fetchDevices();
   }, [fetchDevices]);
 
+  // Verify the transparency log after a device operation. Gracefully degrades
+  // when transparency props are not passed (e.g. legacy callers).
+  const verifyTransparencyAfterOp = useCallback(async (opName) => {
+    if (!handshakeData?.transparency_url || !handshakeData?.log_public_key || !identityKeyRef?.current?.publicKey) return;
+    try {
+      const pubKeyHex = bytesToHex(identityKeyRef.current.publicKey);
+      const verifier = new TransparencyVerifier(
+        handshakeData.transparency_url,
+        handshakeData.log_public_key,
+      );
+      const result = await verifier.verifyOwnKey(pubKeyHex, token);
+      if (!result.ok) {
+        console.error(`[transparency] ${opName} was NOT logged correctly`);
+        setTransparencyError?.(result.error);
+      }
+    } catch (err) {
+      // Log but don't block — the operation itself succeeded.
+      console.warn(`[transparency] post-${opName} verification failed:`, err);
+    }
+  }, [handshakeData, identityKeyRef, token, setTransparencyError]);
+
   const handleRevoke = useCallback(async () => {
     if (!confirmRevoke || !token) return;
     setRevoking(true);
     try {
       await revokeDeviceKey(token, confirmRevoke.deviceId);
+      await verifyTransparencyAfterOp('device_revoke');
       setConfirmRevoke(null);
       await fetchDevices();
     } catch (err) {
@@ -182,12 +206,13 @@ export default function DeviceManagement({ token, currentDeviceId }) {
     } finally {
       setRevoking(false);
     }
-  }, [confirmRevoke, token, fetchDevices]);
+  }, [confirmRevoke, token, fetchDevices, verifyTransparencyAfterOp]);
 
   const handleLinked = useCallback(() => {
     setShowLinkModal(false);
+    verifyTransparencyAfterOp('device_certify');
     fetchDevices();
-  }, [fetchDevices]);
+  }, [fetchDevices, verifyTransparencyAfterOp]);
 
   return (
     <>
