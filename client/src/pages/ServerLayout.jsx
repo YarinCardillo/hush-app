@@ -51,108 +51,7 @@ function getLocalToken() {
     : null;
 }
 
-// ── Layout styles ─────────────────────────────────────────────────────────────
-
-const layoutStyles = {
-  root: {
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'row',
-    overflow: 'hidden',
-  },
-  main: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    minWidth: 0,
-    background: 'var(--hush-black)',
-  },
-  contentRow: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'row',
-    minWidth: 0,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  channelArea: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    minWidth: 0,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  voiceWrapper: (visible) => ({
-    display: visible ? 'flex' : 'none',
-    flex: 1,
-    flexDirection: 'column',
-    minHeight: 0,
-    overflow: 'hidden',
-    position: 'relative',
-    zIndex: 1,
-  }),
-  placeholder: {
-    flex: 1,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '24px',
-    color: 'var(--hush-text-muted)',
-    fontSize: '0.9rem',
-    textAlign: 'center',
-  },
-  offlineBanner: {
-    background: 'var(--hush-danger-ghost)',
-    color: 'var(--hush-danger)',
-    fontSize: '0.8rem',
-    padding: '6px 16px',
-    textAlign: 'center',
-    flexShrink: 0,
-  },
-  resizeHandle: {
-    width: '4px',
-    flexShrink: 0,
-    cursor: 'col-resize',
-    background: 'transparent',
-    transition: 'background var(--duration-fast) var(--ease-out)',
-    zIndex: 10,
-  },
-  channelAreaHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 16px',
-    height: '48px',
-    background: 'var(--hush-surface)',
-    borderBottom: '1px solid var(--hush-border)',
-    flexShrink: 0,
-  },
-  membersToggle: {
-    padding: '4px 8px',
-    fontSize: '0.8rem',
-    fontFamily: 'var(--font-sans)',
-    background: 'none',
-    border: '1px solid var(--hush-border)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--hush-text-secondary)',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-  hamburgerBtn: {
-    width: 44,
-    height: 44,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'none',
-    border: 'none',
-    color: 'var(--hush-text-secondary)',
-    cursor: 'pointer',
-    padding: 0,
-    flexShrink: 0,
-  },
-};
+// ── Layout styles removed — see lay-* classes in global.css ──────────────────
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -1274,7 +1173,7 @@ export default function ServerLayout() {
   // No guild selected — show empty state with guild strip and welcome message.
   if (!serverId) {
     return (
-      <div style={layoutStyles.root}>
+      <div className="lay-container">
         <ServerList
           getToken={getToken}
           guilds={mergedGuilds}
@@ -1346,9 +1245,9 @@ export default function ServerLayout() {
     const dmDisplayName = otherUser?.displayName || otherUser?.username || 'Direct Message';
 
     return (
-      <div style={layoutStyles.root} data-testid="dm-layout">
+      <div className="lay-container" data-testid="dm-layout">
         {serverListEl}
-        <div style={layoutStyles.main}>
+        <div className="lay-main">
           {dmChannel ? (
             <TextChannel
               channel={dmChannel}
@@ -1361,9 +1260,9 @@ export default function ServerLayout() {
               onToggleDrawer={isMobile ? toggleDrawer : undefined}
             />
           ) : loading ? (
-            <div style={{ ...layoutStyles.placeholder, position: 'relative', zIndex: 1 }}>Loading…</div>
+            <div className="lay-placeholder" style={{ position: 'relative', zIndex: 1 }}>Loading…</div>
           ) : (
-            <div style={{ ...layoutStyles.placeholder }}>
+            <div className="lay-placeholder">
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--hush-text)' }}>
                   {dmDisplayName}
@@ -1400,15 +1299,10 @@ export default function ServerLayout() {
   );
 
   return (
-    <div style={layoutStyles.root}>
+    <div className="lay-container">
       {/* ── Offline banner ── */}
       {isInstanceOffline && (
-        <div style={{
-          position: 'absolute',
-          top: 0, left: 0, right: 0,
-          zIndex: 20,
-          ...layoutStyles.offlineBanner,
-        }}>
+        <div className="lay-offline-banner" style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20 }}>
           {instanceUrl ? new URL(instanceUrl).host : 'Instance'} is offline — read-only mode
         </div>
       )}
@@ -1421,10 +1315,8 @@ export default function ServerLayout() {
             {channelListEl}
           </div>
           <div
-            style={layoutStyles.resizeHandle}
+            className="lay-resize-handle"
             onMouseDown={handleSidebarResize}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-border)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize channel list"
@@ -1446,11 +1338,11 @@ export default function ServerLayout() {
           </div>
         </>
       )}
-      <div style={layoutStyles.main}>
-        <div style={layoutStyles.contentRow}>
-          <div style={layoutStyles.channelArea}>
+      <div className="lay-main">
+        <div className="lay-content-row">
+          <div className="lay-channel-area">
             {activeVoiceChannel && (
-              <div style={layoutStyles.voiceWrapper(isViewingVoice)}>
+              <div style={{ display: isViewingVoice ? 'flex' : 'none', flex: 1, flexDirection: 'column', minHeight: 0, overflow: 'hidden', position: 'relative', zIndex: 1 }}>
                 <VoiceChannel
                   key={activeVoiceChannel.id}
                   channel={activeVoiceChannel}
@@ -1476,7 +1368,7 @@ export default function ServerLayout() {
 
             {!isViewingVoice && (
               loading ? (
-                <div style={{ ...layoutStyles.placeholder, position: 'relative', zIndex: 1 }}>Loading…</div>
+                <div className="lay-placeholder" style={{ position: 'relative', zIndex: 1 }}>Loading…</div>
               ) : currentChannel?.type === 'system' ? (
                 <SystemChannel
                   channel={currentChannel}
@@ -1515,13 +1407,13 @@ export default function ServerLayout() {
                   ) : null}
                 />
               ) : currentChannel && currentChannel.type !== 'voice' ? (
-                <div style={{ ...layoutStyles.placeholder, position: 'relative', zIndex: 1 }}>Unknown channel type</div>
+                <div className="lay-placeholder" style={{ position: 'relative', zIndex: 1 }}>Unknown channel type</div>
               ) : (
                 <>
                   {!currentChannel && (
-                    <header style={layoutStyles.channelAreaHeader}>
+                    <header className="lay-channel-area-header">
                       {isMobile ? (
-                        <button type="button" onClick={toggleDrawer} style={layoutStyles.hamburgerBtn} aria-label="Toggle channels">
+                        <button type="button" onClick={toggleDrawer} className="lay-hamburger-btn" aria-label="Toggle channels">
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
                           </svg>
@@ -1531,7 +1423,7 @@ export default function ServerLayout() {
                       )}
                       <button
                         type="button"
-                        style={layoutStyles.membersToggle}
+                        className="lay-members-toggle"
                         onClick={() => togglePanel('members')}
                         aria-pressed={showMembers}
                       >
