@@ -15,48 +15,9 @@ const STEP = {
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
 const USERNAME_CHECK_DEBOUNCE_MS = 500;
 
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  stepIndicator: {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: '8px',
-    marginBottom: '4px',
-  },
-  stepDot: (active, done) => ({
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    background: active
-      ? 'var(--hush-amber)'
-      : done
-      ? 'var(--hush-text-muted)'
-      : 'var(--hush-border)',
-    transition: 'background var(--duration-normal)',
-  }),
-  heading: {
-    fontSize: '0.9rem',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-    margin: '0 0 2px 0',
-  },
-  subheading: {
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-secondary)',
-    margin: 0,
-  },
-  fieldLabel: {
-    display: 'block',
-    marginBottom: '4px',
-    fontSize: '0.78rem',
-    color: 'var(--hush-text-secondary)',
-    fontWeight: 500,
-  },
-  usernameHint: (state) => ({
+/** Returns inline color for username hint based on validation state. */
+function usernameHintStyle(state) {
+  return {
     fontSize: '0.72rem',
     marginTop: '4px',
     color:
@@ -66,57 +27,23 @@ const styles = {
         ? 'var(--hush-danger)'
         : 'var(--hush-text-muted)',
     fontFamily: 'var(--font-mono)',
-  }),
-  warningBox: {
-    padding: '12px 14px',
-    background: 'rgba(213, 79, 18, 0.06)',
-    border: '1px solid rgba(213, 79, 18, 0.25)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--hush-text-secondary)',
-    fontSize: '0.8rem',
-    lineHeight: 1.6,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-  },
-  warningTitle: {
-    color: 'var(--hush-amber)',
-    fontWeight: 500,
-    fontSize: '0.82rem',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-  },
-  checkboxRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    cursor: 'pointer',
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-secondary)',
-  },
-  actions: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '4px',
-  },
-  errorMessage: {
-    padding: '10px 14px',
-    background: 'var(--hush-danger-ghost)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--hush-danger)',
-    fontSize: '0.82rem',
-  },
-  loadingSpinner: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '16px',
-    padding: '24px 0',
-    color: 'var(--hush-text-secondary)',
-    fontSize: '0.85rem',
-  },
-};
+  };
+}
+
+/** Returns inline style for a step dot based on active/done state. */
+function stepDotStyle(active, done) {
+  return {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    background: active
+      ? 'var(--hush-amber)'
+      : done
+      ? 'var(--hush-text-muted)'
+      : 'var(--hush-border)',
+    transition: 'background var(--duration-normal)',
+  };
+}
 
 /** Returns an array of visible step indices (excluding INVITE_CODE when not invite_only). */
 function getVisibleSteps(registrationMode) {
@@ -356,19 +283,19 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
   const displayedError = error?.message || localError;
 
   return (
-    <div style={styles.container}>
+    <div className="rw-container">
       {/* Step indicator dots */}
-      <div style={styles.stepIndicator} aria-hidden="true">
+      <div className="rw-step-indicator" aria-hidden="true">
         {visibleSteps.map((s, i) => (
           <div
             key={s}
-            style={styles.stepDot(i === currentStepIndex, i < currentStepIndex)}
+            style={stepDotStyle(i === currentStepIndex, i < currentStepIndex)}
           />
         ))}
       </div>
 
       {displayedError && step !== STEP.SUBMITTING && (
-        <div style={styles.errorMessage} role="alert">
+        <div className="rw-error" role="alert">
           {displayedError}
         </div>
       )}
@@ -415,10 +342,10 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
       )}
 
       {step === STEP.SUBMITTING && (
-        <div style={styles.loadingSpinner}>
+        <div className="rw-loading">
           <div aria-label="Creating account" role="status">Creating your account...</div>
           {displayedError && (
-            <div style={styles.errorMessage} role="alert">
+            <div className="rw-error" role="alert">
               {displayedError}
             </div>
           )}
@@ -436,13 +363,13 @@ function InviteCodeStep({ value, onChange, onNext, onCancel }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+    <div className="rw-inner">
       <div>
-        <p style={styles.heading}>Enter invite code</p>
-        <p style={styles.subheading}>This server requires an invite to register.</p>
+        <p className="rw-heading">Enter invite code</p>
+        <p className="rw-subheading">This server requires an invite to register.</p>
       </div>
       <div>
-        <label htmlFor="invite-code" style={styles.fieldLabel}>Invite code</label>
+        <label htmlFor="invite-code" className="rw-field-label">Invite code</label>
         <input
           id="invite-code"
           className="input"
@@ -455,7 +382,7 @@ function InviteCodeStep({ value, onChange, onNext, onCancel }) {
           autoFocus
         />
       </div>
-      <div style={styles.actions}>
+      <div className="rw-actions">
         <button type="button" className="back-link" onClick={onCancel}>
           ← Cancel
         </button>
@@ -488,13 +415,13 @@ function UsernameStep({ username, displayName, usernameState, onUsernameChange, 
       : null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+    <div className="rw-inner">
       <div>
-        <p style={styles.heading}>Choose a username</p>
-        <p style={styles.subheading}>Your username is your identity on this server.</p>
+        <p className="rw-heading">Choose a username</p>
+        <p className="rw-subheading">Your username is your identity on this server.</p>
       </div>
       <div>
-        <label htmlFor="reg-username" style={styles.fieldLabel}>Username</label>
+        <label htmlFor="reg-username" className="rw-field-label">Username</label>
         <input
           id="reg-username"
           className="input"
@@ -507,13 +434,13 @@ function UsernameStep({ username, displayName, usernameState, onUsernameChange, 
           autoFocus
         />
         {usernameHint && (
-          <div style={styles.usernameHint(usernameState)} aria-live="polite">
+          <div style={usernameHintStyle(usernameState)} aria-live="polite">
             {usernameHint}
           </div>
         )}
       </div>
       <div>
-        <label htmlFor="reg-display-name" style={styles.fieldLabel}>
+        <label htmlFor="reg-display-name" className="rw-field-label">
           Display name{' '}
           <span style={{ color: 'var(--hush-text-ghost)', fontWeight: 400 }}>(optional)</span>
         </label>
@@ -529,7 +456,7 @@ function UsernameStep({ username, displayName, usernameState, onUsernameChange, 
           autoComplete="off"
         />
       </div>
-      <div style={styles.actions}>
+      <div className="rw-actions">
         <button type="button" className="back-link" onClick={onBack}>
           ← Back
         </button>
@@ -549,14 +476,14 @@ function UsernameStep({ username, displayName, usernameState, onUsernameChange, 
 
 function MnemonicDisplayStep({ words, savedConfirmed, onSavedConfirmedChange, onNext, onBack }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div className="rw-inner">
       <div>
-        <p style={styles.heading}>Your recovery phrase</p>
-        <p style={styles.subheading}>Write these 12 words down and keep them safe.</p>
+        <p className="rw-heading">Your recovery phrase</p>
+        <p className="rw-subheading">Write these 12 words down and keep them safe.</p>
       </div>
 
-      <div style={styles.warningBox}>
-        <div style={styles.warningTitle}>
+      <div className="rw-warning-box">
+        <div className="rw-warning-title">
           <span aria-hidden="true">⚠</span>
           Important: save this before continuing
         </div>
@@ -569,7 +496,7 @@ function MnemonicDisplayStep({ words, savedConfirmed, onSavedConfirmedChange, on
 
       <MnemonicGrid words={words} />
 
-      <label style={styles.checkboxRow}>
+      <label className="rw-checkbox-row">
         <input
           type="checkbox"
           checked={savedConfirmed}
@@ -578,7 +505,7 @@ function MnemonicDisplayStep({ words, savedConfirmed, onSavedConfirmedChange, on
         I have saved my recovery phrase
       </label>
 
-      <div style={styles.actions}>
+      <div className="rw-actions">
         <button type="button" className="back-link" onClick={onBack}>
           ← Back
         </button>

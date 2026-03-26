@@ -1,25 +1,8 @@
 import { useState, useCallback } from 'react';
 
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  description: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-text-secondary)',
-    lineHeight: 1.6,
-    margin: 0,
-  },
-  modeToggle: {
-    display: 'flex',
-    gap: '2px',
-    background: 'var(--hush-surface)',
-    padding: '3px',
-    borderRadius: 'var(--radius-sm)',
-  },
-  modeBtn: (active) => ({
+/** Returns inline style for the active/inactive mode-toggle button. */
+function modeBtnStyle(active) {
+  return {
     flex: 1,
     padding: '8px',
     fontSize: '0.8rem',
@@ -30,52 +13,28 @@ const styles = {
     background: active ? 'var(--hush-elevated)' : 'transparent',
     color: active ? 'var(--hush-text)' : 'var(--hush-text-muted)',
     transition: 'background var(--duration-fast), color var(--duration-fast)',
-  }),
-  fieldLabel: {
-    display: 'block',
-    marginBottom: '4px',
-    fontSize: '0.78rem',
-    color: 'var(--hush-text-secondary)',
-    fontWeight: 500,
-  },
-  strengthBar: {
-    height: '3px',
-    borderRadius: 0,
-    background: 'var(--hush-surface)',
-    marginTop: '6px',
-    overflow: 'hidden',
-  },
-  strengthFill: (level) => ({
+  };
+}
+
+/** Returns inline style for the passphrase strength bar fill. */
+function strengthFillStyle(level) {
+  return {
     height: '100%',
     width: `${(level / 4) * 100}%`,
     background: level < 2 ? 'var(--hush-danger)' : level < 3 ? 'var(--hush-amber)' : 'var(--hush-live)',
     transition: 'width var(--duration-normal)',
-  }),
-  strengthLabel: (level) => ({
+  };
+}
+
+/** Returns inline style for the passphrase strength label. */
+function strengthLabelStyle(level) {
+  return {
     fontSize: '0.68rem',
     marginTop: '3px',
     color: level < 2 ? 'var(--hush-danger)' : level < 3 ? 'var(--hush-amber)' : 'var(--hush-live)',
     fontFamily: 'var(--font-mono)',
-  }),
-  mismatchHint: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-danger)',
-    marginTop: '4px',
-  },
-  skipWarning: {
-    padding: '10px 14px',
-    background: 'rgba(213, 79, 18, 0.06)',
-    border: '1px solid rgba(213, 79, 18, 0.15)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--hush-text-muted)',
-    fontSize: '0.78rem',
-    lineHeight: 1.5,
-  },
-  actions: {
-    display: 'flex',
-    gap: '8px',
-  },
-};
+  };
+}
 
 /**
  * Computes a simple passphrase strength level (0-4).
@@ -133,32 +92,32 @@ export function PinSetupModal({ onSetPin, onSkip, isLoading = false }) {
   }, [confirmOk, onSetPin, value]);
 
   return (
-    <div style={styles.container}>
-      <p style={styles.description}>
+    <div className="pin-setup-container">
+      <p className="pin-setup-description">
         Your {isPin ? 'PIN' : 'passphrase'} encrypts your identity key on this device.
         You will need it to unlock Hush after closing your browser.
       </p>
 
-      <div style={styles.modeToggle}>
+      <div className="pin-setup-mode-toggle">
         <button
           type="button"
-          style={styles.modeBtn(isPin)}
+          style={modeBtnStyle(isPin)}
           onClick={() => switchMode('pin')}
         >
           Use a PIN
         </button>
         <button
           type="button"
-          style={styles.modeBtn(!isPin)}
+          style={modeBtnStyle(!isPin)}
           onClick={() => switchMode('passphrase')}
         >
           Use a passphrase
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <form onSubmit={handleSubmit} className="pin-setup-form">
         <div>
-          <label htmlFor="pin-setup-value" style={styles.fieldLabel}>
+          <label htmlFor="pin-setup-value" className="pin-setup-field-label">
             {isPin ? 'PIN (min 4 digits)' : 'Passphrase (min 6 characters)'}
           </label>
           <input
@@ -174,11 +133,11 @@ export function PinSetupModal({ onSetPin, onSkip, isLoading = false }) {
           />
           {!isPin && value.length >= 2 && (
             <>
-              <div style={styles.strengthBar}>
-                <div style={styles.strengthFill(strength)} />
+              <div className="pin-setup-strength-bar">
+                <div style={strengthFillStyle(strength)} />
               </div>
               {strength > 0 && (
-                <div style={styles.strengthLabel(strength)}>
+                <div style={strengthLabelStyle(strength)}>
                   {STRENGTH_LABELS[strength]}
                 </div>
               )}
@@ -187,7 +146,7 @@ export function PinSetupModal({ onSetPin, onSkip, isLoading = false }) {
         </div>
 
         <div>
-          <label htmlFor="pin-setup-confirm" style={styles.fieldLabel}>
+          <label htmlFor="pin-setup-confirm" className="pin-setup-field-label">
             Confirm {isPin ? 'PIN' : 'passphrase'}
           </label>
           <input
@@ -202,28 +161,19 @@ export function PinSetupModal({ onSetPin, onSkip, isLoading = false }) {
             autoComplete="new-password"
           />
           {mismatch && (
-            <div style={styles.mismatchHint} role="alert">
+            <div className="pin-setup-mismatch" role="alert">
               {isPin ? 'PINs do not match' : 'Passphrases do not match'}
             </div>
           )}
         </div>
 
         {error && (
-          <div
-            style={{
-              padding: '10px 14px',
-              background: 'var(--hush-danger-ghost)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--hush-danger)',
-              fontSize: '0.82rem',
-            }}
-            role="alert"
-          >
+          <div className="pin-setup-error" role="alert">
             {error}
           </div>
         )}
 
-        <div style={styles.actions}>
+        <div className="pin-setup-actions">
           {onSkip && (
             <button
               type="button"
@@ -246,7 +196,7 @@ export function PinSetupModal({ onSetPin, onSkip, isLoading = false }) {
       </form>
 
       {onSkip && (
-        <div style={styles.skipWarning}>
+        <div className="pin-setup-skip-warning">
           Without a PIN, you will need your 12-word recovery phrase every time you open Hush.
         </div>
       )}

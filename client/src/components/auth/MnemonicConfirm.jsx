@@ -1,52 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  heading: {
-    fontSize: '0.9rem',
-    color: 'var(--hush-text-secondary)',
-    margin: 0,
-  },
-  challengeGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  fieldRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  label: {
-    fontSize: '0.78rem',
-    color: 'var(--hush-text-muted)',
-    fontFamily: 'var(--font-mono)',
-    minWidth: '56px',
-    flexShrink: 0,
-  },
-  inputWrapper: {
-    position: 'relative',
-    flex: 1,
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  statusIcon: (state) => ({
+/** Returns inline style for the field validation status icon. */
+function statusIconStyle(state) {
+  return {
     fontSize: '0.9rem',
     flexShrink: 0,
     color: state === 'correct' ? 'var(--hush-live)' : 'var(--hush-danger)',
     visibility: state === 'idle' ? 'hidden' : 'visible',
-  }),
-  actions: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '4px',
-  },
-};
+  };
+}
 
 /** Picks N unique random indices in [0, max). */
 function pickRandomPositions(max, count) {
@@ -104,24 +66,24 @@ export function MnemonicConfirm({ words, onConfirm, onBack, challengePositions, 
   };
 
   return (
-    <div style={styles.container}>
-      <p style={styles.heading}>
+    <div className="mc-container">
+      <p className="mc-heading">
         Enter the following words to confirm you have saved your recovery phrase.
       </p>
 
-      <div style={styles.challengeGroup}>
+      <div className="mc-challenge-group">
         {positions.map((wordIndex, i) => {
           const fieldState = getFieldState(i, inputs[i]);
           return (
-            <div key={wordIndex} style={styles.fieldRow}>
+            <div key={wordIndex} className="mc-field-row">
               <label
                 htmlFor={`confirm-word-${i}`}
-                style={styles.label}
+                className="mc-label"
                 aria-label={`Word number ${wordIndex + 1}`}
               >
                 Word #{wordIndex + 1}
               </label>
-              <div style={styles.inputWrapper}>
+              <div className="mc-input-wrapper">
                 <input
                   id={`confirm-word-${i}`}
                   className="input"
@@ -139,7 +101,7 @@ export function MnemonicConfirm({ words, onConfirm, onBack, challengePositions, 
                   style={{ flex: 1, fontFamily: 'var(--font-mono)' }}
                 />
                 <span
-                  style={styles.statusIcon(fieldState)}
+                  style={statusIconStyle(fieldState)}
                   aria-hidden="true"
                   role="img"
                 >
@@ -151,7 +113,7 @@ export function MnemonicConfirm({ words, onConfirm, onBack, challengePositions, 
         })}
       </div>
 
-      <div style={styles.actions}>
+      <div className="mc-actions">
         <button
           type="button"
           className="back-link"

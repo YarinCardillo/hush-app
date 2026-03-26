@@ -28,126 +28,6 @@ const POLL_INTERVAL_MS = 3000;
 const CODE_TAB = 'code';
 const QR_TAB = 'qr';
 
-const styles = {
-  overlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0,0,0,0.85)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 300,
-  },
-  modal: {
-    background: 'var(--hush-surface)',
-    border: '1px solid transparent',
-    borderRadius: 0,
-    padding: '28px',
-    width: '100%',
-    maxWidth: '400px',
-    position: 'relative',
-    animation: 'modal-enter var(--duration-slow) var(--ease-spring)',
-  },
-  title: {
-    fontSize: '1rem',
-    fontWeight: 600,
-    color: 'var(--hush-text)',
-    marginBottom: '6px',
-  },
-  subtitle: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-text-secondary)',
-    marginBottom: '20px',
-  },
-  tabBar: {
-    display: 'flex',
-    gap: '2px',
-    borderBottom: '1px solid var(--hush-border)',
-    marginBottom: '24px',
-  },
-  tab: (active) => ({
-    padding: '8px 16px',
-    background: 'none',
-    border: 'none',
-    borderBottom: active ? '2px solid var(--hush-amber)' : '2px solid transparent',
-    color: active ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '0.85rem',
-    fontWeight: active ? 500 : 400,
-    cursor: 'pointer',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-  }),
-  canvasWrapper: {
-    display: 'flex',
-    justifyContent: 'center',
-    marginBottom: '16px',
-    background: '#fff',
-    padding: '16px',
-  },
-  codeDisplay: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: '2rem',
-    fontWeight: 500,
-    letterSpacing: '0.15em',
-    color: 'var(--hush-amber)',
-    textAlign: 'center',
-    padding: '20px 0',
-  },
-  timer: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-muted)',
-    textAlign: 'center',
-    marginBottom: '12px',
-  },
-  timerExpired: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-danger)',
-    textAlign: 'center',
-    marginBottom: '12px',
-  },
-  instructions: {
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-secondary)',
-    textAlign: 'center',
-    lineHeight: 1.5,
-    marginBottom: '20px',
-  },
-  actions: {
-    display: 'flex',
-    gap: '8px',
-    justifyContent: 'flex-end',
-  },
-  copyRow: {
-    display: 'flex',
-    gap: '8px',
-    justifyContent: 'center',
-    marginBottom: '16px',
-  },
-  statusRow: {
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-muted)',
-    textAlign: 'center',
-    minHeight: '20px',
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: '12px',
-    right: '12px',
-    background: 'none',
-    border: '1px solid var(--hush-border)',
-    borderRadius: '50%',
-    width: '28px',
-    height: '28px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'var(--hush-text-secondary)',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '0.9rem',
-  },
-};
-
 export default function DeviceLinkModal({ onClose, onLinked, token, currentDeviceId }) {
   const [activeTab, setActiveTab] = useState(QR_TAB);
   const [expiresAt] = useState(() => Date.now() + LINK_EXPIRY_MS);
@@ -280,41 +160,49 @@ export default function DeviceLinkModal({ onClose, onLinked, token, currentDevic
   // ── Render ────────────────────────────────────────────────────────────────
 
   return createPortal(
-    <div style={styles.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={{ ...styles.modal, ...(isMobile ? { margin: '16px', maxWidth: 'none' } : {}) }}>
-        <button type="button" style={styles.closeBtn} onClick={onClose} title="Close">
+    <div className="dl-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={`dl-modal${isMobile ? ' dl-modal--mobile' : ''}`}>
+        <button type="button" className="dl-close-btn" onClick={onClose} title="Close">
           &#x2715;
         </button>
 
-        <div style={styles.title}>Link a new device</div>
-        <div style={styles.subtitle}>
+        <div className="dl-title">Link a new device</div>
+        <div className="dl-subtitle">
           Show this to your other device to link it to your account.
         </div>
 
-        <div style={styles.tabBar}>
-          <button type="button" style={styles.tab(activeTab === QR_TAB)} onClick={() => setActiveTab(QR_TAB)}>
+        <div className="dl-tab-bar">
+          <button
+            type="button"
+            className={`dl-tab${activeTab === QR_TAB ? ' dl-tab--active' : ''}`}
+            onClick={() => setActiveTab(QR_TAB)}
+          >
             QR code
           </button>
-          <button type="button" style={styles.tab(activeTab === CODE_TAB)} onClick={() => setActiveTab(CODE_TAB)}>
+          <button
+            type="button"
+            className={`dl-tab${activeTab === CODE_TAB ? ' dl-tab--active' : ''}`}
+            onClick={() => setActiveTab(CODE_TAB)}
+          >
             Text code
           </button>
         </div>
 
         {activeTab === QR_TAB && (
           <>
-            <div style={styles.canvasWrapper}>
+            <div className="dl-canvas-wrapper">
               {qrPayload ? (
                 <canvas ref={canvasRef} />
               ) : (
-                <div style={{ width: 200, height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--hush-text-muted)', fontSize: '0.8rem' }}>
+                <div className="dl-canvas-loading">
                   Generating...
                 </div>
               )}
             </div>
-            <div style={expired ? styles.timerExpired : styles.timer}>
+            <div className={expired ? 'dl-timer--expired' : 'dl-timer'}>
               {expired ? 'Expired — close and try again' : `Expires in ${formatTimer(secondsLeft)}`}
             </div>
-            <div style={styles.instructions}>
+            <div className="dl-instructions">
               Scan this QR code from the new device you want to link.
             </div>
           </>
@@ -322,26 +210,26 @@ export default function DeviceLinkModal({ onClose, onLinked, token, currentDevic
 
         {activeTab === CODE_TAB && (
           <>
-            <div style={styles.codeDisplay}>
+            <div className="dl-code-display">
               {linkCode || '--------'}
             </div>
-            <div style={expired ? styles.timerExpired : styles.timer}>
+            <div className={expired ? 'dl-timer--expired' : 'dl-timer'}>
               {expired ? 'Expired — close and try again' : `Expires in ${formatTimer(secondsLeft)}`}
             </div>
-            <div style={styles.copyRow}>
+            <div className="dl-copy-row">
               <button type="button" className="btn btn-secondary" onClick={handleCopy} disabled={!linkCode || expired}>
                 {copied ? 'Copied' : 'Copy code'}
               </button>
             </div>
-            <div style={styles.instructions}>
+            <div className="dl-instructions">
               Enter this code on the new device you want to link.
             </div>
           </>
         )}
 
-        <div style={styles.statusRow}>{status}</div>
+        <div className="dl-status-row">{status}</div>
 
-        <div style={styles.actions}>
+        <div className="dl-actions">
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Close
           </button>

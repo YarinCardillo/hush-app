@@ -5,73 +5,6 @@ const CLIPBOARD_CLEAR_DELAY_MS = 60_000;
 const isMobile = () =>
   typeof window !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
-const styles = {
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '8px',
-    maxWidth: '100%',
-    overflow: 'hidden',
-  },
-  // On narrow screens (< 380px), switch to 2 columns.
-  gridNarrow: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '8px',
-    maxWidth: '100%',
-    overflow: 'hidden',
-  },
-  cell: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '8px 10px',
-    background: 'var(--hush-surface)',
-    border: '1px solid var(--hush-border)',
-    borderRadius: 'var(--radius-sm)',
-    minWidth: 0,
-    overflow: 'hidden',
-  },
-  cellNumber: {
-    fontSize: '0.7rem',
-    color: 'var(--hush-text-muted)',
-    fontFamily: 'var(--font-mono)',
-    minWidth: '14px',
-    textAlign: 'right',
-    flexShrink: 0,
-  },
-  cellWord: {
-    fontSize: '0.82rem',
-    fontFamily: 'var(--font-mono)',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  buttonRow: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '12px',
-  },
-  actionButton: {
-    flex: 1,
-    padding: '10px',
-    background: 'none',
-    border: '1px solid var(--hush-border)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--hush-text-secondary)',
-    fontSize: '0.8rem',
-    fontFamily: 'var(--font-sans)',
-    cursor: 'pointer',
-    transition: 'color var(--duration-fast), border-color var(--duration-fast)',
-  },
-  buttonActive: {
-    color: 'var(--hush-live)',
-    borderColor: 'var(--hush-live)',
-  },
-};
-
 /**
  * Displays a BIP39 mnemonic in a numbered grid with copy and share buttons.
  * Grid switches from 3 columns to 2 on narrow mobile screens.
@@ -117,22 +50,26 @@ export function MnemonicGrid({ words, onCopyDone }) {
   };
 
   return (
-    <div>
-      <div style={isNarrow ? styles.gridNarrow : styles.grid} role="list" aria-label="Recovery phrase words">
+    <div className="mg-wrapper">
+      <div
+        className={`mg-grid${isNarrow ? ' mg-grid--narrow' : ''}`}
+        role="list"
+        aria-label="Recovery phrase words"
+      >
         {words.map((word, i) => (
-          <div key={i} style={styles.cell} role="listitem">
-            <span style={styles.cellNumber} aria-hidden="true">
+          <div key={i} className="mg-cell" role="listitem">
+            <span className="mg-cell-number" aria-hidden="true">
               {i + 1}
             </span>
-            <span style={styles.cellWord}>{word}</span>
+            <span className="mg-cell-word">{word}</span>
           </div>
         ))}
       </div>
 
-      <div style={styles.buttonRow}>
+      <div className="mg-button-row">
         <button
           type="button"
-          style={{ ...styles.actionButton, ...(copied ? styles.buttonActive : {}) }}
+          className={`mg-action-btn${copied ? ' mg-action-btn--active' : ''}`}
           onClick={handleCopy}
           aria-label="Copy all 12 words to clipboard"
         >
@@ -142,7 +79,7 @@ export function MnemonicGrid({ words, onCopyDone }) {
         {canShare && isMobile() && (
           <button
             type="button"
-            style={styles.actionButton}
+            className="mg-action-btn"
             onClick={handleShare}
             aria-label="Share recovery phrase"
           >

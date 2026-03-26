@@ -4,89 +4,6 @@ import { isMnemonicValid, getEnglishWordlist } from '../../lib/bip39Identity';
 const WORDLIST_SUGGESTION_LIMIT = 5;
 const AUTOCOMPLETE_MIN_CHARS = 2;
 
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '8px',
-  },
-  fieldGroup: {
-    position: 'relative',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  fieldLabel: {
-    fontSize: '0.68rem',
-    color: 'var(--hush-text-muted)',
-    fontFamily: 'var(--font-mono)',
-  },
-  dropdown: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    background: 'var(--hush-elevated)',
-    border: '1px solid var(--hush-border)',
-    borderRadius: 'var(--radius-sm)',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-    overflow: 'hidden',
-    marginTop: '2px',
-  },
-  dropdownItem: (active) => ({
-    padding: '8px 12px',
-    fontSize: '0.85rem',
-    fontFamily: 'var(--font-mono)',
-    color: 'var(--hush-text)',
-    cursor: 'pointer',
-    background: active ? 'var(--hush-hover)' : 'transparent',
-  }),
-  validityBanner: (valid) => ({
-    padding: '8px 12px',
-    background: valid ? 'rgba(52, 211, 153, 0.08)' : 'var(--hush-danger-ghost)',
-    border: `1px solid ${valid ? 'rgba(52, 211, 153, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
-    borderRadius: 'var(--radius-sm)',
-    color: valid ? 'var(--hush-live)' : 'var(--hush-danger)',
-    fontSize: '0.78rem',
-    textAlign: 'center',
-  }),
-  revocationSection: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    padding: '12px',
-    background: 'var(--hush-surface)',
-    border: '1px solid var(--hush-border)',
-    borderRadius: 'var(--radius-sm)',
-  },
-  revocationLabel: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '10px',
-    cursor: 'pointer',
-  },
-  revocationText: {
-    fontSize: '0.82rem',
-    color: 'var(--hush-text-secondary)',
-    lineHeight: 1.5,
-  },
-  revocationDesc: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-muted)',
-    marginTop: '4px',
-  },
-  actions: {
-    display: 'flex',
-    gap: '8px',
-  },
-};
-
 /**
  * 12-word BIP39 recovery phrase input.
  * Supports per-field autocomplete with dropdown suggestions,
@@ -227,17 +144,17 @@ export function RecoveryPhraseInput({ onSubmit, onCancel, isRecoveryMode = true,
   }, [isValid, mnemonicString, revokeOtherDevices, onSubmit]);
 
   return (
-    <div style={styles.container}>
-      <div style={styles.grid}>
+    <div className="rpi-container">
+      <div className="rpi-grid">
         {words.map((word, i) => (
-          <div key={i} style={styles.fieldGroup}>
+          <div key={i} className="rpi-field-group">
             <label
               htmlFor={`recovery-word-${i}`}
-              style={styles.fieldLabel}
+              className="rpi-field-label"
             >
               {i + 1}
             </label>
-            <div style={{ position: 'relative' }}>
+            <div className="rpi-input-wrap">
               <input
                 ref={(el) => { inputRefs.current[i] = el; }}
                 id={`recovery-word-${i}`}
@@ -259,11 +176,11 @@ export function RecoveryPhraseInput({ onSubmit, onCancel, isRecoveryMode = true,
                 aria-expanded={activeIndex === i && suggestions.length > 0}
               />
               {activeIndex === i && suggestions.length > 0 && (
-                <div ref={dropdownRef} style={styles.dropdown} role="listbox">
+                <div ref={dropdownRef} className="rpi-dropdown" role="listbox">
                   {suggestions.map((suggestion, si) => (
                     <div
                       key={suggestion}
-                      style={styles.dropdownItem(si === activeSuggestion)}
+                      className={`rpi-dropdown-item${si === activeSuggestion ? ' rpi-dropdown-item--active' : ''}`}
                       role="option"
                       aria-selected={si === activeSuggestion}
                       onMouseDown={(e) => {
@@ -282,22 +199,26 @@ export function RecoveryPhraseInput({ onSubmit, onCancel, isRecoveryMode = true,
       </div>
 
       {showValidity && (
-        <div style={styles.validityBanner(isValid)} role="status" aria-live="polite">
+        <div
+          className={isValid ? 'rpi-validity-banner--valid' : 'rpi-validity-banner--invalid'}
+          role="status"
+          aria-live="polite"
+        >
           {isValid ? 'Valid phrase' : 'Invalid phrase — check all 12 words'}
         </div>
       )}
 
       {isRecoveryMode && (
-        <div style={styles.revocationSection}>
-          <label style={styles.revocationLabel}>
+        <div className="rpi-revocation-section">
+          <label className="rpi-revocation-label">
             <input
               type="checkbox"
               checked={revokeOtherDevices}
               onChange={(e) => setRevokeOtherDevices(e.target.checked)}
             />
             <div>
-              <div style={styles.revocationText}>Sign out all other devices</div>
-              <div style={styles.revocationDesc}>
+              <div className="rpi-revocation-text">Sign out all other devices</div>
+              <div className="rpi-revocation-desc">
                 Revokes all other linked device keys. Use this if a device is lost or compromised.
               </div>
             </div>
@@ -305,7 +226,7 @@ export function RecoveryPhraseInput({ onSubmit, onCancel, isRecoveryMode = true,
         </div>
       )}
 
-      <div style={styles.actions}>
+      <div className="rpi-actions">
         <button
           type="button"
           className="back-link"
