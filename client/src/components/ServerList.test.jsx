@@ -111,10 +111,10 @@ describe('ServerList — legacy prop-based mode', () => {
     // aria-pressed comes from our own prop on the button, not overridden by dnd-kit in jsdom
     const activeBtn = screen.getByTitle('Alpha Guild');
     const inactiveBtn = screen.getByTitle('Beta');
-    // Active button has amber border
-    expect(activeBtn.style.border).toContain('var(--hush-amber)');
-    // Inactive button has transparent border
-    expect(inactiveBtn.style.border).toContain('transparent');
+    // Active button has sl-guild-btn--active class (amber state handled in CSS)
+    expect(activeBtn.className).toContain('sl-guild-btn--active');
+    // Inactive button does not have the active modifier class
+    expect(inactiveBtn.className).not.toContain('sl-guild-btn--active');
   });
 
   it('calls onGuildSelect when a guild button is clicked', () => {
@@ -231,8 +231,9 @@ describe('ServerList — multi-instance mode via InstanceContext', () => {
     renderWithInstanceCtx(ctxValue);
     const onlineBtn = screen.getByLabelText('Online Guild');
     const offlineBtn = screen.getByLabelText('Offline Guild');
-    expect(onlineBtn.style.opacity).toBe('1');
-    expect(offlineBtn.style.opacity).toBe('0.5');
+    // Offline state handled by sl-guild-btn--offline CSS class (opacity: 0.5 in CSS)
+    expect(onlineBtn.className).not.toContain('sl-guild-btn--offline');
+    expect(offlineBtn.className).toContain('sl-guild-btn--offline');
   });
 
   it('renders DM section at top of sidebar', () => {

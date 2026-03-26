@@ -22,8 +22,10 @@ import { decryptGuildMetadata, fromBase64, importMetadataKey } from '../lib/guil
 import { InstanceContext } from '../contexts/InstanceContext.jsx';
 import { searchUsersForDM, createOrFindDM } from '../lib/api';
 
-const ICON_SIZE = 48;
-const STRIP_WIDTH = 72;
+// Icon size and strip width are now defined in CSS (.sl-guild-btn, .sl-strip).
+// These constants are kept for any remaining inline fallback usage.
+const ICON_SIZE = 40;
+const STRIP_WIDTH = 64;
 
 /** LocalStorage key for grouped sidebar toggle. */
 const LS_GROUPED_KEY = 'hush_grouped_sidebar';
@@ -84,126 +86,7 @@ function instanceDomain(url) {
   try { return new URL(url).hostname; } catch { return url; }
 }
 
-const styles = {
-  strip: {
-    width: STRIP_WIDTH,
-    minWidth: STRIP_WIDTH,
-    background: 'var(--hush-surface)',
-    borderRight: '1px solid transparent',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '12px 0',
-    gap: '8px',
-    overflowY: 'auto',
-  },
-  guildBtn: (isActive, bgColor, isOffline) => ({
-    width: ICON_SIZE,
-    height: ICON_SIZE,
-    borderRadius: '50%',
-    border: isActive ? '2px solid var(--hush-amber)' : '2px solid transparent',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: bgColor,
-    color: '#fff',
-    fontSize: '0.85rem',
-    fontWeight: 600,
-    fontFamily: 'var(--font-sans)',
-    letterSpacing: '0.02em',
-    transition: 'border-color var(--duration-fast) var(--ease-out), opacity var(--duration-fast) var(--ease-out)',
-    overflow: 'hidden',
-    flexShrink: 0,
-    boxSizing: 'border-box',
-    opacity: isOffline ? 0.5 : 1,
-    pointerEvents: 'auto',
-    position: 'relative',
-  }),
-  addBtn: {
-    width: ICON_SIZE,
-    height: ICON_SIZE,
-    borderRadius: '50%',
-    border: '1px dashed var(--hush-border)',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'none',
-    color: 'var(--hush-text-muted)',
-    fontSize: '1.5rem',
-    fontWeight: 300,
-    transition: 'border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out)',
-    flexShrink: 0,
-  },
-  divider: {
-    width: 32,
-    height: 1,
-    background: 'var(--hush-border)',
-    flexShrink: 0,
-  },
-  instanceLabel: {
-    fontSize: '0.6rem',
-    fontWeight: 600,
-    letterSpacing: '0.06em',
-    textTransform: 'uppercase',
-    color: 'var(--hush-text-muted)',
-    textAlign: 'center',
-    padding: '2px 0',
-    maxWidth: ICON_SIZE + 8,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  settingsBtn: {
-    width: ICON_SIZE,
-    height: ICON_SIZE,
-    borderRadius: '50%',
-    border: 'none',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'var(--hush-elevated)',
-    color: 'var(--hush-text-secondary)',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-    flexShrink: 0,
-    marginTop: 'auto',
-  },
-  dmSection: {
-    width: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 4,
-    paddingBottom: 4,
-  },
-  dmBtn: (isExpanded) => ({
-    width: ICON_SIZE,
-    height: ICON_SIZE,
-    borderRadius: '50%',
-    border: isExpanded ? '2px solid var(--hush-amber)' : '2px solid transparent',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'var(--hush-elevated)',
-    color: isExpanded ? 'var(--hush-amber)' : 'var(--hush-text-secondary)',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-    flexShrink: 0,
-    position: 'relative',
-  }),
-  offlineDot: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: '50%',
-    background: 'var(--hush-text-ghost)',
-    border: '2px solid var(--hush-surface)',
-  },
-};
+// Styles removed — see sl-* classes in global.css
 
 // ── SortableGuildIcon ─────────────────────────────────────────────────────────
 
@@ -255,12 +138,17 @@ function SortableGuildIcon({
     if (dx > 10 || dy > 10) cancelLongPress();
   }, [cancelLongPress]);
 
+  const className = [
+    'sl-guild-btn',
+    isActive && 'sl-guild-btn--active',
+    isOffline && 'sl-guild-btn--offline',
+    isDragging && 'sl-guild-btn--dragging',
+  ].filter(Boolean).join(' ');
+
   const style = {
-    ...styles.guildBtn(isActive, bg, isOffline),
+    background: bg,
     transform: CSS.Transform.toString(transform),
     transition: isDragging ? 'none' : transition,
-    boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.5)' : undefined,
-    zIndex: isDragging ? 100 : undefined,
     cursor: isDragging ? 'grabbing' : 'pointer',
   };
 
@@ -268,6 +156,7 @@ function SortableGuildIcon({
     <button
       ref={setNodeRef}
       type="button"
+      className={className}
       style={style}
       title={tooltip}
       aria-label={displayName}
@@ -280,19 +169,12 @@ function SortableGuildIcon({
       onTouchStart={handleTouchStart}
       onTouchEnd={cancelLongPress}
       onTouchMove={handleTouchMove}
-      onMouseEnter={(e) => {
-        if (!isActive && !isDragging) {
-          e.currentTarget.style.opacity = isOffline ? '0.35' : '0.8';
-        }
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.opacity = isOffline ? '0.5' : '1';
-      }}
       {...attributes}
       {...listeners}
     >
+      <span className="sl-guild-pill" aria-hidden="true" />
       {getInitials(displayName)}
-      {isOffline && <span style={styles.offlineDot} aria-label="offline" />}
+      {isOffline && <span className="sl-offline-dot" aria-label="offline" />}
     </button>
   );
 }
@@ -367,10 +249,10 @@ function DmSection({ dmGuilds, onGuildSelect, getToken }) {
   useEffect(() => () => clearTimeout(searchTimerRef.current), []);
 
   return (
-    <div style={styles.dmSection} data-testid="dm-section">
+    <div className="sl-dm-section" data-testid="dm-section">
       <button
         type="button"
-        style={styles.dmBtn(expanded)}
+        className={`sl-dm-btn${expanded ? ' sl-dm-btn--expanded' : ''}`}
         title="Direct Messages"
         aria-label={`Direct Messages${totalUnread > 0 ? ` (${totalUnread} unread)` : ''}`}
         aria-expanded={expanded}
@@ -388,7 +270,7 @@ function DmSection({ dmGuilds, onGuildSelect, getToken }) {
             background: 'var(--hush-danger)',
             color: '#fff',
             fontSize: '0.6rem',
-            fontWeight: 600,
+            fontWeight: 500,
             borderRadius: '50%',
             width: 16,
             height: 16,
@@ -551,7 +433,7 @@ function DmSection({ dmGuilds, onGuildSelect, getToken }) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: '0.75rem',
-                    fontWeight: 600,
+                    fontWeight: 500,
                     flexShrink: 0,
                   }}>
                     {initial}
@@ -570,7 +452,7 @@ function DmSection({ dmGuilds, onGuildSelect, getToken }) {
                       background: 'var(--hush-danger)',
                       color: '#fff',
                       fontSize: '0.6rem',
-                      fontWeight: 600,
+                      fontWeight: 500,
                       borderRadius: '50%',
                       width: 16,
                       height: 16,
@@ -610,7 +492,7 @@ function GroupSection({
   return (
     <>
       {isGrouped && group.type === 'group' && group.instanceUrl !== '__default__' && (
-        <div style={styles.instanceLabel} title={group.instanceUrl}>
+        <div className="sl-instance-label" title={group.instanceUrl}>
           {instanceDomain(group.instanceUrl)}
         </div>
       )}
@@ -894,14 +776,15 @@ export default function ServerList({
 
   return (
     <div
-      style={{ ...styles.strip, ...(compact ? { width: 56, minWidth: 56 } : {}) }}
+      className="sl-strip"
+      style={compact ? { width: 56, minWidth: 56 } : undefined}
       data-testid="server-list"
     >
       {/* Direct Messages section pinned at top */}
       <DmSection dmGuilds={dmGuilds} onGuildSelect={onGuildSelect} getToken={getToken} />
 
       {dmGuilds.length > 0 && regularGuilds.length > 0 && (
-        <div style={styles.divider} />
+        <div className="sl-separator" />
       )}
 
       {/* Guild icon list with drag-and-drop */}
@@ -928,24 +811,16 @@ export default function ServerList({
       </DndContext>
 
       {regularGuilds.length > 0 && showAddButton && (
-        <div style={styles.divider} />
+        <div className="sl-separator" />
       )}
 
       {showAddButton && (
         <button
           type="button"
-          style={styles.addBtn}
+          className="sl-add-btn"
           title="Create a server"
           aria-label="Create a server"
           onClick={() => setShowCreateModal(true)}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = 'var(--hush-amber)';
-            e.currentTarget.style.color = 'var(--hush-amber)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'var(--hush-border)';
-            e.currentTarget.style.color = 'var(--hush-text-muted)';
-          }}
         >
           +
         </button>
@@ -953,7 +828,7 @@ export default function ServerList({
 
       <button
         type="button"
-        style={styles.settingsBtn}
+        className="sl-settings-btn"
         title="User settings"
         onClick={() => setShowUserSettings(true)}
       >
