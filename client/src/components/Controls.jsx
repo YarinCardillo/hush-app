@@ -1,113 +1,5 @@
 import { QUALITY_PRESETS, IS_SCREEN_SHARE_SUPPORTED } from '../utils/constants';
 
-const styles = {
-  bar: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    padding: '12px 16px',
-    background: 'rgba(8, 8, 12, 0.75)',
-    backdropFilter: 'blur(16px)',
-    WebkitBackdropFilter: 'blur(16px)',
-    borderTop: '1px solid var(--hush-border)',
-    flexShrink: 0,
-  },
-  btn: (active, variant = 'default') => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    height: '44px',
-    padding: '0 16px',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '0.85rem',
-    fontWeight: 500,
-    cursor: 'pointer',
-    ...(variant === 'danger'
-      ? {
-          background: 'var(--hush-danger-ghost)',
-          color: 'var(--hush-danger)',
-          border: '1px solid transparent',
-        }
-      : active
-        ? {
-            background: 'var(--hush-amber)',
-            color: 'var(--hush-black)',
-          }
-        : {
-            background: 'var(--hush-surface)',
-            color: 'var(--hush-text)',
-            border: '1px solid transparent',
-          }
-    ),
-  }),
-  iconBtn: (active) => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '44px',
-    height: '44px',
-    border: '1px solid transparent',
-    borderRadius: 'var(--radius-md)',
-    background: active ? 'var(--hush-amber)' : 'var(--hush-surface)',
-    color: active ? 'var(--hush-black)' : 'var(--hush-text-secondary)',
-    cursor: 'pointer',
-  }),
-  divider: {
-    width: '1px',
-    height: '28px',
-    background: 'var(--hush-border)',
-    margin: '0 4px',
-  },
-  qualityTag: {
-    fontSize: '0.65rem',
-    fontFamily: 'var(--font-mono)',
-    fontWeight: 500,
-    padding: '2px 7px',
-    borderRadius: 0,
-    background: 'var(--hush-amber-ghost)',
-    color: 'var(--hush-amber)',
-    letterSpacing: '0.02em',
-  },
-  /** Compound control: main action + device dropdown. Wrapper so both look like one button. */
-  deviceGroup: (active) => ({
-    display: 'inline-flex',
-    alignItems: 'stretch',
-    height: '44px',
-    borderRadius: 'var(--radius-md)',
-    background: active ? 'var(--hush-amber)' : 'var(--hush-surface)',
-    color: active ? 'var(--hush-black)' : 'var(--hush-text-secondary)',
-    border: '1px solid transparent',
-    overflow: 'hidden',
-  }),
-  deviceGroupMain: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '44px',
-    border: 'none',
-    background: 'transparent',
-    color: 'inherit',
-    cursor: 'pointer',
-    padding: 0,
-  },
-  deviceGroupChevron: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '28px',
-    border: 'none',
-    borderLeft: '1px solid rgba(0,0,0,0.12)',
-    background: 'transparent',
-    color: 'inherit',
-    cursor: 'pointer',
-    padding: 0,
-  },
-};
-
 export default function Controls({
   isReady,
   isScreenSharing,
@@ -132,12 +24,12 @@ export default function Controls({
   const mediaTitle = mediaE2EEUnavailable ? 'Media encryption unavailable' : undefined;
 
   return (
-    <div style={styles.bar}>
+    <div className="ctrl-bar">
       {/* Screen Share — hidden when showScreenShare false (e.g. low-latency voice) or mobile when not supported */}
       {showScreenShare && (!isMobile || IS_SCREEN_SHARE_SUPPORTED) && (
         <button
+          className={`ctrl-btn${isScreenSharing ? ' ctrl-btn--active' : ''}`}
           style={{
-            ...styles.btn(isScreenSharing),
             height: btnSize,
             ...(mediaDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
           }}
@@ -152,7 +44,7 @@ export default function Controls({
           </svg>
           {isScreenSharing ? 'Stop' : 'Share'}
           {isScreenSharing && (
-            <span style={styles.qualityTag}>{QUALITY_PRESETS[quality]?.label || quality}</span>
+            <span className="ctrl-quality-tag">{QUALITY_PRESETS[quality]?.label || quality}</span>
           )}
         </button>
       )}
@@ -160,7 +52,8 @@ export default function Controls({
       {/* Change quality or window (only visible when sharing and showQualityPicker) */}
       {showQualityPicker && isScreenSharing && (
         <button
-          style={{ ...styles.iconBtn(isScreenSharing), width: btnSize, height: btnSize }}
+          className={`ctrl-icon-btn${isScreenSharing ? ' ctrl-icon-btn--active' : ''}`}
+          style={{ width: btnSize, height: btnSize }}
           onClick={onOpenQualityOrWindow}
           title="Change quality or window"
         >
@@ -173,20 +66,23 @@ export default function Controls({
         </button>
       )}
 
-      {showScreenShare && <div style={styles.divider} />}
+      {showScreenShare && <div className="ctrl-divider" />}
 
       {/* Microphone + device switch (always show chevron when device switch available) */}
       {onMicDeviceSwitch ? (
         <div
+          className="ctrl-device-group"
           style={{
-            ...styles.deviceGroup(isMicOn),
             height: btnSize,
+            background: isMicOn ? 'var(--hush-amber)' : 'var(--hush-surface)',
+            color: isMicOn ? 'var(--hush-black)' : 'var(--hush-text-secondary)',
             ...(mediaDisabled ? { opacity: 0.6, pointerEvents: 'none' } : {}),
           }}
         >
           <button
             type="button"
-            style={{ ...styles.deviceGroupMain, width: btnSize, height: btnSize }}
+            className="ctrl-device-group-main"
+            style={{ width: btnSize, height: btnSize }}
             onClick={onMic}
             disabled={!isReady || mediaDisabled}
             title={mediaTitle || (isMicOn ? 'Mute mic' : 'Unmute mic')}
@@ -210,7 +106,8 @@ export default function Controls({
           </button>
           <button
             type="button"
-            style={{ ...styles.deviceGroupChevron, height: btnSize }}
+            className="ctrl-device-group-chevron"
+            style={{ height: btnSize }}
             onClick={(e) => {
               e.stopPropagation();
               onMicDeviceSwitch();
@@ -225,8 +122,8 @@ export default function Controls({
         </div>
       ) : (
         <button
+          className={`ctrl-icon-btn${isMicOn ? ' ctrl-icon-btn--active' : ''}`}
           style={{
-            ...styles.iconBtn(isMicOn),
             width: btnSize,
             height: btnSize,
             ...(mediaDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
@@ -254,19 +151,22 @@ export default function Controls({
         </button>
       )}
 
-      {showWebcam && <div style={styles.divider} />}
+      {showWebcam && <div className="ctrl-divider" />}
       {/* Webcam + device switch (hidden when showWebcam false, e.g. low-latency voice) */}
       {showWebcam && onWebcamDeviceSwitch ? (
         <div
+          className="ctrl-device-group"
           style={{
-            ...styles.deviceGroup(isWebcamOn),
             height: btnSize,
+            background: isWebcamOn ? 'var(--hush-amber)' : 'var(--hush-surface)',
+            color: isWebcamOn ? 'var(--hush-black)' : 'var(--hush-text-secondary)',
             ...(mediaDisabled ? { opacity: 0.6, pointerEvents: 'none' } : {}),
           }}
         >
           <button
             type="button"
-            style={{ ...styles.deviceGroupMain, width: btnSize, height: btnSize }}
+            className="ctrl-device-group-main"
+            style={{ width: btnSize, height: btnSize }}
             onClick={onWebcam}
             disabled={!isReady || mediaDisabled}
             title={mediaTitle || (isWebcamOn ? 'Turn off camera' : 'Turn on camera')}
@@ -285,7 +185,8 @@ export default function Controls({
           </button>
           <button
             type="button"
-            style={{ ...styles.deviceGroupChevron, height: btnSize }}
+            className="ctrl-device-group-chevron"
+            style={{ height: btnSize }}
             onClick={(e) => {
               e.stopPropagation();
               onWebcamDeviceSwitch();
@@ -300,8 +201,8 @@ export default function Controls({
         </div>
       ) : showWebcam ? (
         <button
+          className={`ctrl-icon-btn${isWebcamOn ? ' ctrl-icon-btn--active' : ''}`}
           style={{
-            ...styles.iconBtn(isWebcamOn),
             width: btnSize,
             height: btnSize,
             ...(mediaDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
@@ -324,11 +225,12 @@ export default function Controls({
         </button>
       ) : null}
 
-      <div style={styles.divider} />
+      <div className="ctrl-divider" />
 
       {/* Leave */}
       <button
-        style={{ ...styles.btn(false, 'danger'), height: btnSize }}
+        className="ctrl-btn ctrl-btn--danger"
+        style={{ height: btnSize }}
         onClick={onLeave}
       >
         Leave

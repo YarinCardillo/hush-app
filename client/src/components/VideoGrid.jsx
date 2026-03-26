@@ -4,26 +4,6 @@ import StreamView from './StreamView';
 import ScreenShareCard from './ScreenShareCard';
 import { MEDIA_SOURCES, STANDBY_AFTER_MS, isScreenShareSource } from '../utils/constants';
 
-const styles = {
-  streamsArea: (isMobile, count) => ({
-    flex: 1,
-    display: 'grid',
-    gap: '6px',
-    padding: '6px',
-    overflow: isMobile && count !== 2 ? 'auto' : 'hidden',
-    alignItems: isMobile && count !== 2 ? 'start' : 'stretch',
-    alignContent: isMobile && count !== 2 ? 'start' : undefined,
-    justifyItems: 'stretch',
-    minHeight: 0,
-  }),
-  empty: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-  },
-};
-
 function getColumnCount(count) {
   if (count <= 1) return 1;
   if (count <= 5) return 2;
@@ -199,6 +179,14 @@ export default function VideoGrid({
   const heroIsAlone = totalCards > 1 && totalCards % cols === 1;
   const orderedStreams = orderWithHeroLast(allStreams, heroId);
 
+  // Computed layout styles — grid template columns/rows and overflow depend on totalCards and breakpoint.
+  const streamsAreaStyle = {
+    overflow: isMobile && totalCards !== 2 ? 'auto' : 'hidden',
+    alignItems: isMobile && totalCards !== 2 ? 'start' : 'stretch',
+    alignContent: isMobile && totalCards !== 2 ? 'start' : undefined,
+    ...gridStyle,
+  };
+
   const normalTileStyle =
     isMobile && totalCards !== 2 ? { aspectRatio: '1', width: '100%', minWidth: 0 } : { display: 'contents' };
   const heroAloneStyle = () => {
@@ -215,10 +203,10 @@ export default function VideoGrid({
 
   return (
     <>
-      <div style={{ ...styles.streamsArea(isMobile, totalCards), ...gridStyle }}>
+      <div className="vg-streams-area" style={streamsAreaStyle}>
         {totalCards === 0 ? (
           // Empty div preserves the flex layout; status indicator shows through via z-index.
-          <div style={styles.empty} />
+          <div className="vg-empty" />
         ) : (
           <>
             {orderedStreams.map((stream) => (

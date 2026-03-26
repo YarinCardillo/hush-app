@@ -1,71 +1,21 @@
-import { useState } from 'react';
-
-const styles = {
-  container: (isHovered, isLoading) => ({
-    position: 'relative',
-    background: 'var(--hush-surface)',
-    border: '1px solid transparent',
-    borderRadius: 'var(--radius-lg)',
-    width: '100%',
-    height: '100%',
-    minHeight: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px',
-    cursor: isLoading ? 'wait' : 'pointer',
-    transition: 'border-color var(--duration-fast) var(--ease-out)',
-    opacity: isLoading ? 0.6 : 1,
-    pointerEvents: isLoading ? 'none' : 'auto',
-  }),
-  icon: {
-    width: '48px',
-    height: '48px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  peerName: {
-    fontSize: '0.9rem',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-  },
-  hint: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-muted)',
-  },
-  spinner: {
-    width: '24px',
-    height: '24px',
-    border: '2px solid transparent',
-    borderTopColor: 'var(--hush-primary)',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-  },
-};
-
 export default function ScreenShareCard({ peerName, isSelf = false, isLoading = false, onWatch }) {
-  const [isHovered, setIsHovered] = useState(false);
   const title = isSelf ? "You're sharing" : peerName;
   const hint = isLoading ? 'loading stream...' : isSelf ? 'Tap to watch' : 'click to watch';
 
   return (
     <div
-      style={styles.container(isHovered, isLoading)}
+      className={`ssc-card${isLoading ? ' ssc-card--loading' : ''}`}
       onClick={onWatch}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
       {isLoading ? (
         <>
-          <div style={styles.spinner} />
-          <div style={styles.peerName}>{title}</div>
-          <div style={styles.hint}>{hint}</div>
+          <div className="ssc-spinner" />
+          <div className="ssc-peer-name">{title}</div>
+          <div className="ssc-hint">{hint}</div>
         </>
       ) : (
         <>
-          <div style={styles.icon}>
+          <div className="ssc-icon">
             <svg
               width="48"
               height="48"
@@ -79,8 +29,8 @@ export default function ScreenShareCard({ peerName, isSelf = false, isLoading = 
               <line x1="12" y1="17" x2="12" y2="21" />
             </svg>
           </div>
-          <div style={styles.peerName}>{title}</div>
-          <div style={styles.hint}>{hint}</div>
+          <div className="ssc-peer-name">{title}</div>
+          <div className="ssc-hint">{hint}</div>
         </>
       )}
     </div>

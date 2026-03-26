@@ -1,108 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 
-const styles = {
-  container: (isFullscreen) => ({
-    /* Virtual fullscreen: CSS position:fixed keeps video in the normal
-       rendering pipeline so CSS transforms (mirror) and playback work
-       correctly on iOS Safari, which bypasses CSS when using the native
-       Fullscreen API on <video> elements. */
-    position: isFullscreen ? 'fixed' : 'relative',
-    ...(isFullscreen
-      ? { inset: 0, zIndex: 9999 }
-      : { width: '100%', height: '100%', minHeight: 0 }),
-    background: 'var(--hush-elevated)',
-    borderRadius: isFullscreen ? 0 : 'var(--radius-md)',
-    overflow: 'hidden',
-  }),
-  videoWrapper: (mirrorLocal) => ({
-    width: '100%',
-    height: '100%',
-    transform: mirrorLocal ? 'scaleX(-1)' : undefined,
-  }),
-  video: (objectFit) => ({
-    width: '100%',
-    height: '100%',
-    objectFit: objectFit ?? 'contain',
-    display: 'block',
-  }),
-  label: {
-    position: 'absolute',
-    bottom: '10px',
-    left: '10px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '5px 12px',
-    background: 'rgba(12, 12, 18, 0.7)',
-    backdropFilter: 'blur(12px)',
-    WebkitBackdropFilter: 'blur(12px)',
-    borderRadius: 'var(--radius-sm)',
-    fontSize: '0.75rem',
-    color: '#e4e4ec',
-    fontWeight: 500,
-  },
-  sourceIcon: {
-    width: '12px',
-    height: '12px',
-    opacity: 0.7,
-  },
-  localBadge: {
-    position: 'absolute',
-    top: '10px',
-    right: '10px',
-    padding: '2px 8px',
-    background: 'var(--hush-amber-glow)',
-    backdropFilter: 'blur(8px)',
-    WebkitBackdropFilter: 'blur(8px)',
-    borderRadius: 'var(--radius-sm)',
-    fontSize: '0.6rem',
-    fontWeight: 600,
-    color: 'var(--hush-amber)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.1em',
-  },
-  unwatchBtn: (isVisible) => ({
-    position: 'absolute',
-    top: '10px',
-    right: '10px',
-    width: '32px',
-    height: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'rgba(12, 12, 18, 0.7)',
-    backdropFilter: 'blur(8px)',
-    WebkitBackdropFilter: 'blur(8px)',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    color: '#e4e4ec',
-    cursor: 'pointer',
-    transition: 'opacity var(--duration-fast) var(--ease-out)',
-    zIndex: 2,
-    opacity: isVisible ? 1 : 0.4,
-  }),
-  fullscreenBtn: (isActive) => ({
-    position: 'absolute',
-    top: '10px',
-    left: '10px',
-    width: '32px',
-    height: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'rgba(12, 12, 18, 0.7)',
-    backdropFilter: 'blur(8px)',
-    WebkitBackdropFilter: 'blur(8px)',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    color: '#e4e4ec',
-    cursor: 'pointer',
-    transition: 'opacity var(--duration-fast) var(--ease-out)',
-    zIndex: 2,
-    opacity: isActive ? 1 : 0.4,
-  }),
-};
-
 export default function StreamView({ track, audioTrack, label, source, isLocal, onUnwatch, objectFit, standByAfterMs }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
@@ -238,20 +135,36 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
 
   const toggleFullscreen = () => setIsFullscreen((prev) => !prev);
 
+  // Container dimensions/position are fully dynamic (fullscreen vs inline).
+  const containerStyle = {
+    position: isFullscreen ? 'fixed' : 'relative',
+    ...(isFullscreen
+      ? { inset: 0, zIndex: 9999 }
+      : { width: '100%', height: '100%', minHeight: 0 }),
+    background: 'var(--hush-elevated)',
+    borderRadius: isFullscreen ? 0 : 'var(--radius-md)',
+    overflow: 'hidden',
+  };
+
   return (
     <div
       ref={containerRef}
-      style={styles.container(isFullscreen)}
+      style={containerStyle}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div style={styles.videoWrapper(isLocal && source === 'webcam')}>
+      {/* Mirror local webcam via CSS transform */}
+      <div
+        className="sv-video-wrapper"
+        style={{ transform: (isLocal && source === 'webcam') ? 'scaleX(-1)' : undefined }}
+      >
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted={isLocal}
-          style={styles.video(isFullscreen ? 'contain' : objectFit)}
+          className="sv-video"
+          style={{ objectFit: isFullscreen ? 'contain' : (objectFit ?? 'contain') }}
         />
       </div>
 
@@ -261,7 +174,8 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
       )}
 
       <button
-        style={styles.fullscreenBtn(isHovered || isFullscreen)}
+        className={`sv-overlay-btn sv-fullscreen-btn`}
+        style={{ opacity: (isHovered || isFullscreen) ? 1 : 0.4 }}
         onClick={toggleFullscreen}
         title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
       >
@@ -282,15 +196,15 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
         )}
       </button>
 
-      <div style={styles.label}>
+      <div className="sv-label">
         {source === 'screen' ? (
-          <svg style={styles.sourceIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg className="sv-source-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="2" y="3" width="20" height="14" rx="2" />
             <line x1="8" y1="21" x2="16" y2="21" />
             <line x1="12" y1="17" x2="12" y2="21" />
           </svg>
         ) : (
-          <svg style={styles.sourceIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg className="sv-source-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M23 7l-7 5 7 5V7z" />
             <rect x="1" y="5" width="15" height="14" rx="2" />
           </svg>
@@ -298,11 +212,12 @@ export default function StreamView({ track, audioTrack, label, source, isLocal, 
         {label}
       </div>
 
-      {isLocal && <div style={styles.localBadge}>You</div>}
+      {isLocal && <div className="sv-local-badge">You</div>}
 
       {onUnwatch && (
         <button
-          style={styles.unwatchBtn(isHovered)}
+          className="sv-overlay-btn sv-unwatch-btn"
+          style={{ opacity: isHovered ? 1 : 0.4 }}
           onClick={(e) => { e.stopPropagation(); onUnwatch(); }}
           title="Stop watching"
         >

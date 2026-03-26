@@ -19,8 +19,8 @@ export default function EmptyState({ instanceStates, onCreateServer, onBrowseSer
   const canCreateServer = _canCreateServer(instanceStates);
 
   return (
-    <div style={styles.container} data-testid="empty-state">
-      <div style={styles.icon} aria-hidden="true">
+    <div className="empty-container" data-testid="empty-state">
+      <div className="empty-icon" aria-hidden="true">
         {/* Simple server icon (Lucide-style) */}
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
           <rect x="2" y="2" width="20" height="8" rx="0" />
@@ -30,64 +30,50 @@ export default function EmptyState({ instanceStates, onCreateServer, onBrowseSer
         </svg>
       </div>
 
-      <h2 style={styles.heading}>Welcome to hush</h2>
+      <h2 className="empty-heading">Welcome to hush</h2>
 
-      <p style={styles.description}>
+      <p className="empty-description">
         Your private space for encrypted screen sharing and chat.
         No servers here yet — find one below or get your own.
       </p>
 
       <button
         type="button"
-        style={styles.btnPrimary}
+        className="empty-btn-primary"
         onClick={onBrowseServers}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'var(--hush-amber-bright)';
-          e.currentTarget.style.boxShadow = '0 0 24px var(--hush-amber-glow)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'var(--hush-amber)';
-          e.currentTarget.style.boxShadow = 'none';
-        }}
       >
         Browse public servers
       </button>
 
-      <p style={styles.inviteHint}>
+      <p className="empty-invite-hint">
         Have an invite link? Just click it — you&apos;ll be connected automatically.
       </p>
 
       {canCreateServer && (
         <button
           type="button"
-          style={styles.btnSecondary}
+          className="empty-btn-secondary"
           onClick={onCreateServer}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--hush-elevated)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'var(--hush-surface)';
-          }}
         >
           Create a server
         </button>
       )}
 
-      <div style={styles.footer}>
+      <div className="empty-footer">
         <a
           href="https://gethush.live"
           target="_blank"
           rel="noopener noreferrer"
-          style={styles.footerLink}
+          className="empty-footer-link"
         >
           Get a server
         </a>
-        <span style={styles.footerDot} aria-hidden="true">·</span>
+        <span className="empty-footer-dot" aria-hidden="true">·</span>
         <a
           href="https://gethush.live/docs"
           target="_blank"
           rel="noopener noreferrer"
-          style={styles.footerLink}
+          className="empty-footer-link"
         >
           Self-host
         </a>
@@ -115,91 +101,3 @@ function _canCreateServer(instanceStates) {
   }
   return false;
 }
-
-// ── Styles ────────────────────────────────────────────────────────────────────
-
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    textAlign: 'center',
-    padding: 40,
-    gap: 16,
-    maxWidth: 480,
-    margin: '0 auto',
-  },
-  icon: {
-    width: 56,
-    height: 56,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'var(--hush-surface)',
-    border: '1px solid transparent',
-    color: 'var(--hush-text-ghost)',
-    borderRadius: 0,
-  },
-  heading: {
-    fontSize: '1.4rem',
-    fontWeight: 300,
-    color: 'var(--hush-text)',
-    letterSpacing: '-0.02em',
-    margin: 0,
-  },
-  description: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-text-muted)',
-    maxWidth: 320,
-    margin: 0,
-    lineHeight: 1.6,
-  },
-  btnPrimary: {
-    background: 'var(--hush-amber)',
-    color: 'var(--hush-black)',
-    fontWeight: 500,
-    border: 'none',
-    borderRadius: 0,
-    padding: '10px 24px',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '0.9rem',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-  },
-  inviteHint: {
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-muted)',
-    maxWidth: 280,
-    margin: 0,
-    lineHeight: 1.5,
-  },
-  btnSecondary: {
-    background: 'var(--hush-surface)',
-    color: 'var(--hush-text)',
-    border: '1px solid transparent',
-    borderRadius: 0,
-    padding: '10px 24px',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '0.9rem',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-  },
-  footer: {
-    display: 'flex',
-    gap: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  footerLink: {
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-muted)',
-    textDecoration: 'none',
-    transition: 'color var(--duration-fast) var(--ease-out)',
-  },
-  footerDot: {
-    color: 'var(--hush-text-ghost)',
-    fontSize: '0.8rem',
-  },
-};

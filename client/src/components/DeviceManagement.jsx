@@ -14,104 +14,6 @@ import DeviceLinkModal from './auth/DeviceLinkModal.jsx';
 import { TransparencyVerifier } from '../lib/transparencyVerifier.js';
 import { bytesToHex } from '../lib/identityVault.js';
 
-const styles = {
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    marginBottom: '24px',
-  },
-  th: {
-    fontSize: '0.7rem',
-    fontWeight: 700,
-    color: 'var(--hush-text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    padding: '0 0 8px 0',
-    textAlign: 'left',
-    borderBottom: '1px solid var(--hush-border)',
-  },
-  td: {
-    padding: '10px 0',
-    fontSize: '0.85rem',
-    color: 'var(--hush-text)',
-    borderBottom: '1px solid var(--hush-border)',
-    verticalAlign: 'middle',
-  },
-  deviceName: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  badge: {
-    fontSize: '0.65rem',
-    fontWeight: 600,
-    letterSpacing: '0.06em',
-    textTransform: 'uppercase',
-    color: 'var(--hush-amber)',
-    background: 'var(--hush-amber-ghost)',
-    padding: '2px 6px',
-    flexShrink: 0,
-  },
-  revokeBtn: {
-    background: 'none',
-    border: '1px solid transparent',
-    color: 'var(--hush-danger)',
-    fontSize: '0.8rem',
-    fontFamily: 'var(--font-sans)',
-    cursor: 'pointer',
-    padding: '4px 8px',
-    transition: 'background var(--duration-fast) var(--ease-out)',
-  },
-  emptyState: {
-    color: 'var(--hush-text-muted)',
-    fontSize: '0.85rem',
-    padding: '24px 0',
-    textAlign: 'center',
-  },
-  actions: {
-    display: 'flex',
-    gap: '8px',
-    flexWrap: 'wrap',
-  },
-  errorMsg: {
-    color: 'var(--hush-danger)',
-    fontSize: '0.8rem',
-    marginBottom: '12px',
-  },
-  confirmOverlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0,0,0,0.85)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 300,
-  },
-  confirmModal: {
-    background: 'var(--hush-surface)',
-    border: '1px solid transparent',
-    padding: '28px',
-    width: '100%',
-    maxWidth: '360px',
-  },
-  confirmTitle: {
-    fontSize: '1rem',
-    fontWeight: 600,
-    color: 'var(--hush-text)',
-    marginBottom: '12px',
-  },
-  confirmText: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-text-secondary)',
-    marginBottom: '24px',
-  },
-  confirmActions: {
-    display: 'flex',
-    gap: '8px',
-    justifyContent: 'flex-end',
-  },
-};
-
 function formatRelativeTime(dateStr) {
   if (!dateStr) return 'Never';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -127,14 +29,14 @@ function formatRelativeTime(dateStr) {
 
 function RevokeConfirm({ deviceLabel, onConfirm, onCancel, loading }) {
   return (
-    <div style={styles.confirmOverlay}>
-      <div style={styles.confirmModal}>
-        <div style={styles.confirmTitle}>Revoke device?</div>
-        <div style={styles.confirmText}>
+    <div className="dm-confirm-overlay">
+      <div className="dm-confirm-modal">
+        <div className="dm-confirm-title">Revoke device?</div>
+        <div className="dm-confirm-text">
           Remove <strong>{deviceLabel}</strong> from your account.
           It will no longer be able to access your account.
         </div>
-        <div style={styles.confirmActions}>
+        <div className="dm-confirm-actions">
           <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={loading}>
             Cancel
           </button>
@@ -216,24 +118,24 @@ export default function DeviceManagement({ token, currentDeviceId, identityKeyRe
 
   return (
     <>
-      <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--hush-text)', marginBottom: '8px', paddingBottom: '16px', borderBottom: '1px solid var(--hush-border)' }}>
+      <div className="ist-header">
         Devices
       </div>
 
-      {error && <div style={styles.errorMsg}>{error}</div>}
+      {error && <div className="dm-error">{error}</div>}
 
       {loading ? (
-        <div style={styles.emptyState}>Loading devices...</div>
+        <div className="dm-empty">Loading devices...</div>
       ) : devices.length === 0 ? (
-        <div style={styles.emptyState}>No devices registered.</div>
+        <div className="dm-empty">No devices registered.</div>
       ) : (
-        <table style={styles.table}>
+        <table className="dm-table">
           <thead>
             <tr>
-              <th style={styles.th}>Device</th>
-              <th style={styles.th}>Last active</th>
-              <th style={styles.th}>Linked</th>
-              <th style={{ ...styles.th, textAlign: 'right' }}></th>
+              <th className="dm-th">Device</th>
+              <th className="dm-th">Last active</th>
+              <th className="dm-th">Linked</th>
+              <th className="dm-th dm-th--right"></th>
             </tr>
           </thead>
           <tbody>
@@ -242,25 +144,25 @@ export default function DeviceManagement({ token, currentDeviceId, identityKeyRe
               const displayLabel = device.label || device.deviceId || 'Unknown device';
               return (
                 <tr key={device.deviceId}>
-                  <td style={styles.td}>
-                    <div style={styles.deviceName}>
+                  <td className="dm-td">
+                    <div className="dm-device-name">
                       <span>{displayLabel}</span>
-                      {isCurrent && <span style={styles.badge}>This device</span>}
+                      {isCurrent && <span className="dm-this-badge">This device</span>}
                     </div>
                   </td>
-                  <td style={styles.td}>
+                  <td className="dm-td">
                     {formatRelativeTime(device.lastSeen)}
                   </td>
-                  <td style={styles.td}>
+                  <td className="dm-td">
                     {device.certifiedAt
                       ? new Date(device.certifiedAt).toLocaleDateString()
                       : '\u2014'}
                   </td>
-                  <td style={{ ...styles.td, textAlign: 'right' }}>
+                  <td className="dm-td dm-td--right">
                     {!isCurrent && (
                       <button
                         type="button"
-                        style={styles.revokeBtn}
+                        className="dm-revoke-btn"
                         onClick={() => setConfirmRevoke({ deviceId: device.deviceId, label: displayLabel })}
                         title={`Revoke ${displayLabel}`}
                       >
@@ -275,7 +177,7 @@ export default function DeviceManagement({ token, currentDeviceId, identityKeyRe
         </table>
       )}
 
-      <div style={styles.actions}>
+      <div className="dm-actions">
         <button
           type="button"
           className="btn btn-secondary"

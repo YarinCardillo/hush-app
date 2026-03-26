@@ -3,71 +3,22 @@ import { QUALITY_PRESETS } from '../utils/constants';
 
 const EXIT_DURATION_MS = 200;
 
-const styles = {
-  title: {
-    fontSize: '1rem',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-    marginBottom: '4px',
-  },
-  option: (isHovered) => ({
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '14px 16px',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid transparent',
-    background: isHovered ? 'var(--hush-elevated)' : 'var(--hush-black)',
-    cursor: 'pointer',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-  }),
-  optionLeft: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-  },
-  optionLabel: {
-    fontSize: '0.9rem',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-  },
-  optionDetail: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-muted)',
-    fontFamily: 'var(--font-mono)',
-  },
-  cancelBtn: {
-    marginTop: '4px',
-    padding: '8px',
-    background: 'none',
-    border: 'none',
-    color: 'var(--hush-text-muted)',
-    fontSize: '0.8rem',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-  },
-};
-
 function OptionRow({ label, detail, recommendedLabel, onClick }) {
-  const [isHovered, setIsHovered] = useState(false);
-
   return (
     <div
-      style={styles.option(isHovered)}
+      className="qpm-option"
       onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
-      <div style={styles.optionLeft}>
-        <div style={styles.optionLabel}>
+      <div className="qpm-option-left">
+        <div className="qpm-option-label">
           {label}
           {recommendedLabel != null && (
-            <span style={{ fontWeight: 400, color: 'var(--hush-text-muted)', marginLeft: '6px' }}>
+            <span className="qpm-option-label-hint">
               ({recommendedLabel})
             </span>
           )}
         </div>
-        <div style={styles.optionDetail}>{detail}</div>
+        <div className="qpm-option-detail">{detail}</div>
       </div>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--hush-text-muted)" strokeWidth="2">
         <polyline points="9 18 15 12 9 6" />
@@ -126,7 +77,7 @@ export default function QualityPickerModal({
         className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={styles.title}>choose stream quality</div>
+        <div className="qpm-title">choose stream quality</div>
 
         {Object.entries(QUALITY_PRESETS).map(([key, preset]) => (
           <OptionRow
@@ -138,7 +89,7 @@ export default function QualityPickerModal({
           />
         ))}
 
-        <button style={styles.cancelBtn} onClick={handleClose}>
+        <button className="qpm-cancel-btn" onClick={handleClose}>
           cancel
         </button>
       </div>

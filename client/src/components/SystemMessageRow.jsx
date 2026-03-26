@@ -68,39 +68,17 @@ function buildMessageText(message, members) {
   }
 }
 
-const styles = {
-  row: (borderColor) => ({
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '8px',
-    padding: '8px 12px',
-    background: 'var(--hush-surface)',
-    borderLeft: `4px solid ${borderColor}`,
-    fontSize: '0.85rem',
-    lineHeight: '1.4',
-  }),
-  timestamp: {
-    fontSize: '0.7rem',
-    color: 'var(--hush-text-muted)',
-    fontFamily: 'var(--font-mono)',
-    whiteSpace: 'nowrap',
-    flexShrink: 0,
-    paddingTop: '2px',
-  },
-  text: {
-    color: 'var(--hush-text)',
-    wordBreak: 'break-word',
-  },
-};
-
 export default function SystemMessageRow({ message, members = [] }) {
   const config = EVENT_CONFIG[message.eventType] ?? DEFAULT_CONFIG;
   const text = buildMessageText(message, members);
 
   return (
-    <div style={styles.row(config.color)}>
-      <span style={styles.timestamp}>{formatTimestamp(message.createdAt)}</span>
-      <span style={styles.text}>{text}</span>
+    <div
+      className="sys-msg-row"
+      style={{ borderLeft: `4px solid ${config.color}` }}
+    >
+      <span className="sys-msg-timestamp">{formatTimestamp(message.createdAt)}</span>
+      <span className="sys-msg-text">{text}</span>
     </div>
   );
 }

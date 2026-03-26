@@ -31,22 +31,12 @@ function statusIndicator(state) {
 function DisconnectConfirm({ domain, serverCount, onConfirm, onCancel, loading }) {
   const label = serverCount === 1 ? '1 server' : `${serverCount} servers`;
   return (
-    <div style={{
-      marginTop: '8px',
-      padding: '12px 16px',
-      background: 'var(--hush-black)',
-      border: '1px solid var(--hush-danger)',
-    }}>
-      <div style={{
-        fontSize: '0.85rem',
-        color: 'var(--hush-text-secondary)',
-        marginBottom: '12px',
-        lineHeight: 1.6,
-      }}>
+    <div className="ist-confirm">
+      <div className="ist-confirm-text">
         Disconnect from <strong style={{ color: 'var(--hush-text)' }}>{domain}</strong>?
         This will leave all {label} on this instance.
       </div>
-      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+      <div className="ist-confirm-actions">
         <button
           type="button"
           className="btn btn-secondary"
@@ -105,42 +95,19 @@ function InstanceRow({ instanceUrl, state, onDisconnect }) {
   };
 
   return (
-    <div style={{
-      borderBottom: '1px solid var(--hush-border)',
-      paddingBottom: confirming ? '0' : '0',
-    }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        padding: '12px 0',
-      }}>
-        {/* Status dot */}
-        <div style={{
-          width: '8px',
-          height: '8px',
-          borderRadius: '50%',
-          background: indicator.color,
-          flexShrink: 0,
-        }} title={indicator.label} />
+    <div className="ist-row">
+      <div className="ist-row-inner">
+        {/* Status dot — color is dynamic per connection state */}
+        <div
+          className="ist-status-dot"
+          style={{ background: indicator.color }}
+          title={indicator.label}
+        />
 
         {/* Domain + server count */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontSize: '0.9rem',
-            fontWeight: 500,
-            color: 'var(--hush-text)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>
-            {domain}
-          </div>
-          <div style={{
-            fontSize: '0.75rem',
-            color: 'var(--hush-text-muted)',
-            marginTop: '2px',
-          }}>
+        <div className="ist-row-info">
+          <div className="ist-domain">{domain}</div>
+          <div className="ist-sub">
             {serverCount === 0
               ? 'No servers'
               : serverCount === 1
@@ -155,22 +122,8 @@ function InstanceRow({ instanceUrl, state, onDisconnect }) {
         {!confirming && (
           <button
             type="button"
+            className="ist-disconnect-btn"
             onClick={handleDisconnectClick}
-            style={{
-              padding: '6px 12px',
-              background: 'var(--hush-danger-ghost)',
-              color: 'var(--hush-danger)',
-              border: '1px solid transparent',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '0.75rem',
-              fontFamily: 'var(--font-sans)',
-              fontWeight: 500,
-              cursor: 'pointer',
-              flexShrink: 0,
-              transition: 'background var(--duration-fast) var(--ease-out)',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--hush-danger-ghost)'; }}
           >
             Disconnect
           </button>
@@ -209,39 +162,14 @@ export default function InstancesSettingsTab() {
 
   return (
     <>
-      <div style={{
-        fontSize: '1rem',
-        fontWeight: 600,
-        color: 'var(--hush-text)',
-        marginBottom: '24px',
-        paddingBottom: '16px',
-        borderBottom: '1px solid var(--hush-border)',
-      }}>
+      <div className="ist-header">
         My Instances
       </div>
 
       {entries.length === 0 ? (
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '48px 0',
-          gap: '12px',
-          textAlign: 'center',
-        }}>
-          <div style={{
-            fontSize: '1rem',
-            fontWeight: 500,
-            color: 'var(--hush-text-secondary)',
-          }}>
-            No instances connected
-          </div>
-          <div style={{
-            fontSize: '0.85rem',
-            color: 'var(--hush-text-muted)',
-            maxWidth: '280px',
-          }}>
+        <div className="ist-empty">
+          <div className="ist-empty-title">No instances connected</div>
+          <div className="ist-empty-hint">
             Join a server via invite link or create one to connect to an instance.
           </div>
         </div>
@@ -258,12 +186,7 @@ export default function InstancesSettingsTab() {
         </div>
       )}
 
-      <div style={{
-        marginTop: '24px',
-        fontSize: '0.75rem',
-        color: 'var(--hush-text-muted)',
-        lineHeight: 1.6,
-      }}>
+      <div className="ist-footer-note">
         Disconnecting from an instance leaves all servers on that instance and
         stops the connection. You can reconnect by joining a server via invite link.
       </div>
