@@ -10,15 +10,16 @@ export default function AppBackground() {
         position: 'fixed',
         inset: 0,
         pointerEvents: 'none',
-        zIndex: 0,
-        opacity: 0.035,
+        zIndex: 9,
+        opacity: 0.018,
+        mixBlendMode: 'overlay',
       }}
     >
       <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
         <filter id="hush-app-grain">
           <feTurbulence
             type="fractalNoise"
-            baseFrequency="1.20"
+            baseFrequency="0.72"
             numOctaves="4"
             stitchTiles="stitch"
           />
