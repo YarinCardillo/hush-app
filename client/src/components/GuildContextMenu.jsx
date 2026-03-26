@@ -73,41 +73,18 @@ export default function GuildContextMenu({
       ref={menuRef}
       role="menu"
       aria-label="Server actions"
-      style={{
-        position: 'fixed',
-        top: position.y,
-        left: position.x,
-        zIndex: 9999,
-        background: 'var(--hush-elevated)',
-        border: '1px solid var(--hush-border-hover)',
-        minWidth: 200,
-        padding: '4px 0',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-        fontFamily: 'var(--font-sans)',
-        fontSize: '0.85rem',
-      }}
+      className="gcm-context-menu dropdown-menu"
+      style={{ top: position.y, left: position.x }}
     >
       {/* Instance domain label */}
-      <div
-        style={{
-          padding: '6px 14px 4px',
-          fontSize: '0.7rem',
-          fontWeight: 600,
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-          color: 'var(--hush-text-muted)',
-          userSelect: 'none',
-        }}
-      >
+      <div className="gcm-context-instance-label">
         {instanceDomain}
         {isOffline && (
-          <span style={{ marginLeft: 6, color: 'var(--hush-danger)', fontSize: '0.65rem' }}>
-            offline
-          </span>
+          <span className="gcm-context-offline-tag">offline</span>
         )}
       </div>
 
-      <div style={{ height: 1, background: 'var(--hush-border)', margin: '4px 0' }} />
+      <div className="gcm-context-divider" />
 
       <ContextMenuItem
         onClick={wrap(() => onMarkRead?.(guild))}
@@ -134,7 +111,7 @@ export default function GuildContextMenu({
         label="Instance info"
       />
 
-      <div style={{ height: 1, background: 'var(--hush-border)', margin: '4px 0' }} />
+      <div className="gcm-context-divider" />
 
       <ContextMenuItem
         onClick={wrap(() => onLeave?.(guild))}
@@ -156,32 +133,7 @@ function ContextMenuItem({ onClick, label, danger = false, disabled = false }) {
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
-      onMouseEnter={(e) => {
-        if (!disabled) {
-          e.currentTarget.style.background = danger
-            ? 'var(--hush-danger-ghost)'
-            : 'var(--hush-hover)';
-        }
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'transparent';
-      }}
-      style={{
-        display: 'block',
-        width: '100%',
-        padding: '8px 14px',
-        background: 'transparent',
-        border: 'none',
-        textAlign: 'left',
-        cursor: disabled ? 'default' : 'pointer',
-        color: disabled
-          ? 'var(--hush-text-ghost)'
-          : danger
-          ? 'var(--hush-danger)'
-          : 'var(--hush-text)',
-        fontFamily: 'var(--font-sans)',
-        fontSize: '0.85rem',
-      }}
+      className={`gcm-context-item${danger ? ' gcm-context-item--danger' : ''}`}
     >
       {label}
     </button>
@@ -212,39 +164,16 @@ function MuteMenuItem({ guild, onMute, onClose }) {
         aria-expanded={open}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          width: '100%',
-          padding: '8px 14px',
-          background: open ? 'var(--hush-hover)' : 'transparent',
-          border: 'none',
-          textAlign: 'left',
-          cursor: 'pointer',
-          color: 'var(--hush-text)',
-          fontFamily: 'var(--font-sans)',
-          fontSize: '0.85rem',
-        }}
+        className={`gcm-mute-trigger${open ? ' gcm-mute-trigger--open' : ''}`}
       >
         Mute notifications
-        <span style={{ color: 'var(--hush-text-muted)', fontSize: '0.75rem' }}>▶</span>
+        <span style={{ color: 'var(--hush-text-muted)', fontSize: '0.75rem' }}>&#x25B6;</span>
       </button>
       {open && (
         <div
           onMouseEnter={() => setOpen(true)}
           onMouseLeave={() => setOpen(false)}
-          style={{
-            position: 'absolute',
-            left: '100%',
-            top: 0,
-            background: 'var(--hush-elevated)',
-            border: '1px solid var(--hush-border-hover)',
-            minWidth: 140,
-            padding: '4px 0',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-            zIndex: 10000,
-          }}
+          className="gcm-mute-submenu dropdown-menu"
         >
           {MUTE_DURATIONS.map(({ label, ms }) => (
             <ContextMenuItem

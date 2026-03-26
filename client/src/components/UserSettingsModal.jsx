@@ -83,207 +83,24 @@ if (typeof window !== 'undefined') {
   });
 }
 
-const styles = {
-  overlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0, 0, 0, 0.85)',
-    display: 'flex',
-    zIndex: 200,
-    opacity: 0,
-    transition: 'opacity var(--duration-normal) var(--ease-out)',
-  },
-  sidebar: {
-    width: '220px',
-    flexShrink: 0,
-    background: 'var(--hush-surface)',
-    borderRight: '1px solid var(--hush-border)',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '48px 8px 24px',
-    overflowY: 'auto',
-  },
-  sidebarGroup: {
-    marginBottom: '4px',
-  },
-  sidebarGroupLabel: {
-    fontSize: '0.68rem',
-    fontWeight: 700,
-    color: 'var(--hush-text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    padding: '8px 8px 4px',
-  },
-  sidebarItem: (active) => ({
-    display: 'block',
-    width: '100%',
-    textAlign: 'left',
-    padding: '7px 8px',
-    borderRadius: 'var(--radius-sm)',
-    background: active ? 'var(--hush-elevated)' : 'none',
-    border: 'none',
-    color: active ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
-    fontSize: '0.85rem',
-    fontFamily: 'var(--font-sans)',
-    fontWeight: active ? 500 : 400,
-    cursor: 'pointer',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-  }),
-  content: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: '48px 40px',
-    background: 'var(--hush-black)',
-    maxWidth: '680px',
-  },
-  closeBtn: {
-    position: 'fixed',
-    top: '16px',
-    right: '16px',
-    background: 'none',
-    border: '1px solid var(--hush-border)',
-    borderRadius: '50%',
-    width: '32px',
-    height: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'var(--hush-text-secondary)',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '1rem',
-    zIndex: 201,
-    flexShrink: 0,
-    transition: 'color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out)',
-  },
-  sectionTitle: {
-    fontSize: '1rem',
-    fontWeight: 600,
-    color: 'var(--hush-text)',
-    marginBottom: '24px',
-    paddingBottom: '16px',
-    borderBottom: '1px solid var(--hush-border)',
-  },
-  fieldLabel: {
-    display: 'block',
-    marginBottom: '6px',
-    fontSize: '0.75rem',
-    fontWeight: 600,
-    color: 'var(--hush-text-secondary)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-  },
-  fieldNote: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-muted)',
-    marginTop: '4px',
-  },
-  fieldRow: {
-    marginBottom: '24px',
-  },
-  fieldValue: {
-    fontSize: '0.9rem',
-    color: 'var(--hush-text)',
-    padding: '11px 14px',
-    background: 'var(--hush-black)',
-    border: '1px solid transparent',
-    borderRadius: 'var(--radius-md)',
-  },
-  dangerZone: {
-    marginTop: '40px',
-    padding: '16px 20px',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--hush-danger)',
-    background: 'color-mix(in srgb, var(--hush-danger) 6%, transparent)',
-  },
-  dangerTitle: {
-    fontSize: '0.75rem',
-    fontWeight: 700,
-    color: 'var(--hush-danger)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-    marginBottom: '16px',
-  },
-  dangerAction: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 0',
-    gap: '16px',
-  },
-  dangerActionText: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-text-secondary)',
-  },
-  // Appearance tab
-  modeGroup: {
-    display: 'flex',
-    gap: '8px',
-  },
-  modeBtn: (active) => ({
-    flex: 1,
-    padding: '12px 16px',
-    background: active ? 'var(--hush-elevated)' : 'var(--hush-black)',
-    border: active ? '1px solid var(--hush-amber-dim)' : '1px solid transparent',
-    borderRadius: 'var(--radius-md)',
-    color: active ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
-    fontSize: '0.85rem',
-    fontFamily: 'var(--font-sans)',
-    fontWeight: active ? 500 : 400,
-    cursor: 'pointer',
-    textAlign: 'center',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-  }),
-  // Audio/video tab
-  deviceSelect: {
-    width: '100%',
-    padding: '11px 14px',
-    background: 'var(--hush-black)',
-    border: '1px solid transparent',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--hush-text)',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '0.9rem',
-    outline: 'none',
-    cursor: 'pointer',
-    appearance: 'none',
-    transition: 'border-color var(--duration-fast) var(--ease-out)',
-  },
-};
 
 // ─── Logout Confirmation Modal ────────────────────────────
 
 function LogoutConfirmModal({ onConfirm, onCancel, loading }) {
   return createPortal(
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,0.85)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 400,
-    }}>
-      <div style={{
-        background: 'var(--hush-surface)',
-        border: '1px solid transparent',
-        padding: '28px',
-        width: '100%',
-        maxWidth: '400px',
-      }}>
-        <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--hush-text)', marginBottom: '12px' }}>
-          Sign out and wipe data?
-        </div>
-        <div style={{ fontSize: '0.85rem', color: 'var(--hush-text-secondary)', marginBottom: '8px', lineHeight: 1.6 }}>
+    <div className="logout-confirm-overlay">
+      <div className="logout-confirm-card">
+        <div className="logout-confirm-title">Sign out and wipe data?</div>
+        <div className="logout-confirm-body">
           This will permanently delete all local data on this device,
           including your message history, encryption keys, and session.
           Messages will become unreadable after signing out.
         </div>
-        <div style={{ fontSize: '0.85rem', color: 'var(--hush-danger)', marginBottom: '24px', lineHeight: 1.6 }}>
+        <div className="logout-confirm-warning">
           You will need your 12-word recovery phrase to sign back in.
           This action cannot be undone.
         </div>
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        <div className="logout-confirm-actions">
           <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={loading}>
             Stay signed in
           </button>
@@ -330,56 +147,43 @@ function AccountTab() {
 
   return (
     <>
-      <div style={styles.sectionTitle}>Account</div>
+      <div className="settings-section-title">Account</div>
 
-      <div style={styles.fieldRow}>
-        <label style={styles.fieldLabel}>Display name</label>
-        <div style={styles.fieldValue}>{user?.displayName || 'Anonymous'}</div>
+      <div className="settings-field-row">
+        <label className="settings-field-label">Display name</label>
+        <div className="settings-field-value">{user?.displayName || 'Anonymous'}</div>
       </div>
 
-      <div style={styles.fieldRow}>
-        <label style={styles.fieldLabel}>Username</label>
-        <div style={styles.fieldValue}>{user?.username || '\u2014'}</div>
+      <div className="settings-field-row">
+        <label className="settings-field-label">Username</label>
+        <div className="settings-field-value">{user?.username || '\u2014'}</div>
       </div>
 
-      <div style={styles.fieldRow}>
-        <label style={styles.fieldLabel}>Vault timeout</label>
+      <div className="settings-field-row">
+        <label className="settings-field-label">Vault timeout</label>
         <select
           value={vaultTimeout}
           onChange={(e) => handleVaultTimeoutChange(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '11px 14px',
-            background: 'var(--hush-black)',
-            border: '1px solid transparent',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--hush-text)',
-            fontFamily: 'var(--font-sans)',
-            fontSize: '0.9rem',
-            outline: 'none',
-            cursor: 'pointer',
-            appearance: 'none',
-            transition: 'border-color var(--duration-fast) var(--ease-out)',
-          }}
+          className="settings-device-select"
         >
           {VAULT_TIMEOUT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
         {vaultTimeout === 'never' && (
-          <div style={{ ...styles.fieldNote, color: 'var(--hush-danger)' }}>
+          <div className="settings-field-note" style={{ color: 'var(--hush-danger)' }}>
             Your key will remain decrypted in memory.
           </div>
         )}
-        <div style={styles.fieldNote}>
+        <div className="settings-field-note">
           How long before your vault locks and requires PIN re-entry.
         </div>
       </div>
 
-      <div style={styles.dangerZone}>
-        <div style={styles.dangerTitle}>Session</div>
-        <div style={styles.dangerAction}>
-          <span style={styles.dangerActionText}>
+      <div className="settings-danger-zone">
+        <div className="settings-danger-title">Session</div>
+        <div className="settings-danger-action">
+          <span className="settings-danger-action-text">
             Sign out and permanently wipe all local data.
           </span>
           <button
@@ -433,11 +237,11 @@ function AppearanceTab() {
 
   return (
     <>
-      <div style={styles.sectionTitle}>Appearance</div>
+      <div className="settings-section-title">Appearance</div>
 
-      <div style={styles.fieldRow}>
-        <label style={styles.fieldLabel}>Theme mode</label>
-        <div style={styles.modeGroup}>
+      <div className="settings-field-row">
+        <label className="settings-field-label">Theme mode</label>
+        <div className="settings-mode-group">
           {[
             { key: 'system', label: 'System' },
             { key: 'dark', label: 'Dark' },
@@ -446,14 +250,14 @@ function AppearanceTab() {
             <button
               key={opt.key}
               type="button"
-              style={styles.modeBtn(mode === opt.key)}
+              className={`settings-mode-btn${mode === opt.key ? ' settings-mode-btn--active' : ''}`}
               onClick={() => handleModeChange(opt.key)}
             >
               {opt.label}
             </button>
           ))}
         </div>
-        <div style={styles.fieldNote}>
+        <div className="settings-field-note">
           {mode === 'system'
             ? 'Follows your operating system preference.'
             : mode === 'dark'
@@ -463,14 +267,14 @@ function AppearanceTab() {
       </div>
 
       {showDarkPicker && (
-        <div style={styles.fieldRow}>
-          <label style={styles.fieldLabel}>Dark theme</label>
-          <div style={styles.modeGroup}>
+        <div className="settings-field-row">
+          <label className="settings-field-label">Dark theme</label>
+          <div className="settings-mode-group">
             {DARK_THEMES.map((t) => (
               <button
                 key={t.key}
                 type="button"
-                style={styles.modeBtn(darkTheme === t.key)}
+                className={`settings-mode-btn${darkTheme === t.key ? ' settings-mode-btn--active' : ''}`}
                 onClick={() => handleDarkThemeChange(t.key)}
               >
                 {t.label}
@@ -481,14 +285,14 @@ function AppearanceTab() {
       )}
 
       {showLightPicker && (
-        <div style={styles.fieldRow}>
-          <label style={styles.fieldLabel}>Light theme</label>
-          <div style={styles.modeGroup}>
+        <div className="settings-field-row">
+          <label className="settings-field-label">Light theme</label>
+          <div className="settings-mode-group">
             {LIGHT_THEMES.map((t) => (
               <button
                 key={t.key}
                 type="button"
-                style={styles.modeBtn(lightTheme === t.key)}
+                className={`settings-mode-btn${lightTheme === t.key ? ' settings-mode-btn--active' : ''}`}
                 onClick={() => handleLightThemeChange(t.key)}
               >
                 {t.label}
@@ -519,10 +323,10 @@ function AudioVideoTab() {
 
   return (
     <>
-      <div style={styles.sectionTitle}>Audio & Video</div>
+      <div className="settings-section-title">Audio & Video</div>
 
-      <div style={styles.fieldRow}>
-        <label style={styles.fieldLabel}>Microphone</label>
+      <div className="settings-field-row">
+        <label className="settings-field-label">Microphone</label>
         {audioDevices.length === 0 || !hasAudioLabels ? (
           <button
             type="button"
@@ -533,7 +337,7 @@ function AudioVideoTab() {
           </button>
         ) : (
           <select
-            style={styles.deviceSelect}
+            className="settings-device-select"
             value={selectedMicId || ''}
             onChange={(e) => selectMic(e.target.value)}
           >
@@ -547,8 +351,8 @@ function AudioVideoTab() {
         )}
       </div>
 
-      <div style={styles.fieldRow}>
-        <label style={styles.fieldLabel}>Webcam</label>
+      <div className="settings-field-row">
+        <label className="settings-field-label">Webcam</label>
         {videoDevices.length === 0 || !hasVideoLabels ? (
           <button
             type="button"
@@ -559,7 +363,7 @@ function AudioVideoTab() {
           </button>
         ) : (
           <select
-            style={styles.deviceSelect}
+            className="settings-device-select"
             value={selectedWebcamId || ''}
             onChange={(e) => selectWebcam(e.target.value)}
           >
@@ -625,40 +429,16 @@ export default function UserSettingsModal({ onClose }) {
 
   return createPortal(
     <div
-      style={{
-        ...styles.overlay,
-        ...(isOpen ? { opacity: 1 } : {}),
-        ...(isMobile ? { flexDirection: 'column' } : {}),
-      }}
+      className={`settings-overlay${isOpen ? ' settings-overlay--open' : ''}${isMobile ? ' settings-overlay--mobile' : ''}`}
       onClick={handleOverlayClick}
     >
       {isMobile ? (
-        <div style={{
-          display: 'flex',
-          gap: '2px',
-          background: 'var(--hush-surface)',
-          padding: '8px 8px 0',
-          flexShrink: 0,
-          borderBottom: '1px solid var(--hush-border)',
-          overflowX: 'auto',
-        }}>
+        <div className="settings-mobile-tab-bar">
           {tabs.map((t) => (
             <button
               key={t.key}
               type="button"
-              style={{
-                flex: '0 0 auto',
-                padding: '8px 8px',
-                fontSize: '0.72rem',
-                fontFamily: 'var(--font-sans)',
-                fontWeight: tab === t.key ? 600 : 400,
-                color: tab === t.key ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
-                background: tab === t.key ? 'var(--hush-elevated)' : 'none',
-                border: 'none',
-                borderBottom: tab === t.key ? '2px solid var(--hush-amber)' : '2px solid transparent',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
+              className={`settings-mobile-tab-btn${tab === t.key ? ' settings-mobile-tab-btn--active' : ''}`}
               onClick={() => setTab(t.key)}
             >
               {t.label}
@@ -666,14 +446,14 @@ export default function UserSettingsModal({ onClose }) {
           ))}
         </div>
       ) : (
-        <div style={styles.sidebar}>
-          <div style={styles.sidebarGroup}>
-            <div style={styles.sidebarGroupLabel}>User Settings</div>
+        <div className="settings-sidebar">
+          <div className="settings-sidebar-group">
+            <div className="settings-sidebar-group-label">User Settings</div>
             {tabs.map((t) => (
               <button
                 key={t.key}
                 type="button"
-                style={styles.sidebarItem(tab === t.key)}
+                className={`settings-sidebar-item${tab === t.key ? ' settings-sidebar-item--active' : ''}`}
                 onClick={() => setTab(t.key)}
               >
                 {t.label}
@@ -683,10 +463,7 @@ export default function UserSettingsModal({ onClose }) {
         </div>
       )}
 
-      <div style={{
-        ...styles.content,
-        ...(isMobile ? { padding: '20px 16px', maxWidth: 'none' } : {}),
-      }}>
+      <div className={`settings-content${isMobile ? ' settings-content--mobile' : ''}`}>
         {tab === TAB_ACCOUNT && <AccountTab />}
         {tab === TAB_APPEARANCE && <AppearanceTab />}
         {tab === TAB_AUDIO_VIDEO && <AudioVideoTab />}
@@ -696,7 +473,7 @@ export default function UserSettingsModal({ onClose }) {
 
       <button
         type="button"
-        style={styles.closeBtn}
+        className="settings-close-btn"
         onClick={onClose}
         title="Close (Esc)"
       >

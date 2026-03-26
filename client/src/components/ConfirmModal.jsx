@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import modalStyles from './modalStyles';
 
 /**
  * Generic confirmation dialog.
@@ -32,13 +31,13 @@ export default function ConfirmModal({ title, message, confirmLabel = 'Confirm',
         className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={modalStyles.title}>{title}</div>
+        <div className="modal-title">{title}</div>
         {message && (
-          <p style={{ color: 'var(--hush-text-secondary)', fontSize: '0.85rem', margin: '8px 0 0', lineHeight: 1.5, overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+          <p className="confirm-modal-message">
             {message}
           </p>
         )}
-        <div style={{ ...modalStyles.actions, marginTop: '20px' }}>
+        <div className="modal-actions confirm-modal-actions">
           <button type="button" className="btn btn-secondary" onClick={onCancel}>
             Cancel
           </button>

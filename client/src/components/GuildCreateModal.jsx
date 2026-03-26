@@ -9,7 +9,6 @@ import { encryptGuildMetadata, toBase64, importMetadataKey } from '../lib/guildM
 import { getDeviceId } from '../hooks/useAuth';
 import { useAuth } from '../contexts/AuthContext';
 import { useInstanceContext } from '../contexts/InstanceContext';
-import modalStyles from './modalStyles';
 
 // ── Instance creation policy annotations ─────────────────────────────────────
 
@@ -242,11 +241,11 @@ export default function GuildCreateModal({ getToken, onClose, onCreated, activeI
         className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={modalStyles.title}>Create a server</div>
-        <form style={modalStyles.form} onSubmit={handleSubmit}>
+        <div className="modal-title">Create a server</div>
+        <form className="modal-form" onSubmit={handleSubmit}>
           {/* Server name */}
           <div>
-            <label htmlFor="guild-name" style={modalStyles.fieldLabel}>Server name</label>
+            <label htmlFor="guild-name" className="modal-field-label">Server name</label>
             <input
               id="guild-name"
               name="guild-name"
@@ -263,7 +262,7 @@ export default function GuildCreateModal({ getToken, onClose, onCreated, activeI
 
           {/* Instance picker — ALWAYS visible, even with 1 instance */}
           <div>
-            <label htmlFor="guild-instance" style={modalStyles.fieldLabel}>Instance</label>
+            <label htmlFor="guild-instance" className="modal-field-label">Instance</label>
             {connectedInstances.length === 0 ? (
               <div style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', padding: '8px 0' }}>
                 No instances connected.
@@ -290,13 +289,7 @@ export default function GuildCreateModal({ getToken, onClose, onCreated, activeI
 
           {/* Policy annotation */}
           {annotation && (
-            <div style={{
-              padding: '8px 12px',
-              background: policyDisabled ? 'var(--hush-danger-ghost)' : 'var(--hush-amber-ghost)',
-              color: policyDisabled ? 'var(--hush-danger)' : 'var(--hush-amber)',
-              fontSize: '0.8rem',
-              borderRadius: 0,
-            }}>
+            <div className={`gcm-policy-note${policyDisabled ? ' gcm-policy-note--disabled' : ' gcm-policy-note--request'}`}>
               {annotation}
             </div>
           )}
@@ -304,18 +297,12 @@ export default function GuildCreateModal({ getToken, onClose, onCreated, activeI
           {/* Template picker — only shown when multiple templates exist */}
           {templatesLoaded && templates.length > 1 && (
             <div style={{ marginTop: '4px' }}>
-              <label style={modalStyles.fieldLabel}>Template</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+              <label className="modal-field-label">Template</label>
+              <div className="gcm-template-list">
                 {templates.map(tmpl => (
                   <label
                     key={tmpl.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '8px',
-                      padding: '8px 10px', borderRadius: 'var(--radius-md)',
-                      background: selectedTemplateId === tmpl.id ? 'var(--hush-bg-hover)' : 'transparent',
-                      border: selectedTemplateId === tmpl.id ? '1px solid var(--hush-live)' : '1px solid var(--hush-border)',
-                      cursor: 'pointer', transition: 'all 0.15s ease',
-                    }}
+                    className={`gcm-template-item${selectedTemplateId === tmpl.id ? ' gcm-template-item--selected' : ''}`}
                   >
                     <input
                       type="radio"
@@ -326,11 +313,11 @@ export default function GuildCreateModal({ getToken, onClose, onCreated, activeI
                       style={{ accentColor: 'var(--hush-live)' }}
                     />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 500, fontSize: '0.85rem', color: 'var(--hush-text-primary)' }}>
+                      <div className="gcm-template-name">
                         {tmpl.name}
-                        {tmpl.isDefault && <span style={{ fontSize: '0.7rem', color: 'var(--hush-text-ghost)', marginLeft: '6px' }}>(default)</span>}
+                        {tmpl.isDefault && <span className="gcm-template-default-tag">(default)</span>}
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--hush-text-ghost)' }}>
+                      <div className="gcm-template-channels">
                         {tmpl.channels.filter(c => c.type !== 'system').map(c => c.type === 'voice' ? `${c.name} (voice)` : `#${c.name}`).join(', ') || 'system only'}
                       </div>
                     </div>
@@ -340,8 +327,8 @@ export default function GuildCreateModal({ getToken, onClose, onCreated, activeI
             </div>
           )}
 
-          {error && <div style={modalStyles.error}>{error}</div>}
-          <div style={modalStyles.actions}>
+          {error && <div className="modal-error">{error}</div>}
+          <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>

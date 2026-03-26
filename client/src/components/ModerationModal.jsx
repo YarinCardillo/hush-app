@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import modalStyles from './modalStyles';
 
 /** Duration presets shared by ban and mute actions. `value` is seconds; null = permanent. */
 const DURATION_PRESETS = [
@@ -24,29 +23,6 @@ const ACTION_LABELS = {
   changeRole: 'Change Role',
 };
 
-const selectStyles = {
-  width: '100%',
-  padding: '9px 12px',
-  background: 'var(--hush-black)',
-  border: '1px solid transparent',
-  color: 'var(--hush-text)',
-  fontFamily: 'var(--font-sans)',
-  fontSize: '0.9rem',
-  cursor: 'pointer',
-};
-
-const textareaStyles = {
-  width: '100%',
-  padding: '9px 12px',
-  background: 'var(--hush-black)',
-  border: '1px solid transparent',
-  color: 'var(--hush-text)',
-  fontFamily: 'var(--font-sans)',
-  fontSize: '0.9rem',
-  resize: 'vertical',
-  minHeight: '72px',
-  boxSizing: 'border-box',
-};
 
 /**
  * Modal dialog for executing a moderation action.
@@ -111,19 +87,19 @@ export default function ModerationModal({ action, member, onConfirm, onClose }) 
         className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={modalStyles.title}>
+        <div className="modal-title">
           {actionLabel} {displayName}
         </div>
 
-        <div style={modalStyles.form}>
+        <div className="modal-form">
           {/* Reason — required for all actions */}
           <div>
-            <label htmlFor="mod-reason" style={modalStyles.fieldLabel}>
+            <label htmlFor="mod-reason" className="modal-field-label">
               Reason (required)
             </label>
             <textarea
               id="mod-reason"
-              style={textareaStyles}
+              className="mod-textarea"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Describe the reason for this action"
@@ -134,12 +110,12 @@ export default function ModerationModal({ action, member, onConfirm, onClose }) 
           {/* Duration selector for ban / mute */}
           {hasDuration && (
             <div>
-              <label htmlFor="mod-duration" style={modalStyles.fieldLabel}>
+              <label htmlFor="mod-duration" className="modal-field-label">
                 Duration
               </label>
               <select
                 id="mod-duration"
-                style={selectStyles}
+                className="mod-select"
                 value={duration === null ? 'permanent' : String(duration)}
                 onChange={(e) => {
                   const v = e.target.value;
@@ -159,12 +135,12 @@ export default function ModerationModal({ action, member, onConfirm, onClose }) 
           {/* Role selector for changeRole */}
           {hasRoleSelector && (
             <div>
-              <label htmlFor="mod-role" style={modalStyles.fieldLabel}>
+              <label htmlFor="mod-role" className="modal-field-label">
                 New Role
               </label>
               <select
                 id="mod-role"
-                style={selectStyles}
+                className="mod-select"
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value)}
                 disabled={submitting}
@@ -178,10 +154,10 @@ export default function ModerationModal({ action, member, onConfirm, onClose }) 
             </div>
           )}
 
-          {error && <p style={modalStyles.error}>{error}</p>}
+          {error && <p className="modal-error">{error}</p>}
         </div>
 
-        <div style={{ ...modalStyles.actions, marginTop: '20px' }}>
+        <div className="modal-actions confirm-modal-actions">
           <button
             type="button"
             className="btn btn-secondary"

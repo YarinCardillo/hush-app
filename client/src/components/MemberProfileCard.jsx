@@ -3,24 +3,10 @@ import { createPortal } from 'react-dom';
 
 /** Badge styles per role, following the design-system amber/muted palette. */
 const ROLE_BADGE_STYLES = {
-  owner: {
-    background: 'var(--hush-amber-ghost)',
-    color: 'var(--hush-amber)',
-  },
-  admin: {
-    background: 'var(--hush-amber-ghost)',
-    color: 'var(--hush-amber)',
-  },
-  mod: {
-    background: 'var(--hush-surface)',
-    color: 'var(--hush-text-secondary)',
-    border: '1px solid var(--hush-border)',
-  },
-  member: {
-    background: 'var(--hush-surface)',
-    color: 'var(--hush-text-muted)',
-    border: '1px solid var(--hush-border)',
-  },
+  owner: { background: 'var(--hush-amber-ghost)', color: 'var(--hush-amber)' },
+  admin: { background: 'var(--hush-amber-ghost)', color: 'var(--hush-amber)' },
+  mod: { background: 'var(--hush-surface)', color: 'var(--hush-text-secondary)', border: '1px solid var(--hush-border)' },
+  member: { background: 'var(--hush-surface)', color: 'var(--hush-text-muted)', border: '1px solid var(--hush-border)' },
 };
 
 const CARD_WIDTH = 220;
@@ -42,51 +28,6 @@ function formatJoinDate(dateStr) {
   return `Joined ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 }
 
-const styles = {
-  card: (pos) => ({
-    position: 'fixed',
-    left: pos.left,
-    top: pos.top,
-    width: CARD_WIDTH,
-    background: 'var(--hush-elevated)',
-    border: '1px solid var(--hush-border)',
-    padding: '16px',
-    zIndex: 500,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-  }),
-  displayName: {
-    fontSize: '1rem',
-    fontWeight: 500,
-    color: 'var(--hush-text)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  username: {
-    fontSize: '0.8rem',
-    color: 'var(--hush-text-muted)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  badge: (role) => ({
-    display: 'inline-block',
-    fontSize: '0.65rem',
-    fontWeight: 500,
-    padding: '2px 6px',
-    letterSpacing: '0.06em',
-    textTransform: 'uppercase',
-    ...(ROLE_BADGE_STYLES[role] ?? ROLE_BADGE_STYLES.member),
-  }),
-  joinDate: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-muted)',
-    marginTop: '4px',
-  },
-};
 
 /**
  * Floating profile card that appears on left-click of a member row.
@@ -131,32 +72,27 @@ export default function MemberProfileCard({ member, position, onClose, onSendMes
   const canSendMessage = onSendMessage && memberId && memberId !== currentUserId;
 
   return createPortal(
-    <div ref={cardRef} style={styles.card(pos)} role="dialog" aria-label="Member profile">
-      <div style={styles.displayName}>{member.displayName || member.username || 'Unknown'}</div>
+    <div
+      ref={cardRef}
+      className="mpc-card"
+      role="dialog"
+      aria-label="Member profile"
+      style={{ position: 'fixed', left: pos.left, top: pos.top, width: CARD_WIDTH }}
+    >
+      <div className="mpc-display-name">{member.displayName || member.username || 'Unknown'}</div>
       {member.username && (
-        <div style={styles.username}>@{member.username}</div>
+        <div className="mpc-username">@{member.username}</div>
       )}
-      <span style={styles.badge(role)}>{role}</span>
-      {joinDate && <div style={styles.joinDate}>{joinDate}</div>}
+      <span className="mpc-badge" style={ROLE_BADGE_STYLES[role] ?? ROLE_BADGE_STYLES.member}>{role}</span>
+      {joinDate && <div className="mpc-join-date">{joinDate}</div>}
       {canSendMessage && (
         <button
           type="button"
+          className="mpc-send-btn"
           data-testid="send-message-btn"
           onClick={() => {
             onSendMessage(member);
             onClose();
-          }}
-          style={{
-            marginTop: '8px',
-            padding: '6px 12px',
-            width: '100%',
-            background: 'var(--hush-amber)',
-            color: 'var(--hush-text)',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.8rem',
-            fontWeight: 500,
-            textAlign: 'center',
           }}
         >
           Send Message

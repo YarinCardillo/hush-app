@@ -21,31 +21,6 @@ function clampPosition(x, y, itemCount) {
   };
 }
 
-const styles = {
-  menu: (pos) => ({
-    position: 'fixed',
-    left: pos.left,
-    top: pos.top,
-    width: MENU_WIDTH,
-    background: 'var(--hush-elevated)',
-    border: '1px solid var(--hush-border)',
-    zIndex: 600,
-    padding: '4px 0',
-    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-  }),
-  item: (danger = false) => ({
-    display: 'block',
-    width: '100%',
-    padding: '6px 12px',
-    fontSize: '0.85rem',
-    fontFamily: 'var(--font-sans)',
-    textAlign: 'left',
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    color: danger ? 'var(--hush-danger)' : 'var(--hush-text)',
-  }),
-};
 
 /**
  * Resolves which mod actions should appear in the context menu.
@@ -107,15 +82,19 @@ export default function MemberContextMenu({ x, y, member, myRole, onAction, onCl
   if (actions.length === 0) return null;
 
   return createPortal(
-    <div ref={menuRef} style={styles.menu(pos)} role="menu" aria-label="Member actions">
+    <div
+      ref={menuRef}
+      className="mcc-menu dropdown-menu"
+      role="menu"
+      aria-label="Member actions"
+      style={{ position: 'fixed', left: pos.left, top: pos.top, width: MENU_WIDTH }}
+    >
       {actions.map((a) => (
         <button
           key={a.id}
           type="button"
-          style={styles.item(a.id === 'kick' || a.id === 'ban')}
+          className={`mcc-item${a.id === 'kick' || a.id === 'ban' ? ' mcc-item--danger' : ''}`}
           role="menuitem"
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-hover)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
           onClick={() => {
             onAction(a.id);
             onClose();

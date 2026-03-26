@@ -9,400 +9,17 @@ const TAB_MEMBERS = 'members';
 const TAB_AUDIT_LOG = 'audit_log';
 const TAB_BANS_MUTES = 'bans_mutes';
 
-const styles = {
-  overlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0, 0, 0, 0.85)',
-    display: 'flex',
-    zIndex: 200,
-    opacity: 0,
-    transition: 'opacity var(--duration-normal) var(--ease-out)',
-  },
-  sidebar: {
-    width: '220px',
-    flexShrink: 0,
-    background: 'var(--hush-surface)',
-    borderRight: '1px solid var(--hush-border)',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '48px 8px 24px',
-    overflowY: 'auto',
-  },
-  sidebarGroup: {
-    marginBottom: '4px',
-  },
-  sidebarGroupLabel: {
-    fontSize: '0.68rem',
-    fontWeight: 700,
-    color: 'var(--hush-text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    padding: '8px 8px 4px',
-  },
-  sidebarItem: (active) => ({
-    display: 'block',
-    width: '100%',
-    textAlign: 'left',
-    padding: '7px 8px',
-    borderRadius: 'var(--radius-sm)',
-    background: active ? 'var(--hush-elevated)' : 'none',
-    border: 'none',
-    color: active ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
-    fontSize: '0.85rem',
-    fontFamily: 'var(--font-sans)',
-    fontWeight: active ? 500 : 400,
-    cursor: 'pointer',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-  }),
-  sidebarDivider: {
-    height: '1px',
-    background: 'var(--hush-border)',
-    margin: '8px 8px',
-  },
-  content: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: '48px 40px',
-    background: 'var(--hush-black)',
-    maxWidth: '740px',
-  },
-  closeBtn: {
-    position: 'fixed',
-    top: '16px',
-    right: '16px',
-    background: 'none',
-    border: '1px solid var(--hush-border)',
-    borderRadius: '50%',
-    width: '32px',
-    height: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'var(--hush-text-secondary)',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '1rem',
-    zIndex: 201,
-    flexShrink: 0,
-    transition: 'color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out)',
-  },
-  sectionTitle: {
-    fontSize: '1rem',
-    fontWeight: 600,
-    color: 'var(--hush-text)',
-    marginBottom: '24px',
-    paddingBottom: '16px',
-    borderBottom: '1px solid var(--hush-border)',
-  },
-  fieldLabel: {
-    display: 'block',
-    marginBottom: '6px',
-    fontSize: '0.75rem',
-    fontWeight: 600,
-    color: 'var(--hush-text-secondary)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-  },
-  fieldNote: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-muted)',
-    marginTop: '4px',
-  },
-  fieldRow: {
-    marginBottom: '24px',
-  },
-  saveRow: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '24px',
-  },
-  dangerZone: {
-    marginTop: '40px',
-    padding: '16px 20px',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--hush-danger)',
-    background: 'color-mix(in srgb, var(--hush-danger) 6%, transparent)',
-  },
-  dangerTitle: {
-    fontSize: '0.75rem',
-    fontWeight: 700,
-    color: 'var(--hush-danger)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-    marginBottom: '16px',
-  },
-  dangerAction: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 0',
-    gap: '16px',
-  },
-  dangerActionText: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-text-secondary)',
-  },
-  memberList: {
-    marginTop: '8px',
-  },
-  memberRow: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '10px 0',
-    borderBottom: '1px solid var(--hush-border)',
-    gap: '12px',
-  },
-  memberAvatar: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '50%',
-    background: 'var(--hush-elevated)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '0.8rem',
-    fontWeight: 700,
-    color: 'var(--hush-text)',
-    flexShrink: 0,
-    textTransform: 'uppercase',
-  },
-  memberName: {
-    flex: 1,
-    fontSize: '0.85rem',
-    color: 'var(--hush-text)',
-    fontWeight: 500,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  memberRoleBadge: (isAdmin) => ({
-    fontSize: '0.68rem',
-    fontWeight: 700,
-    padding: '2px 7px',
-    borderRadius: 'var(--radius-sm)',
-    background: isAdmin
-      ? 'color-mix(in srgb, var(--hush-amber) 15%, transparent)'
-      : 'var(--hush-elevated)',
-    color: isAdmin ? 'var(--hush-amber)' : 'var(--hush-text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    flexShrink: 0,
-  }),
-  errorMsg: {
-    fontSize: '0.8rem',
-    color: 'var(--hush-danger)',
-    marginTop: '8px',
-  },
-  successMsg: {
-    fontSize: '0.8rem',
-    color: 'var(--hush-live)',
-    marginTop: '8px',
-  },
-};
 
-// ── Audit Log styles ───────────────────────────────────────────────
 
-const auditStyles = {
-  filterBar: {
-    display: 'flex',
-    gap: '10px',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    marginBottom: '16px',
-  },
-  select: {
-    padding: '6px 10px',
-    fontSize: '0.82rem',
-    background: 'var(--hush-black)',
-    border: '1px solid var(--hush-border)',
-    borderRadius: '4px',
-    color: 'var(--hush-text)',
-    cursor: 'pointer',
-    minWidth: '0',
-  },
-  input: {
-    flex: 1,
-    minWidth: '0',
-    padding: '6px 10px',
-    fontSize: '0.82rem',
-    background: 'var(--hush-black)',
-    border: '1px solid var(--hush-border)',
-    borderRadius: '4px',
-    color: 'var(--hush-text)',
-    outline: 'none',
-  },
-  tableWrap: {
-    overflowX: 'auto',
-    WebkitOverflowScrolling: 'touch',
-  },
-  table: {
-    width: '100%',
-    minWidth: '520px',
-    borderCollapse: 'collapse',
-    fontSize: '0.8rem',
-  },
-  th: {
-    textAlign: 'left',
-    padding: '8px 10px',
-    fontSize: '0.72rem',
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    letterSpacing: '0.07em',
-    color: 'var(--hush-text-secondary)',
-    borderBottom: '1px solid var(--hush-border)',
-    whiteSpace: 'nowrap',
-  },
-  td: (even) => ({
-    padding: '8px 10px',
-    color: 'var(--hush-text)',
-    verticalAlign: 'top',
-    background: even ? 'color-mix(in srgb, var(--hush-surface) 50%, transparent)' : 'transparent',
-    borderBottom: '1px solid color-mix(in srgb, var(--hush-border) 40%, transparent)',
-  }),
-  loadMoreBtn: {
-    display: 'block',
-    width: '100%',
-    padding: '8px 0',
-    marginTop: '8px',
-    background: 'none',
-    border: '1px solid var(--hush-border)',
-    borderRadius: '4px',
-    color: 'var(--hush-text-secondary)',
-    fontSize: '0.82rem',
-    cursor: 'pointer',
-  },
-  empty: {
-    textAlign: 'center',
-    color: 'var(--hush-text-muted)',
-    fontSize: '0.85rem',
-    padding: '32px 0',
-  },
-};
-
-const ACTION_BADGE_STYLE = (action) => {
+function getAuditBadgeClass(action) {
   const dangerActions = ['ban', 'kick', 'mute'];
   const safeActions = ['unban', 'unmute'];
-  let bg = 'color-mix(in srgb, var(--hush-text-muted) 20%, transparent)';
-  let color = 'var(--hush-text-secondary)';
-  if (dangerActions.includes(action)) {
-    bg = 'color-mix(in srgb, var(--hush-danger) 18%, transparent)';
-    color = 'var(--hush-danger)';
-  } else if (safeActions.includes(action)) {
-    bg = 'color-mix(in srgb, var(--hush-live) 18%, transparent)';
-    color = 'var(--hush-live)';
-  } else if (action === 'message_delete') {
-    bg = 'color-mix(in srgb, var(--hush-amber) 18%, transparent)';
-    color = 'var(--hush-amber)';
-  }
-  return {
-    display: 'inline-block',
-    padding: '2px 7px',
-    borderRadius: '4px',
-    fontSize: '0.72rem',
-    fontWeight: 600,
-    background: bg,
-    color,
-    whiteSpace: 'nowrap',
-  };
-};
+  if (dangerActions.includes(action)) return 'settings-audit-badge settings-audit-badge--danger';
+  if (safeActions.includes(action)) return 'settings-audit-badge settings-audit-badge--safe';
+  if (action === 'message_delete') return 'settings-audit-badge settings-audit-badge--warn';
+  return 'settings-audit-badge';
+}
 
-// ── Ban/Mute styles ────────────────────────────────────────────────
-
-const banMuteStyles = {
-  tabBar: {
-    display: 'flex',
-    gap: '2px',
-    borderBottom: '1px solid var(--hush-border)',
-    marginBottom: '16px',
-  },
-  tab: (active) => ({
-    padding: '8px 16px',
-    fontSize: '0.85rem',
-    fontWeight: active ? 600 : 400,
-    color: active ? 'var(--hush-accent, var(--hush-amber))' : 'var(--hush-text-secondary)',
-    background: 'none',
-    border: 'none',
-    borderBottom: active ? '2px solid var(--hush-accent, var(--hush-amber))' : '2px solid transparent',
-    cursor: 'pointer',
-    marginBottom: '-1px',
-    fontFamily: 'var(--font-sans)',
-  }),
-  row: {
-    background: 'var(--hush-surface)',
-    borderRadius: '6px',
-    padding: '10px 14px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    marginBottom: '8px',
-  },
-  rowHeader: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: '8px',
-  },
-  userId: {
-    fontSize: '0.8rem',
-    fontWeight: 600,
-    color: 'var(--hush-text)',
-    wordBreak: 'break-all',
-  },
-  meta: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-secondary)',
-  },
-  actionBtn: {
-    padding: '4px 10px',
-    fontSize: '0.75rem',
-    borderRadius: '4px',
-    border: 'none',
-    background: 'var(--hush-danger)',
-    color: '#fff',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-  reasonInput: {
-    width: '100%',
-    padding: '6px 10px',
-    fontSize: '0.8rem',
-    background: 'var(--hush-black)',
-    border: '1px solid var(--hush-border)',
-    borderRadius: '4px',
-    color: 'var(--hush-text)',
-    boxSizing: 'border-box',
-  },
-  reasonActions: {
-    display: 'flex',
-    gap: '6px',
-    justifyContent: 'flex-end',
-  },
-  confirmBtn: {
-    padding: '4px 12px',
-    fontSize: '0.75rem',
-    borderRadius: '4px',
-    border: 'none',
-    background: 'var(--hush-danger)',
-    color: '#fff',
-    cursor: 'pointer',
-  },
-  cancelBtn: {
-    padding: '4px 12px',
-    fontSize: '0.75rem',
-    borderRadius: '4px',
-    border: '1px solid var(--hush-border)',
-    background: 'none',
-    color: 'var(--hush-text-secondary)',
-    cursor: 'pointer',
-  },
-  empty: {
-    textAlign: 'center',
-    color: 'var(--hush-text-muted)',
-    fontSize: '0.85rem',
-    padding: '24px 0',
-  },
-};
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -446,14 +63,14 @@ function truncate(str, max) {
 function OverviewTab({ serverName }) {
   return (
     <>
-      <div style={styles.sectionTitle}>Overview</div>
+      <div className="settings-section-title">Overview</div>
 
-      <div style={styles.fieldRow}>
-        <label style={styles.fieldLabel}>Server name</label>
+      <div className="settings-field-row">
+        <label className="settings-field-label">Server name</label>
         <div style={{ fontSize: '0.95rem', color: 'var(--hush-text)', padding: '8px 0' }}>
           {serverName || 'Unnamed server'}
         </div>
-        <div style={styles.fieldNote}>
+        <div className="settings-field-note">
           Server names are end-to-end encrypted. Only members can see this name.
         </div>
       </div>
@@ -481,17 +98,17 @@ function MembersTab({ getToken, serverId }) {
 
   return (
     <>
-      <div style={styles.sectionTitle}>
+      <div className="settings-section-title">
         Members{members.length > 0 ? ` \u2014 ${members.length}` : ''}
       </div>
 
       {loading && (
         <div style={{ color: 'var(--hush-text-muted)', fontSize: '0.85rem' }}>Loading\u2026</div>
       )}
-      {error && <div style={styles.errorMsg}>{error}</div>}
+      {error && <div className="settings-error-msg">{error}</div>}
 
       {!loading && !error && (
-        <div style={styles.memberList}>
+        <div className="settings-member-list">
           {members.map((m) => {
             const memberId = m.id ?? m.userId ?? '';
             // Prefer integer permissionLevel (new API), fall back to role string
@@ -500,10 +117,10 @@ function MembersTab({ getToken, serverId }) {
             const roleLabel = ({ 3: 'Owner', 2: 'Admin', 1: 'Mod', 0: 'Member' }[level] ?? m.role ?? 'Member');
             const initial = (m.displayName || m.username || '?')[0].toUpperCase();
             return (
-              <div key={memberId} style={styles.memberRow}>
-                <div style={styles.memberAvatar}>{initial}</div>
-                <span style={styles.memberName}>{m.displayName || m.username}</span>
-                <span style={styles.memberRoleBadge(isPrivileged)}>
+              <div key={memberId} className="settings-member-row">
+                <div className="settings-member-avatar">{initial}</div>
+                <span className="settings-member-name">{m.displayName || m.username}</span>
+                <span className={`settings-member-role-badge${isPrivileged ? ' settings-member-role-badge--privileged' : ''}`}>
                   {roleLabel}
                 </span>
               </div>
@@ -606,11 +223,11 @@ function AuditLogTab({ getToken, serverId, showToast, members = [] }) {
 
   return (
     <>
-      <div style={styles.sectionTitle}>Audit Log</div>
+      <div className="settings-section-title">Audit Log</div>
 
-      <div style={auditStyles.filterBar}>
+      <div className="settings-audit-filter-bar">
         <select
-          style={auditStyles.select}
+          className="settings-audit-select"
           value={actionFilter}
           onChange={(e) => setActionFilter(e.target.value)}
         >
@@ -621,56 +238,56 @@ function AuditLogTab({ getToken, serverId, showToast, members = [] }) {
         </select>
         <input
           type="text"
-          style={auditStyles.input}
+          className="settings-audit-input"
           placeholder="Search by username..."
           value={userSearch}
           onChange={(e) => setUserSearch(e.target.value)}
         />
       </div>
 
-      <div style={auditStyles.tableWrap}>
+      <div className="settings-audit-table-wrap">
         {loading && entries.length === 0 && (
-          <div style={auditStyles.empty}>Loading...</div>
+          <div className="settings-audit-empty">Loading...</div>
         )}
         {!loading && fetchError && (
-          <div style={styles.errorMsg}>{fetchError}</div>
+          <div className="settings-error-msg">{fetchError}</div>
         )}
         {!loading && !fetchError && entries.length === 0 && (
-          <div style={auditStyles.empty}>No audit log entries found.</div>
+          <div className="settings-audit-empty">No audit log entries found.</div>
         )}
         {entries.length > 0 && (
           <>
-            <table style={auditStyles.table}>
+            <table className="settings-audit-table">
               <thead>
                 <tr>
-                  <th style={auditStyles.th}>Time</th>
-                  <th style={auditStyles.th}>Actor</th>
-                  <th style={auditStyles.th}>Target</th>
-                  <th style={auditStyles.th}>Action</th>
-                  <th style={auditStyles.th}>Reason</th>
+                  <th className="settings-audit-th">Time</th>
+                  <th className="settings-audit-th">Actor</th>
+                  <th className="settings-audit-th">Target</th>
+                  <th className="settings-audit-th">Action</th>
+                  <th className="settings-audit-th">Reason</th>
                 </tr>
               </thead>
               <tbody>
                 {entries.map((entry, idx) => {
                   const even = idx % 2 === 0;
-                  const td = auditStyles.td(even);
+                  const tdClass = `settings-audit-td${even ? ' settings-audit-td--even' : ''}`;
                   return (
                     <tr key={entry.id}>
-                      <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--hush-text-secondary)', fontSize: '0.75rem' }}>
+                      <td className={tdClass} style={{ whiteSpace: 'nowrap', color: 'var(--hush-text-secondary)', fontSize: '0.75rem' }}>
                         {formatTime(entry.createdAt)}
                       </td>
-                      <td style={{ ...td, fontWeight: 500 }}>
+                      <td className={tdClass} style={{ fontWeight: 500 }}>
                         {resolveUser(entry.actorId, members)}
                       </td>
-                      <td style={{ ...td, color: 'var(--hush-text-secondary)' }}>
+                      <td className={tdClass} style={{ color: 'var(--hush-text-secondary)' }}>
                         {entry.targetId ? resolveUser(entry.targetId, members) : '\u2014'}
                       </td>
-                      <td style={td}>
-                        <span style={ACTION_BADGE_STYLE(entry.action)}>
+                      <td className={tdClass}>
+                        <span className={getAuditBadgeClass(entry.action)}>
                           {ACTION_LABELS[entry.action] ?? entry.action}
                         </span>
                       </td>
-                      <td style={{ ...td, color: 'var(--hush-text-secondary)' }}>
+                      <td className={tdClass} style={{ color: 'var(--hush-text-secondary)' }}>
                         <span title={entry.reason || ''}>
                           {truncate(entry.reason, 50)}
                         </span>
@@ -683,7 +300,7 @@ function AuditLogTab({ getToken, serverId, showToast, members = [] }) {
             {hasMore && (
               <button
                 type="button"
-                style={auditStyles.loadMoreBtn}
+                className="settings-audit-load-more"
                 onClick={handleLoadMore}
                 disabled={loading}
               >
@@ -718,18 +335,18 @@ function ModerationRow({ entry, actionLabel, onAction }) {
   }, [reason, entry.userId, onAction]);
 
   return (
-    <div style={banMuteStyles.row}>
-      <div style={banMuteStyles.rowHeader}>
+    <div className="settings-bm-row">
+      <div className="settings-bm-row-header">
         <div>
-          <div style={banMuteStyles.userId}>{entry.userId}</div>
-          <div style={banMuteStyles.meta}>
+          <div className="settings-bm-user-id">{entry.userId}</div>
+          <div className="settings-bm-meta">
             Reason: {entry.reason}
             {' \u00b7 '}Banned: {formatDate(entry.createdAt)}
             {entry.expiresAt ? ` \u00b7 Expires: ${formatDate(entry.expiresAt)}` : ' \u00b7 Permanent'}
           </div>
         </div>
         {!expanded && (
-          <button type="button" style={banMuteStyles.actionBtn} onClick={() => setExpanded(true)}>
+          <button type="button" className="settings-bm-action-btn" onClick={() => setExpanded(true)}>
             {actionLabel}
           </button>
         )}
@@ -738,19 +355,19 @@ function ModerationRow({ entry, actionLabel, onAction }) {
         <>
           <input
             type="text"
-            style={banMuteStyles.reasonInput}
+            className="settings-bm-reason-input"
             placeholder="Reason (required)"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             disabled={submitting}
             autoFocus
           />
-          {error && <div style={styles.errorMsg}>{error}</div>}
-          <div style={banMuteStyles.reasonActions}>
-            <button type="button" style={banMuteStyles.cancelBtn} onClick={() => { setExpanded(false); setReason(''); setError(''); }} disabled={submitting}>
+          {error && <div className="settings-error-msg">{error}</div>}
+          <div className="settings-bm-reason-actions">
+            <button type="button" className="settings-bm-cancel-btn" onClick={() => { setExpanded(false); setReason(''); setError(''); }} disabled={submitting}>
               Cancel
             </button>
-            <button type="button" style={banMuteStyles.confirmBtn} onClick={handleSubmit} disabled={submitting}>
+            <button type="button" className="settings-bm-confirm-btn" onClick={handleSubmit} disabled={submitting}>
               {submitting ? 'Submitting...' : `Confirm ${actionLabel}`}
             </button>
           </div>
@@ -812,21 +429,21 @@ function BansMutesTab({ getToken, serverId, showToast }) {
 
   return (
     <>
-      <div style={styles.sectionTitle}>Bans & Mutes</div>
+      <div className="settings-section-title">Bans & Mutes</div>
 
-      <div style={banMuteStyles.tabBar}>
-        <button type="button" style={banMuteStyles.tab(subTab === 'bans')} onClick={() => setSubTab('bans')}>
+      <div className="settings-bm-tab-bar">
+        <button type="button" className={`settings-bm-tab${subTab === 'bans' ? ' settings-bm-tab--active' : ''}`} onClick={() => setSubTab('bans')}>
           Banned Users ({bans.length})
         </button>
-        <button type="button" style={banMuteStyles.tab(subTab === 'mutes')} onClick={() => setSubTab('mutes')}>
+        <button type="button" className={`settings-bm-tab${subTab === 'mutes' ? ' settings-bm-tab--active' : ''}`} onClick={() => setSubTab('mutes')}>
           Muted Users ({mutes.length})
         </button>
       </div>
 
-      {loading && <div style={banMuteStyles.empty}>Loading...</div>}
-      {!loading && fetchError && <div style={styles.errorMsg}>{fetchError}</div>}
+      {loading && <div className="settings-bm-empty">Loading...</div>}
+      {!loading && fetchError && <div className="settings-error-msg">{fetchError}</div>}
       {!loading && !fetchError && currentList.length === 0 && (
-        <div style={banMuteStyles.empty}>No active {subTab === 'bans' ? 'bans' : 'mutes'}.</div>
+        <div className="settings-bm-empty">No active {subTab === 'bans' ? 'bans' : 'mutes'}.</div>
       )}
       {!loading && !fetchError && currentList.map((entry) => (
         <ModerationRow
@@ -899,40 +516,16 @@ export default function ServerSettingsModal({
 
   return createPortal(
     <div
-      style={{
-        ...styles.overlay,
-        ...(isOpen ? { opacity: 1 } : {}),
-        ...(isMobile ? { flexDirection: 'column' } : {}),
-      }}
+      className={`settings-overlay${isOpen ? ' settings-overlay--open' : ''}${isMobile ? ' settings-overlay--mobile' : ''}`}
       onClick={handleOverlayClick}
     >
       {isMobile ? (
-        <div style={{
-          display: 'flex',
-          gap: '2px',
-          background: 'var(--hush-surface)',
-          padding: '8px 8px 0',
-          flexShrink: 0,
-          borderBottom: '1px solid var(--hush-border)',
-          overflowX: 'auto',
-        }}>
+        <div className="settings-mobile-tab-bar">
           {tabs.map((t) => (
             <button
               key={t.key}
               type="button"
-              style={{
-                flexShrink: 0,
-                padding: '8px 12px',
-                fontSize: '0.78rem',
-                fontFamily: 'var(--font-sans)',
-                fontWeight: tab === t.key ? 600 : 400,
-                color: tab === t.key ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
-                background: tab === t.key ? 'var(--hush-elevated)' : 'none',
-                border: 'none',
-                borderBottom: tab === t.key ? '2px solid var(--hush-amber)' : '2px solid transparent',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
+              className={`settings-mobile-tab-btn${tab === t.key ? ' settings-mobile-tab-btn--active' : ''}`}
               onClick={() => setTab(t.key)}
             >
               {t.label}
@@ -940,14 +533,14 @@ export default function ServerSettingsModal({
           ))}
         </div>
       ) : (
-        <div style={styles.sidebar}>
-          <div style={styles.sidebarGroup}>
-            <div style={styles.sidebarGroupLabel}>{instanceName ?? 'server'}</div>
+        <div className="settings-sidebar">
+          <div className="settings-sidebar-group">
+            <div className="settings-sidebar-group-label">{instanceName ?? 'server'}</div>
             {tabs.filter(t => t.key === TAB_OVERVIEW || t.key === TAB_MEMBERS).map((t) => (
               <button
                 key={t.key}
                 type="button"
-                style={styles.sidebarItem(tab === t.key)}
+                className={`settings-sidebar-item${tab === t.key ? ' settings-sidebar-item--active' : ''}`}
                 onClick={() => setTab(t.key)}
               >
                 {t.label}
@@ -956,14 +549,14 @@ export default function ServerSettingsModal({
           </div>
           {isAdmin && (
             <>
-              <div style={styles.sidebarDivider} />
-              <div style={styles.sidebarGroup}>
-                <div style={styles.sidebarGroupLabel}>Moderation</div>
+              <div className="settings-sidebar-divider" />
+              <div className="settings-sidebar-group">
+                <div className="settings-sidebar-group-label">Moderation</div>
                 {tabs.filter(t => t.key === TAB_AUDIT_LOG || t.key === TAB_BANS_MUTES).map((t) => (
                   <button
                     key={t.key}
                     type="button"
-                    style={styles.sidebarItem(tab === t.key)}
+                    className={`settings-sidebar-item${tab === t.key ? ' settings-sidebar-item--active' : ''}`}
                     onClick={() => setTab(t.key)}
                   >
                     {t.label}
@@ -975,10 +568,7 @@ export default function ServerSettingsModal({
         </div>
       )}
 
-      <div style={{
-        ...styles.content,
-        ...(isMobile ? { padding: '20px 16px', maxWidth: 'none' } : {}),
-      }}>
+      <div className={`settings-content${isMobile ? ' settings-content--mobile' : ''}`}>
         {tab === TAB_OVERVIEW && isAdmin && (
           <OverviewTab serverName={instanceName} />
         )}
@@ -1005,16 +595,15 @@ export default function ServerSettingsModal({
         )}
 
         {myRole !== 'owner' && (
-          <div style={styles.dangerZone}>
-            <div style={styles.dangerTitle}>Danger Zone</div>
-            <div style={styles.dangerAction}>
-              <span style={styles.dangerActionText}>
+          <div className="settings-danger-zone">
+            <div className="settings-danger-title">Danger Zone</div>
+            <div className="settings-danger-action">
+              <span className="settings-danger-action-text">
                 Leave this server. You will lose access to all channels.
               </span>
               <button
                 type="button"
-                className="btn"
-                style={{ background: 'var(--hush-danger)', color: '#fff', fontSize: '0.8rem', padding: '6px 16px' }}
+                className="btn btn-danger"
                 onClick={() => setShowLeaveConfirm(true)}
               >
                 Leave Server
@@ -1036,7 +625,7 @@ export default function ServerSettingsModal({
 
       <button
         type="button"
-        style={styles.closeBtn}
+        className="settings-close-btn"
         onClick={onClose}
         title="Close (Esc)"
       >
