@@ -13,6 +13,7 @@ const Invite = lazy(() => import('./pages/Invite'));
 const Room = lazy(() => import('./pages/Room'));
 const Roadmap = lazy(() => import('./pages/Roadmap'));
 const ServerLayout = lazy(() => import('./pages/ServerLayout'));
+const ExplorePage = lazy(() => import('./pages/ExplorePage'));
 
 const fallback = (
   <div style={{
@@ -84,6 +85,9 @@ export default function App() {
 
             {/* DM landing / no-guild empty state */}
             <Route path="/home" element={<AuthGuard><ServerLayout /></AuthGuard>} />
+
+            {/* Guild discovery */}
+            <Route path="/explore" element={<AuthGuard><ExplorePage /></AuthGuard>} />
 
             {/* Cross-instance invite */}
             <Route path="/join/:instance/:code" element={<Invite />} />

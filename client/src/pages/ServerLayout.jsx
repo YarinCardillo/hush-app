@@ -22,6 +22,7 @@ import * as hushCryptoLib from '../lib/hushCrypto';
 import * as mlsGroup from '../lib/mlsGroup';
 import { slugify } from '../lib/slugify';
 import ConfirmModal from '../components/ConfirmModal';
+import EmptyState from '../components/EmptyState';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
 
@@ -1285,18 +1286,12 @@ export default function ServerLayout() {
           userRole={myRole}
           userPermissionLevel={myPermissionLevel}
         />
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--hush-text-muted)',
-          fontSize: '0.9rem',
-          textAlign: 'center',
-          padding: '24px',
-          background: 'var(--hush-black)',
-        }}>
-          Create a server or join one with an invite link.
+        <div style={{ flex: 1, background: 'var(--hush-black)' }}>
+          <EmptyState
+            instanceStates={instanceStates}
+            onCreateServer={handleGuildCreated}
+            onBrowseServers={() => navigate('/explore')}
+          />
         </div>
         {hasNoTransparencyLog && authToken && (
           <div
