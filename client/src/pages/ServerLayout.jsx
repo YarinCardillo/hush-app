@@ -1091,6 +1091,30 @@ export default function ServerLayout() {
   }, [instanceUrl, refreshGuilds, navigateToGuild]);
 
   /**
+   * Handles "Send Message" from MemberProfileCard — creates or finds a DM guild
+   * with the clicked member, then navigates to it.
+   *
+   * @param {object} member - Member object from MemberList
+   */
+  const handleSendMessage = useCallback(async (member) => {
+    const memberId = member.id ?? member.userId;
+    if (!memberId || !token) return;
+    try {
+      const dmGuild = await api.createOrFindDM(token, memberId, instanceUrl ?? '');
+      if (dmGuild?.id) {
+        // Refresh guilds so the new DM appears in the sidebar.
+        if (instanceUrl) {
+          await refreshGuilds(instanceUrl).catch(() => {});
+        }
+        navigateToGuild(dmGuild.id);
+      }
+    } catch (err) {
+      console.error('[ServerLayout] handleSendMessage failed:', err);
+      showToast({ message: 'Could not open direct message', variant: 'error' });
+    }
+  }, [token, instanceUrl, refreshGuilds, navigateToGuild, showToast]);
+
+  /**
    * getToken accessor passed to child components that still use the prop-based API.
    * Returns the per-instance token for the active guild's instance.
    */
@@ -1318,6 +1342,49 @@ export default function ServerLayout() {
     />
   );
 
+  // ── DM simplified layout ─────────────────────────────────────────────────
+  // When viewing a DM guild (isDm=true), render a focused chat-only view with
+  // no channel list, no member panel, and no guild settings.
+  if (activeGuild?.isDm) {
+    const dmChannel = channels[0] ?? null;
+    const otherUser = activeGuild.otherUser;
+    const dmDisplayName = otherUser?.displayName || otherUser?.username || 'Direct Message';
+
+    return (
+      <div style={layoutStyles.root} data-testid="dm-layout">
+        {serverListEl}
+        <div style={layoutStyles.main}>
+          {dmChannel ? (
+            <TextChannel
+              channel={dmChannel}
+              serverId={serverId}
+              getToken={getToken}
+              wsClient={wsClient}
+              members={[]}
+              showMembers={false}
+              onToggleMembers={() => {}}
+              onToggleDrawer={isMobile ? toggleDrawer : undefined}
+            />
+          ) : loading ? (
+            <div style={{ ...layoutStyles.placeholder, position: 'relative', zIndex: 1 }}>Loading…</div>
+          ) : (
+            <div style={{ ...layoutStyles.placeholder }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--hush-text)' }}>
+                  {dmDisplayName}
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--hush-text-muted)', marginTop: 8 }}>
+                  Start a conversation
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        <Toast toasts={toasts} />
+      </div>
+    );
+  }
+
   const channelListEl = (
     <ChannelList
       getToken={getToken}
@@ -1446,6 +1513,7 @@ export default function ServerLayout() {
                           showToast={showToast}
                           onMemberUpdate={handleMemberUpdate}
                           serverId={serverId}
+                          onSendMessage={handleSendMessage}
                         />
                       </div>
                     </div>
@@ -1490,6 +1558,7 @@ export default function ServerLayout() {
                             showToast={showToast}
                             onMemberUpdate={handleMemberUpdate}
                             serverId={serverId}
+                            onSendMessage={handleSendMessage}
                           />
                         </div>
                       </div>

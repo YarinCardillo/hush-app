@@ -92,9 +92,15 @@ const styles = {
  * Floating profile card that appears on left-click of a member row.
  * Visible to all users — no role gate here.
  *
- * @param {{ member: object, position: { x: number, y: number }, onClose: Function }} props
+ * @param {{
+ *   member: object,
+ *   position: { x: number, y: number },
+ *   onClose: Function,
+ *   onSendMessage: ((member: object) => void) | undefined,
+ *   currentUserId: string | undefined,
+ * }} props
  */
-export default function MemberProfileCard({ member, position, onClose }) {
+export default function MemberProfileCard({ member, position, onClose, onSendMessage, currentUserId }) {
   const cardRef = useRef(null);
   const pos = clampPosition(position.x, position.y);
 
@@ -121,6 +127,8 @@ export default function MemberProfileCard({ member, position, onClose }) {
 
   const role = member.role ?? 'member';
   const joinDate = formatJoinDate(member.createdAt ?? member.joinedAt);
+  const memberId = member.id ?? member.userId;
+  const canSendMessage = onSendMessage && memberId && memberId !== currentUserId;
 
   return createPortal(
     <div ref={cardRef} style={styles.card(pos)} role="dialog" aria-label="Member profile">
@@ -130,6 +138,30 @@ export default function MemberProfileCard({ member, position, onClose }) {
       )}
       <span style={styles.badge(role)}>{role}</span>
       {joinDate && <div style={styles.joinDate}>{joinDate}</div>}
+      {canSendMessage && (
+        <button
+          type="button"
+          data-testid="send-message-btn"
+          onClick={() => {
+            onSendMessage(member);
+            onClose();
+          }}
+          style={{
+            marginTop: '8px',
+            padding: '6px 12px',
+            width: '100%',
+            background: 'var(--hush-amber)',
+            color: 'var(--hush-text)',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '0.8rem',
+            fontWeight: 500,
+            textAlign: 'center',
+          }}
+        >
+          Send Message
+        </button>
+      )}
     </div>,
     document.body,
   );

@@ -1340,3 +1340,94 @@ export async function putGuildMetadataGroupInfo(token, guildId, groupInfoBase64,
     throw new Error(err.error || `putGuildMetadataGroupInfo ${res.status}`);
   }
 }
+
+// ── DM and Guild Discovery API ────────────────────────────────────────────────
+
+/**
+ * Create or retrieve an existing DM guild between the current user and another user.
+ * Idempotent: returns 201 on creation, 200 when the DM already exists.
+ *
+ * @param {string} token - JWT
+ * @param {string} otherUserId - UUID of the other user
+ * @param {string} [baseUrl] - Optional base URL for cross-instance calls
+ * @returns {Promise<{ id: string, isDm: boolean, otherUser: { id: string, username: string, displayName: string }, channelId: string }>}
+ */
+export async function createOrFindDM(token, otherUserId, baseUrl = '') {
+  const res = await fetchWithAuth(token, '/api/guilds/dm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ otherUserId }),
+  }, baseUrl);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `createOrFindDM ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Fetch a paginated list of discoverable guilds.
+ *
+ * @param {string} token - JWT
+ * @param {{ category?: string, search?: string, sort?: string, page?: number, pageSize?: number }} [params]
+ * @param {string} [baseUrl] - Optional base URL for cross-instance calls
+ * @returns {Promise<{ guilds: Array<object>, total: number, page: number, pageSize: number }>}
+ */
+export async function discoverGuilds(token, params = {}, baseUrl = '') {
+  const qs = new URLSearchParams();
+  if (params.category) qs.set('category', params.category);
+  if (params.search) qs.set('search', params.search);
+  if (params.sort) qs.set('sort', params.sort);
+  if (params.page != null) qs.set('page', String(params.page));
+  if (params.pageSize != null) qs.set('pageSize', String(params.pageSize));
+  const query = qs.toString();
+  const res = await fetchWithAuth(token, `/api/guilds/discover${query ? `?${query}` : ''}`, {}, baseUrl);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `discoverGuilds ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Search for users by username fragment for the DM recipient picker.
+ *
+ * @param {string} token - JWT
+ * @param {string} query - Username search term
+ * @param {string} [baseUrl] - Optional base URL for cross-instance calls
+ * @returns {Promise<Array<{ id: string, username: string, displayName: string }>>}
+ */
+export async function searchUsersForDM(token, query, baseUrl = '') {
+  const res = await fetchWithAuth(
+    token,
+    `/api/guilds/users/search?q=${encodeURIComponent(query)}`,
+    {},
+    baseUrl,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `searchUsersForDM ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Join an open guild from the explore page.
+ * Returns 201 on success, 409 when already a member, 202 for request-policy guilds.
+ *
+ * @param {string} token - JWT
+ * @param {string} serverId - Guild UUID to join
+ * @param {string} [baseUrl] - Optional base URL for cross-instance calls
+ * @returns {Promise<{ status: number, data: object }>}
+ */
+export async function joinGuildFromExplore(token, serverId, baseUrl = '') {
+  const res = await fetchWithAuth(token, `/api/servers/${encodeURIComponent(serverId)}/join`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  }, baseUrl);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && res.status !== 409 && res.status !== 202) {
+    throw new Error(data.error || `joinGuildFromExplore ${res.status}`);
+  }
+  return { status: res.status, data };
+}

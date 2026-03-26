@@ -193,14 +193,31 @@ export function useInstances() {
   // ── mergedGuilds derivation ───────────────────────────────────────────────
 
   /**
-   * Memoised merged guild array across all instances.
+   * Memoised DM guild array across all instances.
+   * Contains only guilds where isDm === true; separated from the regular sidebar list.
+   */
+  const dmGuilds = useMemo(() => {
+    const all = [];
+    for (const data of instancesRef.current.values()) {
+      if (data.guilds) {
+        all.push(...data.guilds.filter(g => g.isDm));
+      }
+    }
+    return all;
+    // NOTE: instanceStates is the trigger — recomputes when any instance state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instanceStates]);
+
+  /**
+   * Memoised merged guild array across all instances (excludes DM guilds).
    * Ordered guilds (from IDB preference) appear first; new guilds append.
+   * DM guilds are filtered out so they do not appear in the regular guild icon sidebar.
    */
   const mergedGuilds = useMemo(() => {
     const allGuilds = [];
     for (const data of instancesRef.current.values()) {
       if (data.guilds) {
-        allGuilds.push(...data.guilds);
+        allGuilds.push(...data.guilds.filter(g => !g.isDm));
       }
     }
 
@@ -648,6 +665,7 @@ export function useInstances() {
   return {
     instanceStates,
     mergedGuilds,
+    dmGuilds,
     bootInstance,
     registerLocalInstance,
     disconnectInstance,

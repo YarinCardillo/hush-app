@@ -155,6 +155,7 @@ const ACTION_SUCCESS_MESSAGES = {
  *   showToast: (message: string, type: string) => void,
  *   onMemberUpdate: () => void,
  *   serverId: string,
+ *   onSendMessage: ((member: object) => void) | undefined,
  * }} props
  */
 export default function MemberList({
@@ -166,6 +167,7 @@ export default function MemberList({
   showToast,
   onMemberUpdate,
   serverId,
+  onSendMessage,
 }) {
   const [selectedMember, setSelectedMember] = useState(null);
   const [profilePosition, setProfilePosition] = useState({ x: 0, y: 0 });
@@ -278,6 +280,8 @@ export default function MemberList({
           member={selectedMember}
           position={profilePosition}
           onClose={() => setSelectedMember(null)}
+          onSendMessage={onSendMessage}
+          currentUserId={currentUserId}
         />
       )}
 

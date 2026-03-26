@@ -20,6 +20,7 @@ import GuildCreateModal from './GuildCreateModal';
 import GuildContextMenu from './GuildContextMenu';
 import { decryptGuildMetadata, fromBase64, importMetadataKey } from '../lib/guildMetadata';
 import { InstanceContext } from '../contexts/InstanceContext.jsx';
+import { searchUsersForDM, createOrFindDM } from '../lib/api';
 
 const ICON_SIZE = 48;
 const STRIP_WIDTH = 72;
@@ -300,15 +301,70 @@ function SortableGuildIcon({
 
 /**
  * Collapsible Direct Messages section at the top of the sidebar.
- * DMs are identified by the isDm flag on guild objects.
- * Phase U scaffolding — actual DM routing wired in a later plan.
+ * Shows real DM conversations with cursor-based unread count sum.
+ * Includes "New DM" inline user search.
  *
- * @param {{ dmGuilds: object[], onGuildSelect: function }} props
+ * @param {{
+ *   dmGuilds: object[],
+ *   onGuildSelect: function,
+ *   getToken: function,
+ * }} props
  */
-function DmSection({ dmGuilds, onGuildSelect }) {
+function DmSection({ dmGuilds, onGuildSelect, getToken }) {
   const [expanded, setExpanded] = useState(false);
-  // Unread count is 0 for Phase U scaffolding; wired to state in a later plan.
-  const totalUnread = 0;
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimerRef = useRef(null);
+
+  // Cursor-based unread count sum across all DM guilds (identical to guild unread logic).
+  const totalUnread = dmGuilds.reduce(
+    (sum, g) => sum + (g.channels?.[0]?.unreadCount ?? 0),
+    0,
+  );
+
+  const handleSearchChange = (e) => {
+    const q = e.target.value;
+    setSearchQuery(q);
+    clearTimeout(searchTimerRef.current);
+    if (!q.trim()) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const token = getToken?.();
+        if (!token) return;
+        const results = await searchUsersForDM(token, q.trim());
+        setSearchResults(Array.isArray(results) ? results : []);
+      } catch (err) {
+        console.error('[DmSection] searchUsersForDM failed:', err);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+  };
+
+  const handleSelectUser = async (user) => {
+    try {
+      const token = getToken?.();
+      if (!token) return;
+      const dmGuild = await createOrFindDM(token, user.id);
+      setShowSearch(false);
+      setSearchQuery('');
+      setSearchResults([]);
+      onGuildSelect?.(dmGuild);
+    } catch (err) {
+      console.error('[DmSection] createOrFindDM failed:', err);
+    }
+  };
+
+  // Cleanup debounce timer on unmount.
+  useEffect(() => () => clearTimeout(searchTimerRef.current), []);
 
   return (
     <div style={styles.dmSection} data-testid="dm-section">
@@ -352,6 +408,99 @@ function DmSection({ dmGuilds, onGuildSelect }) {
           background: 'var(--hush-elevated)',
           borderTop: '1px solid var(--hush-border)',
         }}>
+          {/* New DM button */}
+          <div style={{ padding: '4px 8px' }}>
+            {!showSearch ? (
+              <button
+                type="button"
+                data-testid="new-dm-btn"
+                onClick={() => setShowSearch(true)}
+                style={{
+                  width: '100%',
+                  padding: '4px 8px',
+                  background: 'var(--hush-surface)',
+                  border: '1px solid var(--hush-border)',
+                  color: 'var(--hush-text-muted)',
+                  fontSize: '0.7rem',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                + New Message
+              </button>
+            ) : (
+              <div style={{ position: 'relative' }}>
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Find a user..."
+                  value={searchQuery}
+                  onChange={handleSearchChange}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setShowSearch(false);
+                      setSearchQuery('');
+                      setSearchResults([]);
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '4px 8px',
+                    background: 'var(--hush-surface)',
+                    border: '1px solid var(--hush-amber)',
+                    color: 'var(--hush-text)',
+                    fontSize: '0.75rem',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                {(searchResults.length > 0 || searching) && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    background: 'var(--hush-elevated)',
+                    border: '1px solid var(--hush-border)',
+                    zIndex: 200,
+                    maxHeight: 160,
+                    overflowY: 'auto',
+                  }}>
+                    {searching && (
+                      <div style={{ padding: '6px 8px', fontSize: '0.7rem', color: 'var(--hush-text-muted)' }}>
+                        Searching...
+                      </div>
+                    )}
+                    {searchResults.map((user) => (
+                      <button
+                        key={user.id}
+                        type="button"
+                        data-testid={`dm-search-result-${user.id}`}
+                        onClick={() => handleSelectUser(user)}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          padding: '6px 8px',
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--hush-text)',
+                          fontSize: '0.75rem',
+                          textAlign: 'left',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-surface)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        {user.displayName || user.username}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* DM conversation list */}
           {dmGuilds.length === 0 ? (
             <div style={{
               padding: '8px',
@@ -362,29 +511,80 @@ function DmSection({ dmGuilds, onGuildSelect }) {
               No direct messages yet
             </div>
           ) : (
-            dmGuilds.map((guild) => (
-              <button
-                key={guild.id}
-                type="button"
-                onClick={() => onGuildSelect?.(guild)}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  padding: '6px 8px',
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'var(--hush-text-secondary)',
-                  fontSize: '0.75rem',
-                  textAlign: 'left',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {guild._localName ?? guild.id.slice(0, 8)}
-              </button>
-            ))
+            dmGuilds.map((guild) => {
+              const displayName = guild.otherUser?.displayName
+                || guild.otherUser?.username
+                || 'Direct Message';
+              const initial = displayName.charAt(0).toUpperCase();
+              const unread = guild.channels?.[0]?.unreadCount ?? 0;
+
+              return (
+                <button
+                  key={guild.id}
+                  type="button"
+                  data-testid={`dm-guild-${guild.id}`}
+                  onClick={() => onGuildSelect?.(guild)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    width: '100%',
+                    padding: '6px 8px',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--hush-text)',
+                    fontSize: '0.8rem',
+                    textAlign: 'left',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-surface)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  {/* Avatar circle with initial */}
+                  <div style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    background: 'var(--hush-amber-ghost)',
+                    color: 'var(--hush-amber)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    flexShrink: 0,
+                  }}>
+                    {initial}
+                  </div>
+                  <span style={{
+                    flex: 1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    minWidth: 0,
+                  }}>
+                    {displayName}
+                  </span>
+                  {unread > 0 && (
+                    <span style={{
+                      background: 'var(--hush-danger)',
+                      color: '#fff',
+                      fontSize: '0.6rem',
+                      fontWeight: 600,
+                      borderRadius: '50%',
+                      width: 16,
+                      height: 16,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      {unread > 9 ? '9+' : unread}
+                    </span>
+                  )}
+                </button>
+              );
+            })
           )}
         </div>
       )}
@@ -698,7 +898,7 @@ export default function ServerList({
       data-testid="server-list"
     >
       {/* Direct Messages section pinned at top */}
-      <DmSection dmGuilds={dmGuilds} onGuildSelect={onGuildSelect} />
+      <DmSection dmGuilds={dmGuilds} onGuildSelect={onGuildSelect} getToken={getToken} />
 
       {dmGuilds.length > 0 && regularGuilds.length > 0 && (
         <div style={styles.divider} />
