@@ -119,133 +119,6 @@ async function encryptAndSendMLS(wsClient, channelId, plaintext, encryptForChann
   });
 }
 
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    minHeight: 0,
-  },
-  messagesSection: {
-    flex: 1,
-    minHeight: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  messagesScroll: {
-    flex: 1,
-    minHeight: 0,
-    overflowY: 'auto',
-    overflowX: 'hidden',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  messagesScrollWithMessages: {
-    justifyContent: 'flex-end',
-  },
-  message: (isOwn) => ({
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-    padding: '8px 12px',
-    borderRadius: 'var(--radius-md)',
-    background: isOwn ? 'var(--hush-amber-ghost)' : 'var(--hush-elevated)',
-    border: '1px solid transparent',
-  }),
-  messageHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '8px',
-  },
-  senderName: (isOwn) => ({
-    fontSize: '0.75rem',
-    fontWeight: 500,
-    color: isOwn ? 'var(--hush-amber)' : 'var(--hush-text-secondary)',
-  }),
-  timestamp: {
-    fontSize: '0.65rem',
-    color: 'var(--hush-text-muted)',
-    fontFamily: 'var(--font-mono)',
-  },
-  messageText: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-text)',
-    wordWrap: 'break-word',
-    whiteSpace: 'pre-wrap',
-    lineHeight: 1.4,
-  },
-  inputSection: {
-    flexShrink: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    borderTop: '1px solid var(--hush-border)',
-    paddingTop: '12px',
-    paddingBottom: '12px',
-  },
-  inputWrapper: {
-    display: 'flex',
-    gap: '8px',
-  },
-  input: {
-    flex: 1,
-    padding: '10px 12px',
-    background: 'var(--hush-black)',
-    border: '1px solid transparent',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--hush-text)',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '0.85rem',
-    outline: 'none',
-    transition: 'box-shadow var(--duration-normal) var(--ease-out)',
-    resize: 'none',
-    lineHeight: '24px',
-    maxHeight: '120px',
-  },
-  sendButton: (disabled) => ({
-    padding: '10px 16px',
-    background: disabled ? 'var(--hush-surface)' : 'var(--hush-amber)',
-    color: disabled ? 'var(--hush-text-ghost)' : 'var(--hush-black)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    fontSize: '0.85rem',
-    fontWeight: 500,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-    opacity: disabled ? 0.5 : 1,
-  }),
-  empty: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    minHeight: '100%',
-    gap: '12px',
-    color: 'var(--hush-text-muted)',
-    textAlign: 'center',
-    padding: '40px 20px',
-  },
-  emptyIcon: {
-    width: '48px',
-    height: '48px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 'var(--radius-lg)',
-    background: 'var(--hush-surface)',
-    border: '1px solid transparent',
-    color: 'var(--hush-text-ghost)',
-  },
-  emptyText: {
-    fontSize: '0.85rem',
-    color: 'var(--hush-text-muted)',
-    maxWidth: '200px',
-  },
-};
 
 export default function Chat({
   channelId,
@@ -548,35 +421,30 @@ export default function Chat({
   const hasMessages = visibleMessages.length > 0;
 
   return (
-    <div style={styles.container}>
-      <div style={styles.messagesSection}>
+    <div className="chat-container">
+      <div className="chat-messages-section">
         <div
           ref={messagesScrollRef}
           onScroll={handleScroll}
-          style={{
-            ...styles.messagesScroll,
-            ...(hasMessages ? styles.messagesScrollWithMessages : {}),
-          }}
+          className={`chat-messages-scroll${hasMessages ? ' chat-messages-scroll--has-messages' : ''}`}
         >
           {!isChannelTransitioning && hasMoreOlder && (loadMoreLoading || visibleMessages.length > 0) && (
-            <div style={{ padding: '8px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--hush-text-muted)' }}>
+            <div className="chat-load-more-hint">
               {loadMoreLoading ? 'Loading…' : 'Scroll up for older messages'}
             </div>
           )}
           {isChannelTransitioning || isInitialLoading ? (
-            <div style={styles.empty}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)' }}>
-                Loading…
-              </div>
+            <div className="chat-empty">
+              <div className="chat-empty-text">Loading…</div>
             </div>
           ) : !hasMessages ? (
-            <div style={styles.empty}>
-              <div style={styles.emptyIcon}>
+            <div className="chat-empty">
+              <div className="chat-empty-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 </svg>
               </div>
-              <div style={styles.emptyText}>
+              <div className="chat-empty-text">
                 no messages yet, start the conversation
               </div>
             </div>
@@ -588,21 +456,17 @@ export default function Chat({
               return (
                 <div
                   key={msg.id}
-                  style={{
-                    ...styles.message(isOwn),
-                    ...(isFailed ? { borderColor: 'var(--hush-danger)' } : {}),
-                    ...(isPending ? { opacity: 0.8 } : {}),
-                  }}
+                  className={`chat-message-row${isOwn ? ' chat-message-row--own' : ''}${isFailed ? ' chat-message-row--failed' : ''}${isPending ? ' chat-message-row--pending' : ''}`}
                 >
-                  <div style={styles.messageHeader}>
-                    <span style={styles.senderName(isOwn)}>
+                  <div className="chat-message-header">
+                    <span className={`chat-username${isOwn ? ' chat-username--own' : ''}`}>
                       {isOwn ? 'You' : (displayNameMap.get(msg.sender) ?? truncateUserId(msg.sender))}
                     </span>
-                    <span style={styles.timestamp}>{formatTime(msg.timestamp)}</span>
+                    <span className="chat-timestamp">{formatTime(msg.timestamp)}</span>
                   </div>
-                  <div style={styles.messageText}>
+                  <div className="chat-body">
                     {msg.decryptionFailed ? (
-                      <span style={{ color: 'var(--hush-text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>
+                      <span className="chat-decryption-failed">
                         Message encrypted — decryption key no longer available
                       </span>
                     ) : (
@@ -610,25 +474,14 @@ export default function Chat({
                     )}
                   </div>
                   {isPending && (
-                    <div style={{ fontSize: '0.7rem', color: 'var(--hush-text-muted)', marginTop: '4px' }}>
-                      sending…
-                    </div>
+                    <div className="chat-pending-indicator">sending…</div>
                   )}
                   {isFailed && (
-                    <div style={{ marginTop: '8px' }}>
+                    <div className="chat-retry-wrapper">
                       <button
                         type="button"
+                        className="chat-retry-btn"
                         onClick={() => handleRetry(msg)}
-                        style={{
-                          padding: '4px 10px',
-                          fontSize: '0.75rem',
-                          fontWeight: 500,
-                          color: 'var(--hush-danger)',
-                          background: 'var(--hush-danger-ghost)',
-                          border: '1px solid var(--hush-danger)',
-                          borderRadius: 'var(--radius-md)',
-                          cursor: 'pointer',
-                        }}
                       >
                         Retry
                       </button>
@@ -641,13 +494,13 @@ export default function Chat({
           {hasMessages && <div ref={messagesEndRef} />}
         </div>
       </div>
-      <div style={styles.inputSection}>
-        <div style={styles.inputWrapper}>
+      <div className="chat-input-bar">
+        <div className="chat-input-wrapper">
           <textarea
             id="chat-message"
             name="message"
             ref={inputRef}
-            style={styles.input}
+            className="chat-input"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -658,7 +511,7 @@ export default function Chat({
             autoComplete="off"
           />
           <button
-            style={styles.sendButton(!inputText.trim() || isSending)}
+            className={`chat-send-btn${!inputText.trim() || isSending ? ' chat-send-btn--disabled' : ''}`}
             onClick={handleSend}
             disabled={!inputText.trim() || isSending}
           >

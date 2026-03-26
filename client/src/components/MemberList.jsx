@@ -70,73 +70,6 @@ function sortWithinSection(members, onlineUserIds) {
   });
 }
 
-const styles = {
-  panel: {
-    width: '100%',
-    height: '100%',
-    flexShrink: 0,
-    background: 'var(--hush-surface)',
-    borderLeft: '1px solid var(--hush-border)',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  list: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: '8px 0',
-  },
-  sectionHeader: {
-    padding: '8px 12px 4px',
-    fontSize: '0.7rem',
-    fontWeight: 600,
-    color: 'var(--hush-text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-  },
-  row: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '6px 12px',
-    fontSize: '0.85rem',
-    color: 'var(--hush-text)',
-    cursor: 'pointer',
-    userSelect: 'none',
-  },
-  dot: (online) => ({
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    flexShrink: 0,
-    background: online ? 'var(--hush-live)' : 'var(--hush-text-muted)',
-    boxShadow: online ? '0 0 6px var(--hush-live-glow)' : 'none',
-  }),
-  name: {
-    flex: 1,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    minWidth: 0,
-  },
-  badgeAdmin: {
-    fontSize: '0.65rem',
-    padding: '2px 6px',
-    borderRadius: 'var(--radius-sm)',
-    background: 'var(--hush-amber-ghost)',
-    color: 'var(--hush-amber)',
-    flexShrink: 0,
-  },
-  badgeMod: {
-    fontSize: '0.65rem',
-    padding: '2px 6px',
-    borderRadius: 'var(--radius-sm)',
-    background: 'var(--hush-surface)',
-    color: 'var(--hush-text-secondary)',
-    border: '1px solid var(--hush-border)',
-    flexShrink: 0,
-  },
-};
 
 const ACTION_SUCCESS_MESSAGES = {
   kick: (name) => `${name} was kicked.`,
@@ -221,8 +154,8 @@ export default function MemberList({
   };
 
   return (
-    <div style={styles.panel}>
-      <div style={styles.list}>
+    <div className="ml-container ml-panel">
+      <div className="ml-list">
         {LEVEL_ORDER.map((level) => {
           const list = byLevel.get(level);
           if (!list || list.length === 0) return null;
@@ -230,7 +163,7 @@ export default function MemberList({
           const label = PERM_LABEL[level];
           return (
             <div key={level}>
-              <div style={styles.sectionHeader}>{label} — {sorted.length}</div>
+              <div className="ml-role-header">{label} — {sorted.length}</div>
               {sorted.map((m) => {
                 const memberId = getMemberId(m);
                 const isOnline = onlineUserIds.has(memberId);
@@ -240,8 +173,7 @@ export default function MemberList({
                 return (
                   <div
                     key={memberId}
-                    style={styles.row}
-                    className="member-list-row"
+                    className="ml-member-item member-list-row"
                     onClick={(e) => {
                       setSelectedMember(m);
                       setProfilePosition({ x: e.clientX, y: e.clientY });
@@ -253,19 +185,17 @@ export default function MemberList({
                         setContextMenu({ member: m, x: e.clientX, y: e.clientY });
                       }
                     }}
-                    onMouseEnter={(el) => { el.currentTarget.style.background = 'var(--hush-elevated)'; }}
-                    onMouseLeave={(el) => { el.currentTarget.style.background = 'none'; }}
                   >
-                    <div style={styles.dot(isOnline)} aria-hidden />
-                    <span style={styles.name}>
+                    <div className={`ml-status-dot${isOnline ? ' ml-status-dot--online' : ''}`} aria-hidden />
+                    <span className="ml-member-name">
                       {m.displayName || 'Unknown'}
                       {isYou && ' (You)'}
                     </span>
                     {badgeLabel && memberLevel >= PERM_ADMIN && (
-                      <span style={styles.badgeAdmin}>{badgeLabel}</span>
+                      <span className="ml-badge ml-badge--admin">{badgeLabel}</span>
                     )}
                     {badgeLabel && memberLevel === PERM_MOD && (
-                      <span style={styles.badgeMod}>{badgeLabel}</span>
+                      <span className="ml-badge ml-badge--mod">{badgeLabel}</span>
                     )}
                   </div>
                 );
