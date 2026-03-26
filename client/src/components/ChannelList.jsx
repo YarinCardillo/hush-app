@@ -25,7 +25,6 @@ import * as mlsGroupLib from '../lib/mlsGroup';
 import * as mlsStoreLib from '../lib/mlsStore';
 import * as hushCryptoLib from '../lib/hushCrypto';
 import { getDeviceId } from '../hooks/useAuth';
-import modalStyles from './modalStyles';
 import ConfirmModal from './ConfirmModal';
 import ServerSettingsModal from './ServerSettingsModal';
 
@@ -58,154 +57,6 @@ function saveCollapsedMap(storageKey, map) {
 // rows win, enabling correct SortableContext animation for uncategorized channels.
 const UNCATEGORIZED_SENTINEL = '__uncategorized__';
 
-const styles = {
-  panel: {
-    width: '100%',
-    minWidth: 0,
-    background: 'var(--hush-surface)',
-    borderRight: '1px solid transparent',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  header: {
-    padding: '12px 16px',
-    borderBottom: '1px solid transparent',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: '48px',
-  },
-  serverName: {
-    fontSize: '0.9rem',
-    fontWeight: 600,
-    color: 'var(--hush-text)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  list: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: '8px 0',
-  },
-  categoryHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    padding: '14px 16px 8px',
-    fontSize: '0.72rem',
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    cursor: 'pointer',
-    userSelect: 'none',
-  },
-  channelRow: (isActive) => ({
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '6px 16px',
-    cursor: 'pointer',
-    background: isActive ? 'var(--hush-elevated)' : 'transparent',
-    boxShadow: isActive ? 'inset 2px 0 0 var(--hush-amber)' : 'none',
-    color: isActive ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
-    fontSize: '0.85rem',
-    transition: 'all var(--duration-fast) var(--ease-out)',
-  }),
-  channelRowHover: {
-    background: 'color-mix(in srgb, var(--hush-elevated) 55%, transparent)',
-    color: 'var(--hush-text)',
-  },
-  channelIcon: {
-    width: 20,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    color: 'inherit',
-  },
-  channelName: {
-    flex: 1,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  voiceCount: {
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-muted)',
-  },
-  voiceParticipantRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '2px 0 2px 28px',
-    fontSize: '0.75rem',
-    color: 'var(--hush-text-muted)',
-  },
-  voiceParticipantDot: {
-    width: '5px',
-    height: '5px',
-    borderRadius: '50%',
-    background: 'var(--hush-live)',
-    boxShadow: '0 0 4px var(--hush-live-glow)',
-    flexShrink: 0,
-  },
-  addBtn: {
-    padding: '4px',
-    width: '24px',
-    height: '24px',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'none',
-    border: 'none',
-    color: 'var(--hush-text-muted)',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-  serverNameBtn: {
-    background: 'none',
-    border: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    cursor: 'pointer',
-    padding: '0',
-    minWidth: 0,
-    flex: 1,
-    fontFamily: 'var(--font-sans)',
-  },
-  serverMenu: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    background: 'var(--hush-elevated)',
-    border: '1px solid var(--hush-border)',
-    borderRadius: 'var(--radius-md)',
-    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-    zIndex: 100,
-    padding: '4px',
-    marginTop: '4px',
-  },
-  serverMenuItem: (danger) => ({
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    width: '100%',
-    padding: '8px 10px',
-    background: 'none',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    color: danger ? 'var(--hush-danger)' : 'var(--hush-text-secondary)',
-    fontSize: '0.85rem',
-    fontFamily: 'var(--font-sans)',
-    cursor: 'pointer',
-    textAlign: 'left',
-    transition: 'background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out)',
-  }),
-};
 
 function groupChannelsByParent(channels) {
   // System channels are handled separately — exclude them from grouping
@@ -328,10 +179,10 @@ function CreateChannelModal({ getToken, serverId, currentUserId, onClose, onCrea
         className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={modalStyles.title}>Create channel</div>
-        <form style={modalStyles.form} onSubmit={handleSubmit}>
+        <div className="modal-title">Create channel</div>
+        <form className="modal-form" onSubmit={handleSubmit}>
           <div>
-            <label htmlFor="channel-name" style={modalStyles.fieldLabel}>Name</label>
+            <label htmlFor="channel-name" className="modal-field-label">Name</label>
             <input
               id="channel-name"
               name="channel-name"
@@ -345,7 +196,7 @@ function CreateChannelModal({ getToken, serverId, currentUserId, onClose, onCrea
             />
           </div>
           <div>
-            <label style={modalStyles.fieldLabel} htmlFor="create-channel-type">Type</label>
+            <label className="modal-field-label" htmlFor="create-channel-type">Type</label>
             <select
               id="create-channel-type"
               className="input"
@@ -358,7 +209,7 @@ function CreateChannelModal({ getToken, serverId, currentUserId, onClose, onCrea
           </div>
           {type === CHANNEL_TYPE_VOICE && (
             <div>
-              <label style={modalStyles.fieldLabel} htmlFor="create-channel-voice-mode">Voice mode</label>
+              <label className="modal-field-label" htmlFor="create-channel-voice-mode">Voice mode</label>
               <select
                 id="create-channel-voice-mode"
                 className="input"
@@ -370,8 +221,8 @@ function CreateChannelModal({ getToken, serverId, currentUserId, onClose, onCrea
               </select>
             </div>
           )}
-          {error && <div style={modalStyles.error}>{error}</div>}
-          <div style={modalStyles.actions}>
+          {error && <div className="modal-error">{error}</div>}
+          <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>
@@ -439,10 +290,10 @@ function CreateCategoryModal({ getToken, serverId, onClose, onCreated }) {
         className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={modalStyles.title}>Create category</div>
-        <form style={modalStyles.form} onSubmit={handleSubmit}>
+        <div className="modal-title">Create category</div>
+        <form className="modal-form" onSubmit={handleSubmit}>
           <div>
-            <label htmlFor="category-name" style={modalStyles.fieldLabel}>Name</label>
+            <label htmlFor="category-name" className="modal-field-label">Name</label>
             <input
               id="category-name"
               name="category-name"
@@ -455,8 +306,8 @@ function CreateCategoryModal({ getToken, serverId, onClose, onCreated }) {
               autoComplete="off"
             />
           </div>
-          {error && <div style={modalStyles.error}>{error}</div>}
-          <div style={modalStyles.actions}>
+          {error && <div className="modal-error">{error}</div>}
+          <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>
@@ -523,13 +374,13 @@ function InviteModal({ getToken, serverId, guildName, onClose }) {
   return createPortal(
     <div className={`modal-backdrop ${isOpen ? 'modal-backdrop-open' : ''}`} onClick={onClose}>
       <div className={`modal-content ${isOpen ? 'modal-content-open' : ''}`} onClick={(e) => e.stopPropagation()}>
-        <div style={modalStyles.title}>Invite people</div>
+        <div className="modal-title">Invite people</div>
         {loading ? (
           <div style={{ color: 'var(--hush-text-secondary)', fontSize: '0.85rem', padding: '16px 0' }}>
             Generating invite link...
           </div>
         ) : error ? (
-          <div style={modalStyles.error}>{error}</div>
+          <div className="modal-error">{error}</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px' }}>
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -549,7 +400,7 @@ function InviteModal({ getToken, serverId, guildName, onClose }) {
             </div>
           </div>
         )}
-        <div style={{ ...modalStyles.actions, marginTop: '16px' }}>
+        <div className="modal-actions" style={{ marginTop: '16px' }}>
           <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -620,12 +471,8 @@ function CategorySection({ group, collapsed = false, onToggleCollapsed, activeCh
   return (
     <div ref={setNodeRef} style={sectionStyle}>
       <div
-        style={{
-          ...styles.categoryHeader,
-          justifyContent: 'space-between',
-          color: hovered ? 'var(--hush-text)' : 'var(--hush-text-secondary)',
-          transition: 'color var(--duration-fast) var(--ease-out)',
-        }}
+        className={`cl-category-label${hovered ? ' cl-category-label--hovered' : ''}`}
+        style={{ justifyContent: 'space-between' }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
@@ -634,7 +481,7 @@ function CategorySection({ group, collapsed = false, onToggleCollapsed, activeCh
             {...sortableAttributes}
             {...sortableListeners}
             title="Drag to reorder"
-            style={{ cursor: 'grab', width: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'inherit', opacity: 0.4, transition: 'opacity var(--duration-fast) var(--ease-out)' }}
+            className="cl-category-drag-handle"
             onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
             onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.4'; }}
             aria-hidden
@@ -648,7 +495,7 @@ function CategorySection({ group, collapsed = false, onToggleCollapsed, activeCh
         )}
         <button
           type="button"
-          style={{ ...styles.categoryHeader, padding: 0, flex: 1, background: 'none', border: 'none', fontFamily: 'var(--font-sans)', color: 'inherit' }}
+          className="cl-category-toggle-btn"
           onClick={() => onToggleCollapsed?.()}
         >
           <svg
@@ -658,7 +505,7 @@ function CategorySection({ group, collapsed = false, onToggleCollapsed, activeCh
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
-            style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform var(--duration-fast) var(--ease-out)' }}
+            className={`cl-category-chevron${collapsed ? ' cl-category-chevron--collapsed' : ''}`}
           >
             <polyline points="6 9 12 15 18 9" />
           </svg>
@@ -668,10 +515,7 @@ function CategorySection({ group, collapsed = false, onToggleCollapsed, activeCh
           <button
             type="button"
             title="Delete category"
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px',
-              color: 'inherit', display: 'flex', alignItems: 'center', opacity: 0,
-            }}
+            className="cl-category-delete-btn"
             onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
             onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
             onClick={() => onDeleteCategory?.(group.key, group.label)}
@@ -700,9 +544,8 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, voic
         ref={dragRef}
         role="button"
         tabIndex={0}
+        className={`cl-channel-item${isActive ? ' cl-channel-item--active' : ''}`}
         style={{
-          ...styles.channelRow(isActive),
-          ...(hover && !isActive ? styles.channelRowHover : {}),
           ...dragStyle,
           opacity: isDragging ? 0.4 : 1,
         }}
@@ -713,11 +556,9 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, voic
             onSelect();
           }
         }}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
         {...dragListeners}
       >
-        <span style={styles.channelIcon} aria-hidden>
+        <span className="cl-channel-hash" aria-hidden>
           {isVoice ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
@@ -729,18 +570,15 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, voic
             <span style={{ opacity: 0.8 }}>#</span>
           )}
         </span>
-        <span style={styles.channelName}>{channel._displayName ?? channel.name ?? ''}</span>
+        <span className="cl-channel-name">{channel._displayName ?? channel.name ?? ''}</span>
         {isVoice && participantCount != null && (
-          <span style={styles.voiceCount}>{participantCount}</span>
+          <span className="cl-voice-count">{participantCount}</span>
         )}
         {isAdmin && (
           <button
             type="button"
             title="Delete channel"
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px',
-              color: 'var(--hush-danger)', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0,
-            }}
+            className="cl-channel-delete-btn"
             onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
             onMouseLeave={(e) => { e.currentTarget.style.opacity = '0'; }}
             onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
@@ -755,8 +593,8 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, voic
         )}
       </div>
       {voiceParticipants.length > 0 && voiceParticipants.map((p) => (
-        <div key={p.userId} style={styles.voiceParticipantRow}>
-          <span style={styles.voiceParticipantDot} />
+        <div key={p.userId} className="cl-voice-participant-row">
+          <span className="cl-voice-participant-dot" />
           <span>{p.displayName}</span>
         </div>
       ))}
@@ -876,10 +714,7 @@ function SystemChannelRow({ channel, isActive, onSelect }) {
     <div
       role="button"
       tabIndex={0}
-      style={{
-        ...styles.channelRow(isActive),
-        ...(hover && !isActive ? styles.channelRowHover : {}),
-      }}
+      className={`cl-channel-item cl-channel-item--system${isActive ? ' cl-channel-item--active' : ''}`}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -887,15 +722,13 @@ function SystemChannelRow({ channel, isActive, onSelect }) {
           onSelect();
         }
       }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
     >
-      <span style={styles.channelIcon} aria-hidden>
+      <span className="cl-channel-hash" aria-hidden>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
         </svg>
       </span>
-      <span style={{ ...styles.channelName, color: 'var(--hush-text-muted)' }}>{getSystemChannelName(channel)}</span>
+      <span className="cl-channel-name cl-channel-name--muted">{getSystemChannelName(channel)}</span>
     </div>
   );
 }
@@ -1157,15 +990,15 @@ export default function ChannelList({
     : null;
 
   return (
-    <div style={{ ...styles.panel, ...(activeId ? { userSelect: 'none' } : undefined) }}>
-      <div style={{ ...styles.header, position: 'relative' }} ref={serverMenuRef}>
+    <div className="cl-sidebar" style={activeId ? { userSelect: 'none' } : undefined}>
+      <div className="cl-header" ref={serverMenuRef}>
         <button
           type="button"
-          style={styles.serverNameBtn}
+          className="cl-server-name-btn"
           onClick={() => setShowServerMenu((v) => !v)}
           title="Server menu"
         >
-          <span style={styles.serverName}>{guildName ?? 'Server'}</span>
+          <span className="cl-guild-name">{guildName ?? 'Server'}</span>
           <svg
             width="12"
             height="12"
@@ -1173,23 +1006,18 @@ export default function ChannelList({
             fill="none"
             stroke="currentColor"
             strokeWidth="2.5"
-            style={{
-              flexShrink: 0,
-              color: 'var(--hush-text-muted)',
-              transform: showServerMenu ? 'rotate(180deg)' : 'none',
-              transition: 'transform var(--duration-fast) var(--ease-out)',
-            }}
+            className={`cl-server-chevron${showServerMenu ? ' cl-server-chevron--open' : ''}`}
           >
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
 
-        <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
+        <div className="cl-header-actions">
           {isAdmin && (
             <>
               <button
                 type="button"
-                style={styles.addBtn}
+                className="cl-add-btn"
                 title="Create category"
                 onClick={() => setShowCreateCategoryModal(true)}
               >
@@ -1199,7 +1027,7 @@ export default function ChannelList({
               </button>
               <button
                 type="button"
-                style={styles.addBtn}
+                className="cl-add-btn"
                 title="Create channel"
                 onClick={() => setShowCreateModal(true)}
               >
@@ -1213,13 +1041,11 @@ export default function ChannelList({
         </div>
 
         {showServerMenu && (
-          <div style={styles.serverMenu}>
+          <div className="cl-server-menu">
             <button
               type="button"
-              style={styles.serverMenuItem(false)}
+              className="cl-server-menu-item"
               onClick={() => { setShowServerMenu(false); setShowInviteModal(true); }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-hover)'; e.currentTarget.style.color = 'var(--hush-text)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--hush-text-secondary)'; }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -1231,10 +1057,8 @@ export default function ChannelList({
             </button>
             <button
               type="button"
-              style={styles.serverMenuItem(false)}
+              className="cl-server-menu-item"
               onClick={() => { setShowServerMenu(false); setShowSettings(true); }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hush-hover)'; e.currentTarget.style.color = 'var(--hush-text)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--hush-text-secondary)'; }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
@@ -1251,7 +1075,7 @@ export default function ChannelList({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div style={styles.list}>
+        <div className="cl-channel-list">
           {systemChannels.map((ch) => (
             <SystemChannelRow
               key={ch.id}
@@ -1294,14 +1118,9 @@ export default function ChannelList({
               }
             />
           ) : draggedCategoryGroup ? (
-            <div style={{
-              ...styles.categoryHeader,
-              background: 'var(--hush-elevated)',
-              borderRadius: '4px',
-              color: 'var(--hush-text)',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
-              cursor: 'grabbing',
-            }}>
+            <div
+              className="cl-category-label cl-category-drag-overlay"
+            >
               {draggedCategoryGroup.label}
             </div>
           ) : null}
