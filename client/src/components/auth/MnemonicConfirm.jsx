@@ -32,10 +32,14 @@ function pickRandomPositions(max, count) {
 export function MnemonicConfirm({ words, onConfirm, onBack, challengePositions, onPositionsSelected }) {
   const [positions] = useState(() => {
     if (challengePositions?.length === 3) return challengePositions;
-    const picked = pickRandomPositions(words.length, 3);
-    onPositionsSelected?.(picked);
-    return picked;
+    return pickRandomPositions(words.length, 3);
   });
+
+  useEffect(() => {
+    if (!challengePositions?.length) {
+      onPositionsSelected?.(positions);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [inputs, setInputs] = useState(['', '', '']);
 
   const getFieldState = useCallback(

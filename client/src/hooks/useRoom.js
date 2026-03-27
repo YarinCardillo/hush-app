@@ -365,8 +365,11 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
           setError('Disconnected from room');
         });
 
+        // Derive LiveKit URL from the current page origin so it works
+        // through the nginx /livekit/ reverse proxy (both local and remote).
         const livekitUrl =
-          import.meta.env.VITE_LIVEKIT_URL || 'ws://localhost:7880';
+          import.meta.env.VITE_LIVEKIT_URL ||
+          `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/livekit/`;
         await room.connect(livekitUrl, token, { autoSubscribe: false });
 
         if (isStale()) {

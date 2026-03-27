@@ -5,7 +5,7 @@ import App from './App';
 import './styles/global.css';
 
 // Dev-only: console log buffer + dev toolbar + eruda mobile console.
-if (import.meta.env.DEV) {
+if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_TOOLBAR === 'true') {
   const _logBuffer = [];
   const MAX_BUFFER = 1000;
   const ts = () => new Date().toISOString().slice(11, 23);

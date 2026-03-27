@@ -16,7 +16,7 @@ This document describes Hush's end-to-end encryption (E2EE) implementation, trus
 
 ## Chat encryption
 
-**Protocol**: MLS (RFC 9420, Messaging Layer Security) via the `hush-crypto` Rust crate wrapping OpenMLS 0.8.1, compiled to WASM for web, direct Rust for desktop (Tauri), UniFFI for mobile. Single implementation on all platforms.
+**Protocol**: MLS (RFC 9420, Messaging Layer Security) via the `hush-crypto` Rust crate wrapping OpenMLS 0.8.1, compiled to WASM for web and desktop (Electron runs the same WASM in Chromium), UniFFI for mobile. Single implementation on all platforms.
 
 **MLS group per channel**: Each text channel has its own MLS group. Messages are encrypted using `MlsGroup::create_message()` and decrypted using `process_message()`. The ciphersuite is `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`.
 

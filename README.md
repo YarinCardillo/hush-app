@@ -82,8 +82,8 @@ Main environment variables (see [.env.example](.env.example)):
 - **Database:** PostgreSQL. Messages stored as ciphertext.
 - **LiveKit:** SFU for WebRTC media. Frame-level E2EE via Insertable Streams.
 - **Caddy:** Reverse proxy and TLS.
-- **Desktop (planned):** Tauri + CEF (Rust shell + bundled Chromium, native crypto via IPC).
-- **Mobile (planned):** React Native with `hush-crypto` Rust crate via UniFFI.
+- **Desktop (MVP):** Electron shell wrapping the same React build as hush-web. `hush-crypto` runs as WASM inside the renderer, identical to the browser path. OS keystore access via keytar for biometric unlock.
+- **Mobile (post-MVP):** React Native (separate repo: hush-mobile) with `hush-crypto` Rust crate via UniFFI.
 
 ---
 
@@ -96,8 +96,8 @@ Main environment variables (see [.env.example](.env.example)):
 | Backend | Go, Chi |
 | Database | PostgreSQL |
 | Media SFU | LiveKit |
-| Desktop (planned) | Tauri + CEF |
-| Mobile (planned) | React Native |
+| Desktop (MVP) | Electron |
+| Mobile (post-MVP) | React Native |
 | Proxy | Caddy |
 | Containers | Docker, docker-compose |
 

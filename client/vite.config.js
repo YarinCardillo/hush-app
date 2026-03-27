@@ -38,6 +38,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    allowedHosts: ['hushdev.duckdns.org'],
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
     },
@@ -45,14 +46,15 @@ export default defineConfig({
       allow: ['..'],
     },
     proxy: {
-      '/api': 'http://localhost:8081',
+      '/api': 'http://localhost:8080',
       '/ws': {
-        target: 'http://localhost:8081',
+        target: 'http://localhost:8080',
         ws: true,
       },
       '/livekit': {
-        target: 'http://localhost:8081',
+        target: 'http://localhost:7880',
         ws: true,
+        rewrite: (path) => path.replace(/^\/livekit/, ''),
       },
     },
   },

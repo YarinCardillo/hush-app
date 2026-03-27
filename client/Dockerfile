@@ -21,6 +21,8 @@ RUN npm ci
 
 COPY client/ .
 COPY --from=wasm-builder /wasm-out/ ./src/wasm/
+ARG VITE_DEBUG_TOOLBAR=false
+ENV VITE_DEBUG_TOOLBAR=$VITE_DEBUG_TOOLBAR
 RUN npm run build
 
 # --- Stage 3: Caddy serve ---
