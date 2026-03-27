@@ -1,122 +1,97 @@
 # Changelog
 
-All notable changes to hush are documented here.
+All notable changes to Hush are documented here.
 
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+This changelog is a human-readable narrative of the project's evolution, intended for security auditors, contributors, and community members who want to understand what was built and in what order. It is not a git log dump.
 
-## [0.7.0-alpha] - 2026-03-03: Servers & Channels (current)
+---
 
-### Architecture
+## [v1.0] — 2026-03 — Production Launch Preparation
 
-- Go backend replacing Node.js/Matrix for auth, API, and WebSocket presence
-- Signal Protocol (X3DH + Double Ratchet) via hush-crypto Rust crate compiled to WASM
-- WebSocket message routing with per-recipient fan-out encryption
-- LiveKit E2EE key distribution via Signal sessions instead of Matrix
-- Encrypted message store in IndexedDB with per-session crypto keys
-- Matrix/Synapse fully removed from codebase
+**Phase I: Hardening, documentation, and self-hosting packaging.**
 
-### Features
+The final polish pass before v1.0. Focus on correctness, security hardening, and operator experience rather than new features.
 
-- Server and channel management with text, voice, and category types
-- Invite link generation and join flow
-- Drag-and-drop channel and category reordering with server-side persistence
-- Member list with real-time WebSocket presence
-- Server settings: rename, leave, delete with ownership transfer
-- Resizable sidebar with persistent width
-- Collapsible categories with persistent state per server
-- HushOrb ambient mascot in voice channels and empty states
-- Server-authoritative voice state via LiveKit webhooks
+**Security hardening:** Security audit covering XSS surfaces (confirmed clean — React JSX escaping is the sole render path), AES-GCM nonce audit (PBKDF2-SHA256 at 200k iterations, 12-byte CSPRNG nonces confirmed correct), and message size enforcement. Server ciphertext limit tightened from 64 KiB to 8 KiB to match MLS overhead budget. Client switched from character count to byte-based enforcement (TextEncoder, 4,000 byte plaintext limit with ~2x headroom for UTF-8 multi-byte characters).
 
-### Infrastructure
+**Edge case hardening:** Single-tab enforcement via BroadcastChannel API (MLS group state is not safe for concurrent tabs). Voice channel reconnect overlay with retry on page refresh. Network disconnect recovery with automatic WS reconnect and MLS catch-up. Guest session expiry warning and clean exit flow.
 
-- Client Dockerfile with multi-stage WASM build pipeline
-- Real-time WebSocket broadcasts for all server mutations
-- libsignal-dezire security patches (panic DoS, zeroization) with 30 interop tests
-- Setup script and environment configuration for self-hosting
+**Self-hosting packaging:** `scripts/setup.sh` rewritten as a fully autonomous first-run script — checks Docker, generates six secrets, writes `.env` and Caddy config, pulls images, runs migrations, starts the stack, and health-checks the running instance. `scripts/update.sh` adds a pg_dump backup step before any image pull. `docker-compose.prod.yml` finalized as a standalone production compose (no override chaining). Caddy auto-HTTPS via Let's Encrypt configured from domain name alone.
 
-### Fixes
+**Documentation:** README, SECURITY.md, ARCHITECTURE.md, and CHANGELOG rewritten from scratch to accurately reflect the current MLS-encrypted, BIP39-identity, backend-opaque, multi-tenant architecture.
 
-- Chat shows member display names instead of truncated UUIDs
-- WebSocket reconnection stability and React StrictMode compatibility
-- Theme mode separated from theme variant selection
-- Channel and category drag-and-drop position persistence
+---
 
-## [0.6.2-alpha] - 2026-02-23: Signal Protocol + Go Backend
+## [v0.9] — 2026-03 — Multi-Instance Client
 
-### Features
+**Phase U: Unified multi-instance client.**
 
-- Symmetric tile grid with hero layout on mobile and desktop
-- Typewriter subtitle animation on home page
-- Video quality auto-management based on bandwidth estimation
-- End-to-end encrypted badge on home page
-- Unwatch card with hero layout and unread badges
+The client connects to N Hush instances simultaneously. Guilds from all instances appear in a flat sidebar aggregated by instance color. Each instance maintains an independent WebSocket connection with JWT authentication. Instance registry lives in browser storage. This is the architecture for a federated identity model where users host their own instances but interact across them.
 
-### Fixes
+---
 
-- iOS Safari auto-zoom on input focus
-- Security headers and CORS origin restriction
-- Video container letterbox contrast in light mode
-- Logo dot position after late font swap
-- Mono audio capture for microphone
-- False "secure channel failed" toast from expired token
-- Local webcam feed now mirrored horizontally
-- Orphan room cleanup for abandoned rooms
-- iOS Safari stale dim artifacts after sidebar close
+## [v0.8] — 2026-03 — MLS Migration (Signal → MLS)
 
-## [0.6.1-alpha] - 2026-02-19: Signal Protocol + Go Backend
+**Phase M: Signal Protocol → MLS (RFC 9420) via OpenMLS 0.8.1.**
 
-### Features
+This was the largest architectural pivot in the project's history. The Signal Protocol implementation (`libsignal-dezire`) was removed entirely and replaced with MLS (Messaging Layer Security), the IETF standard group key agreement protocol.
 
-- Auth UX overhaul: guest cleanup, SSO support, invite-only toggle
-- Link-only room model with copy-link sharing
-- Chat and controls UI refresh
-- Dynamic favicon syncing with system theme
-- Design system pass across all components
+**Why MLS over Signal:** Signal's X3DH + Double Ratchet is designed for 1:1 messaging, not groups. Group messaging in Signal requires per-recipient fan-out encryption that scales O(N) with group size. MLS uses TreeKEM — O(log N) group key operations — and provides the same forward secrecy and post-compromise security guarantees with efficient group membership management.
 
-### Fixes
+**What changed:** The `hush-crypto` Rust crate was rewritten to wrap OpenMLS. One MLS group per channel replaces per-recipient session fan-out. MLS `export_secret()` replaces the previous Signal-based voice frame key distribution. The server no longer needs to process per-recipient ciphertext routing. Database schema migrated: `signal_*` tables dropped, `mls_credentials` and `mls_key_packages` tables added. Voice group MLS added for frame key derivation. Backend opacity migration: `servers` and `channels` tables now store only `encrypted_metadata BYTEA` — guild names, channel names, and all human-readable metadata are encrypted client-side.
 
-- E2EE critical fixes: AES-256 key length, key retry logic, chat send retry
-- Connection epoch guard to prevent StrictMode double-mount race
-- Track cleanup and disconnect handling in room components
-- Roadmap page styling and interaction refinements
+**Security note on the removed dependency:** The pre-MLS `libsignal-dezire` dependency had two vulnerabilities found and patched in our fork: a DoS panic on invalid Montgomery u-coordinates (High severity) and missing zeroization of DH private keys (Medium). These are fully removed from the codebase.
 
-## [0.6.0-alpha] - 2026-02-14: End-to-End Encryption
+---
 
-### Features
+## [v0.7] — 2026-02 — Key Transparency
 
-- Migrated to Matrix Synapse for auth and room management
-- LiveKit SFU replacing mediasoup for media transport
-- E2EE via Olm/Megolm with LiveKit Insertable Streams
-- Key distribution and leader election for media encryption
-- Docker Compose deployment with Caddy reverse proxy
+**Phase K: Transparency log for key operations.**
 
-### Security
+A signed Merkle tree records all key operations: user registration, device add, device revoke, KeyPackage rotation. Clients verify their own inclusion proofs at login and on key changes via `/api/transparency/verify`. This provides T.1 transparency: detection of unauthorized key changes by the instance operator's own log. The log uses Ed25519-signed leaf nodes; the signing key seed is generated once by `setup.sh` and stored as `TRANSPARENCY_LOG_PRIVATE_KEY`.
 
-- Comprehensive E2EE audit with fixes for password-derived keys and UISI handling
-- Per-account crypto store prefix to avoid IndexedDB conflicts
+---
 
-## [0.5.1] - 2026-02-12: Foundation
+## [v0.7] — 2026-02 — BIP39 Cryptographic Identity
 
-### Features
+**Phase J: BIP39 mnemonic-based identity.**
 
-- Ephemeral text chat within rooms
-- Chat message limits and rate limiting
-- Screen share card loading state with spinner
+Replaced username/password auth with cryptographic identity. A 12-word BIP39 mnemonic deterministically generates an Ed25519 root keypair. Authentication is a challenge-response: server sends a random nonce, client signs with the root private key, server verifies. No password hash, no email — the server stores only the public key.
 
-### Fixes
+Multi-device: each device has its own independent keypair. An existing authenticated device signs a certificate for the new device's public key via QR scan. The server maintains the list of certified device keys per account. Private keys never leave the device.
 
-- Persisted chat messages for room lifetime
-- Removed experimental E2EE infrastructure (unstable in mediasoup)
+The identity vault encrypts the mnemonic seed at rest using AES-256-GCM with a key derived from the user's vault PIN via PBKDF2-SHA256 (200k iterations, 16-byte random salt). The decrypted seed lives in memory only for the duration of the session.
 
-## [0.5.0] - 2026-02-11: Foundation
+---
 
-### Features
+## [v0.6] — 2026-02 — Multi-Tenant Restoration and Rate Limiting
 
-- WebRTC rooms via mediasoup SFU, up to 4 participants
-- Quality presets: best (1080p) and lite (720p)
-- Noise gate AudioWorklet for mic processing
-- iOS Safari compatibility fixes for remote streams
-- Logo wordmark with animated orange dot
-- Click-to-watch for remote screen shares
-- Fullscreen support and mobile layout
-- Server status indicator on home page
+**Phase F/G: Multi-tenant architecture, rate limiting, admin dashboard.**
+
+Restored multi-guild architecture after a single-tenant refactor: `servers` and `server_members` tables with guild-scoped foreign keys, WebSocket hub with `BroadcastToServer(serverID, msg)` for per-guild broadcast. Rate limiting added to all API endpoints and WebSocket message paths. Standalone admin dashboard (`client/admin/`) with API key authentication — sees only UUIDs and metrics, never plaintext content.
+
+---
+
+## [v0.5] — 2026-02 — Go Backend + Guild/Channel Architecture
+
+**Phase E+/E+2: Go backend, Discord-like guild structure.**
+
+Replaced the Node.js backend with Go (Chi router). Architected the guild/channel model: servers with text and voice channels, drag-and-drop channel reordering with server-side persistence, member list with real-time presence, invite links, guild settings. Real-time via WebSocket with per-guild broadcast hub. LiveKit SFU integration for voice/video/screen share replacing the earlier mediasoup implementation. Frame-level E2EE via LiveKit Insertable Streams.
+
+**Previous Signal Protocol implementation:** This phase originally shipped with Signal Protocol (X3DH + Double Ratchet) via `hush-crypto` WASM for 1:1 session-based encryption. This was superseded by MLS in v0.8 (see above). The migration is documented in Phase M.
+
+---
+
+## [v0.4] — 2026-02 — End-to-End Encryption (Matrix/Olm Era, Superseded)
+
+**Phases A–D: Initial Matrix + Olm/Megolm E2EE implementation.**
+
+The first E2EE attempt used Matrix Synapse for auth and room management with Olm/Megolm for encryption. This entire approach was superseded: Matrix was removed and replaced with the Go backend (Phase E+), and Olm/Megolm was replaced by Signal Protocol (Phase E+) and then MLS (Phase M). These phases are preserved in changelog history for auditability but the corresponding code is no longer present.
+
+---
+
+## [v0.1–v0.3] — 2026-01 — Foundation
+
+**Initial implementation: WebRTC rooms, mediasoup SFU, ephemeral chat.**
+
+Original platform: WebRTC rooms via mediasoup (up to 4 participants), quality presets (1080p/720p), noise gate AudioWorklet, screen share, webcam, microphone. Ephemeral text chat within rooms. iOS Safari compatibility. Logo wordmark. No E2EE at this stage — security was added in subsequent phases.
