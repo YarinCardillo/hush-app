@@ -56,6 +56,7 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
   const [isE2EEEnabled, setIsE2EEEnabled] = useState(false);
   const [voiceEpoch, setVoiceEpoch] = useState(null);
   const [isVoiceReconnecting, setIsVoiceReconnecting] = useState(false);
+  const [voiceReconnectFailed, setVoiceReconnectFailed] = useState(false);
   const [activeSpeakerIds, setActiveSpeakerIds] = useState([]);
 
   // ─── Click-to-Watch Screen Shares ─────────────────────
@@ -77,6 +78,7 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
   const roomNameRef = useRef(null);
   const channelIdRef = useRef(null);
   const connectionEpochRef = useRef(0);
+  const reconnectAttemptCountRef = useRef(0);
 
   // ─── Noise Gate Refs ──────────────────────────────────
   const audioContextRef = useRef(null);
@@ -189,7 +191,9 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
         setIsReady(false);
         setIsE2EEEnabled(false);
         setVoiceEpoch(null);
+        setVoiceReconnectFailed(false);
         voiceEpochRef.current = null;
+        reconnectAttemptCountRef.current = 0;
         roomNameRef.current = roomName;
         channelIdRef.current = channelId || null;
 
@@ -360,11 +364,60 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
           if (isStale()) return;
         });
 
+        // Reconnecting: LiveKit is attempting to re-establish the WebSocket
+        // connection (e.g. page refresh, network interruption). Show the
+        // overlay and count the attempt so we can surface a Rejoin prompt
+        // after 3 failures.
+        room.on(RoomEvent.Reconnecting, () => {
+          if (isStale()) return;
+          reconnectAttemptCountRef.current += 1;
+          setIsVoiceReconnecting(true);
+          console.log(`[livekit] Reconnecting... (attempt ${reconnectAttemptCountRef.current})`);
+        });
+
+        // Reconnected: re-derive the MLS frame key from the current epoch so
+        // the E2EE key provider is fresh after the socket was re-established.
+        // Re-setting the same key if the epoch is unchanged is idempotent.
+        room.on(RoomEvent.Reconnected, async () => {
+          if (isStale()) return;
+          reconnectAttemptCountRef.current = 0;
+          try {
+            const db = await getStore();
+            const credential = await mlsStoreLib.getCredential(db);
+            const tok = getToken();
+            const mlsDeps = {
+              db,
+              token: tok,
+              credential,
+              mlsStore: mlsStoreLib,
+              hushCrypto: hushCryptoLib,
+              api: apiLib,
+            };
+            const { frameKeyBytes, epoch } = await mlsGroupLib.exportVoiceFrameKey(mlsDeps, channelIdRef.current);
+            if (e2eeKeyProviderRef.current) {
+              await e2eeKeyProviderRef.current.setKey(new Uint8Array(frameKeyBytes), epoch % 256);
+            }
+            setVoiceEpoch(epoch);
+            voiceEpochRef.current = epoch;
+            console.log(`[livekit] Reconnected — frame key re-derived (epoch ${epoch})`);
+          } catch (err) {
+            console.error('[livekit] Frame key re-derivation after reconnect failed:', err);
+          }
+          setIsVoiceReconnecting(false);
+        });
+
         room.on(RoomEvent.Disconnected, () => {
           if (isStale()) return;
           console.log('[livekit] Disconnected from room');
           setIsReady(false);
-          setError('Disconnected from room');
+          // If 3 or more reconnect attempts preceded this disconnect, surface the
+          // manual "Rejoin" prompt instead of a generic error.
+          if (reconnectAttemptCountRef.current >= 3) {
+            setVoiceReconnectFailed(true);
+            setIsVoiceReconnecting(false);
+          } else {
+            setError('Disconnected from room');
+          }
         });
 
         room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
@@ -546,8 +599,10 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
         } catch { /* fire-and-forget */ }
       }
       voiceEpochRef.current = null;
+      reconnectAttemptCountRef.current = 0;
       setVoiceEpoch(null);
       setIsVoiceReconnecting(false);
+      setVoiceReconnectFailed(false);
       return;
     }
 
@@ -603,6 +658,8 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
       setIsE2EEEnabled(false);
       setVoiceEpoch(null);
       setIsVoiceReconnecting(false);
+      setVoiceReconnectFailed(false);
+      reconnectAttemptCountRef.current = 0;
 
       console.log('[livekit] Disconnected from room');
     } catch (err) {
@@ -831,6 +888,7 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
     isE2EEEnabled,
     voiceEpoch,
     isVoiceReconnecting,
+    voiceReconnectFailed,
     activeSpeakerIds,
     // Room connection
     connectRoom,

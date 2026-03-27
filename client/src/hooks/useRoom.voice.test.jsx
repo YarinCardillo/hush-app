@@ -80,6 +80,9 @@ vi.mock('livekit-client', () => {
     ParticipantDisconnected: 'participantDisconnected',
     Connected: 'connected',
     Disconnected: 'disconnected',
+    Reconnecting: 'reconnecting',
+    Reconnected: 'reconnected',
+    ActiveSpeakersChanged: 'activeSpeakersChanged',
     TrackPublished: 'trackPublished',
     TrackUnpublished: 'trackUnpublished',
     TrackSubscribed: 'trackSubscribed',
@@ -364,5 +367,167 @@ describe('useRoom MLS voice E2EE', () => {
     // E2EE must NOT be enabled — no unencrypted fallback
     expect(result.current.isE2EEEnabled).toBe(false);
     expect(result.current.isVoiceReconnecting).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reconnect lifecycle tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: connect a hook and return the MockRoom instance so we can emit
+ * RoomEvent.Reconnecting / RoomEvent.Reconnected in tests.
+ */
+async function connectAndGetRoom(result) {
+  await act(async () => {
+    await result.current.connectRoom(ROOM_NAME, 'TestUser', CHANNEL_ID);
+  });
+  // The room is stored internally; we get it from the last MockRoom constructed.
+  // Since MockRoom.connect is a no-op, the room ref is set after connect() returns.
+  // We can retrieve it via the module-level MockRoom instances tracked by the mock.
+  return result;
+}
+
+// We need access to the MockRoom instance. The simplest approach: capture it
+// via a module-scoped variable in the mock factory using vi.hoisted.
+const { capturedRooms } = vi.hoisted(() => {
+  const capturedRooms = [];
+  return { capturedRooms };
+});
+
+// Re-register the Room mock to capture instances
+vi.mock('livekit-client', () => {
+  const RoomEvent = {
+    ParticipantConnected: 'participantConnected',
+    ParticipantDisconnected: 'participantDisconnected',
+    Connected: 'connected',
+    Disconnected: 'disconnected',
+    Reconnecting: 'reconnecting',
+    Reconnected: 'reconnected',
+    ActiveSpeakersChanged: 'activeSpeakersChanged',
+    TrackPublished: 'trackPublished',
+    TrackUnpublished: 'trackUnpublished',
+    TrackSubscribed: 'trackSubscribed',
+    TrackUnsubscribed: 'trackUnsubscribed',
+  };
+
+  class MockRoom {
+    constructor() {
+      this._handlers = {};
+      this.remoteParticipants = new Map();
+      capturedRooms.push(this);
+    }
+    on(event, handler) {
+      this._handlers[event] = handler;
+    }
+    off(event) {
+      delete this._handlers[event];
+    }
+    emit(event, ...args) {
+      this._handlers[event]?.(...args);
+    }
+    async connect() {}
+    async disconnect() {}
+  }
+
+  return {
+    ExternalE2EEKeyProvider: mockE2EEKeyProvider,
+    Room: MockRoom,
+    RoomEvent,
+    Track: { Source: { ScreenShare: 'screen_share', ScreenShareAudio: 'screen_share_audio' }, Kind: { Video: 'video' } },
+  };
+});
+
+describe('useRoom voice reconnect', () => {
+  let wsClient;
+  let getStore;
+  let getToken;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedRooms.length = 0;
+
+    wsClient = makeWsClient();
+    getStore = makeGetStore();
+    getToken = makeGetToken();
+    stubLivekitFetch();
+
+    // Restore default mock implementations
+    mockCreateVoiceGroup.mockResolvedValue({ epoch: 0 });
+    mockJoinVoiceGroup.mockResolvedValue({ epoch: 1 });
+    mockExportVoiceFrameKey.mockResolvedValue({
+      frameKeyBytes: new Uint8Array(32).fill(0xab),
+      epoch: 1,
+    });
+    mockProcessVoiceCommit.mockResolvedValue({ type: 'commit', epoch: 2 });
+    mockPerformVoiceSelfUpdate.mockResolvedValue({ epoch: 3 });
+    mockDestroyVoiceGroup.mockResolvedValue(undefined);
+    mockGetMLSVoiceGroupInfo.mockRejectedValue(new Error('404'));
+    mockGetCredential.mockResolvedValue({
+      signingPrivateKey: new Uint8Array([1]),
+      signingPublicKey: new Uint8Array([2]),
+      credentialBytes: new Uint8Array([3]),
+    });
+    mockSetKey.mockResolvedValue(undefined);
+  });
+
+  it('RoomEvent.Reconnected triggers frame key re-derivation via exportVoiceFrameKey', async () => {
+    const { result } = renderHook(() =>
+      useRoom({ wsClient, getToken, currentUserId: 'u1', getStore, voiceKeyRotationHours: 2 }),
+    );
+
+    await act(async () => {
+      await result.current.connectRoom(ROOM_NAME, 'TestUser', CHANNEL_ID);
+    });
+
+    const callsBeforeReconnect = mockExportVoiceFrameKey.mock.calls.length;
+    const setKeyCallsBeforeReconnect = mockSetKey.mock.calls.length;
+
+    // Simulate LiveKit reconnected event
+    const room = capturedRooms[capturedRooms.length - 1];
+    mockExportVoiceFrameKey.mockResolvedValue({
+      frameKeyBytes: new Uint8Array(32).fill(0xde),
+      epoch: 9,
+    });
+
+    await act(async () => {
+      room.emit('reconnected');
+    });
+
+    // exportVoiceFrameKey should be called once more on reconnect
+    expect(mockExportVoiceFrameKey.mock.calls.length).toBeGreaterThan(callsBeforeReconnect);
+    // setKey should be called with the new frame key
+    expect(mockSetKey.mock.calls.length).toBeGreaterThan(setKeyCallsBeforeReconnect);
+    expect(result.current.isVoiceReconnecting).toBe(false);
+  });
+
+  it('3 failed reconnect attempts set voiceReconnectFailed to true', async () => {
+    const { result } = renderHook(() =>
+      useRoom({ wsClient, getToken, currentUserId: 'u1', getStore, voiceKeyRotationHours: 2 }),
+    );
+
+    await act(async () => {
+      await result.current.connectRoom(ROOM_NAME, 'TestUser', CHANNEL_ID);
+    });
+
+    const room = capturedRooms[capturedRooms.length - 1];
+
+    // Simulate 3 reconnect attempts without success
+    await act(async () => {
+      room.emit('reconnecting');
+    });
+    await act(async () => {
+      room.emit('reconnecting');
+    });
+    await act(async () => {
+      room.emit('reconnecting');
+    });
+
+    // After 3 attempts, disconnected fires without a Reconnected in between
+    await act(async () => {
+      room.emit('disconnected');
+    });
+
+    expect(result.current.voiceReconnectFailed).toBe(true);
   });
 });

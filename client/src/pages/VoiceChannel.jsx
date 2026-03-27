@@ -18,6 +18,7 @@ import QualityPickerModal from '../components/QualityPickerModal';
 import DevicePickerModal from '../components/DevicePickerModal';
 import Chat from '../components/Chat';
 import MemberList from '../components/MemberList';
+import VoiceReconnectOverlay from '../components/VoiceReconnectOverlay';
 
 /** Returns inline style for a peer dot based on streaming state. */
 function peerDotStyle(isStreaming) {
@@ -110,6 +111,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     isE2EEEnabled,
     voiceEpoch,
     isVoiceReconnecting,
+    voiceReconnectFailed,
     activeSpeakerIds,
   } = useRoom({
     wsClient,
@@ -387,6 +389,23 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     }
   };
 
+  /**
+   * Rejoin handler: disconnect the failed room and immediately reconnect.
+   * Reuses the existing connectRoom flow which re-derives the MLS frame key.
+   */
+  const handleRejoin = useCallback(async () => {
+    try {
+      await disconnectRoom();
+    } catch (err) {
+      console.warn('[VoiceChannel] Rejoin disconnect error:', err);
+    }
+    try {
+      await connectRoom(roomName, displayName, channel.id);
+    } catch (err) {
+      console.error('[VoiceChannel] Rejoin connect error:', err);
+    }
+  }, [disconnectRoom, connectRoom, roomName, displayName, channel.id]);
+
   if (error) {
     const displayError = getFriendlyRoomError(error);
     return (
@@ -482,7 +501,12 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
       </div>
 
       <div className="vc-main">
-        <div className="vc-content">
+        <div className="vc-content" style={{ position: 'relative' }}>
+          <VoiceReconnectOverlay
+            isReconnecting={isVoiceReconnecting}
+            hasFailed={voiceReconnectFailed}
+            onRejoin={handleRejoin}
+          />
           <VideoGrid
             localTracks={localTracks}
             remoteTracks={remoteTracks}
