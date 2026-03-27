@@ -449,44 +449,70 @@ export default function Chat({
               </div>
             </div>
           ) : (
-            visibleMessages.map((msg) => {
+            visibleMessages.map((msg, idx) => {
               const isOwn = msg.sender === currentUserId;
               const isFailed = msg.failed === true;
               const isPending = msg.pending === true;
+              const prevMsg = idx > 0 ? visibleMessages[idx - 1] : null;
+              const consecutive = isConsecutive(prevMsg, msg);
+              const displayName = isOwn ? 'You' : (displayNameMap.get(msg.sender) ?? truncateUserId(msg.sender));
+
+              // Build date separator when the calendar day changes
+              const showDateSep = prevMsg
+                ? toDateKey(msg.timestamp) !== toDateKey(prevMsg.timestamp)
+                : true;
+
               return (
-                <div
-                  key={msg.id}
-                  className={`chat-message-row${isOwn ? ' chat-message-row--own' : ''}${isFailed ? ' chat-message-row--failed' : ''}${isPending ? ' chat-message-row--pending' : ''}`}
-                >
-                  <div className="chat-message-header">
-                    <span className={`chat-username${isOwn ? ' chat-username--own' : ''}`}>
-                      {isOwn ? 'You' : (displayNameMap.get(msg.sender) ?? truncateUserId(msg.sender))}
-                    </span>
-                    <span className="chat-timestamp">{formatTime(msg.timestamp)}</span>
-                  </div>
-                  <div className="chat-body">
-                    {msg.decryptionFailed ? (
-                      <span className="chat-decryption-failed">
-                        Message encrypted — decryption key no longer available
-                      </span>
-                    ) : (
-                      msg.content
-                    )}
-                  </div>
-                  {isPending && (
-                    <div className="chat-pending-indicator">sending…</div>
-                  )}
-                  {isFailed && (
-                    <div className="chat-retry-wrapper">
-                      <button
-                        type="button"
-                        className="chat-retry-btn"
-                        onClick={() => handleRetry(msg)}
-                      >
-                        Retry
-                      </button>
+                <div key={msg.id}>
+                  {showDateSep && (
+                    <div className="date-separator">
+                      <span className="date-separator-label">{formatDateLabel(msg.timestamp)}</span>
                     </div>
                   )}
+                  <div
+                    className={[
+                      'chat-message-row',
+                      consecutive ? 'message-consecutive' : '',
+                      isOwn ? 'chat-message-row--own' : '',
+                      isFailed ? 'chat-message-row--failed' : '',
+                      isPending ? 'chat-message-row--pending' : '',
+                    ].filter(Boolean).join(' ')}
+                  >
+                    {!consecutive && (
+                      <div className="chat-message-header">
+                        <span className={`chat-username${isOwn ? ' chat-username--own' : ''}`}>
+                          {displayName}
+                        </span>
+                        <span className="chat-timestamp message-timestamp">{formatTime(msg.timestamp)}</span>
+                      </div>
+                    )}
+                    {consecutive && (
+                      <span className="chat-timestamp message-timestamp">{formatTime(msg.timestamp)}</span>
+                    )}
+                    <div className="chat-body">
+                      {msg.decryptionFailed ? (
+                        <span className="chat-decryption-failed">
+                          Message encrypted — decryption key no longer available
+                        </span>
+                      ) : (
+                        msg.content
+                      )}
+                    </div>
+                    {isPending && (
+                      <div className="chat-pending-indicator">sending…</div>
+                    )}
+                    {isFailed && (
+                      <div className="chat-retry-wrapper">
+                        <button
+                          type="button"
+                          className="chat-retry-btn"
+                          onClick={() => handleRetry(msg)}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })
@@ -526,4 +552,49 @@ export default function Chat({
 function truncateUserId(userId) {
   if (!userId) return 'User';
   return userId.slice(0, 8) + '…';
+}
+
+/**
+ * Returns true when two messages are from the same sender and less than 5
+ * minutes apart, qualifying the second for "consecutive" (collapsed) display.
+ *
+ * @param {object} prev - Previous message object
+ * @param {object} curr - Current message object
+ * @returns {boolean}
+ */
+function isConsecutive(prev, curr) {
+  if (!prev || !curr) return false;
+  if (prev.sender !== curr.sender) return false;
+  if (prev.pending || curr.pending) return false;
+  return Math.abs(curr.timestamp - prev.timestamp) < 5 * 60 * 1000;
+}
+
+/**
+ * Returns a locale date string (YYYY-MM-DD) for a timestamp, used to
+ * detect day boundaries between messages.
+ *
+ * @param {number} timestamp - Unix ms timestamp
+ * @returns {string}
+ */
+function toDateKey(timestamp) {
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Formats a timestamp as a human-readable date label for separators.
+ *
+ * @param {number} timestamp - Unix ms timestamp
+ * @returns {string}
+ */
+function formatDateLabel(timestamp) {
+  const d = new Date(timestamp);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  if (toDateKey(d.getTime()) === toDateKey(today.getTime())) return 'Today';
+  if (toDateKey(d.getTime()) === toDateKey(yesterday.getTime())) return 'Yesterday';
+
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
