@@ -25,6 +25,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import EmptyState from '../components/EmptyState';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
+import { VoiceConnectedPanel } from '../components/Controls';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1298,6 +1299,24 @@ export default function ServerLayout() {
     />
   );
 
+  /** Channel list column with optional voice-connected panel at the bottom. */
+  const channelSidebarEl = (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      <div style={{ flex: 1, overflow: 'hidden' }}>{channelListEl}</div>
+      {activeVoiceChannel && (
+        <VoiceConnectedPanel
+          channelName={activeVoiceChannel._displayName ?? activeVoiceChannel.name}
+          isMuted={false}
+          isDeafened={false}
+          onMute={undefined}
+          onDeafen={undefined}
+          onSettings={undefined}
+          onDisconnect={handleVoiceLeave}
+        />
+      )}
+    </div>
+  );
+
   return (
     <div className="lay-container">
       {/* ── Offline banner ── */}
@@ -1312,7 +1331,7 @@ export default function ServerLayout() {
         <>
           {serverListEl}
           <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
-            {channelListEl}
+            {channelSidebarEl}
           </div>
           <div
             className="lay-resize-handle"
@@ -1333,7 +1352,7 @@ export default function ServerLayout() {
           <div className={`sidebar-panel-left ${showDrawer ? 'sidebar-panel-open' : ''}`}>
             {serverListEl}
             <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-              {channelListEl}
+              {channelSidebarEl}
             </div>
           </div>
         </>
