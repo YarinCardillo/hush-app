@@ -74,6 +74,19 @@ describe('encryptVault / decryptVault round-trip', () => {
     expect(await decryptVault(blob1, pin)).toEqual(pk);
     expect(await decryptVault(blob2, pin)).toEqual(pk);
   });
+
+  it('nonce uniqueness: first 12 bytes of two blobs differ (crypto.getRandomValues not reused)', async () => {
+    const pk = makePrivateKey();
+    const pin = 'nonce-uniqueness-check';
+    const blob1 = await encryptVault(pk, pin);
+    const blob2 = await encryptVault(pk, pin);
+    // Extract the 12-byte nonce prefix from each blob
+    const nonce1 = blob1.slice(0, 12);
+    const nonce2 = blob2.slice(0, 12);
+    // Nonces MUST differ: AES-GCM security relies on nonce uniqueness per key.
+    // If they match, two ciphertexts share a (nonce, key) pair — catastrophic.
+    expect(nonce1).not.toEqual(nonce2);
+  });
 });
 
 describe('openVaultStore / saveEncryptedKey / loadEncryptedKey', () => {
