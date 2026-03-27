@@ -1,4 +1,13 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+
+/** Maximum plaintext byte length before encryption (UTF-8 encoded).
+ * Conservative: 4000 bytes < (8192 MLS budget - 16 GCM tag - 80 MLS framing).
+ * Accounts for multi-byte UTF-8 characters (CJK, emoji use 3-4 bytes each).
+ */
+const MAX_PLAINTEXT_BYTES = 4000;
+
+/** Show byte counter when this fraction of MAX_PLAINTEXT_BYTES is exceeded. */
+const COUNTER_SHOW_THRESHOLD = 0.8;
 import * as api from '../lib/api';
 import { useMLS } from '../hooks/useMLS';
 
@@ -132,6 +141,7 @@ export default function Chat({
 }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
+  const [inputByteLength, setInputByteLength] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const [loadMoreLoading, setLoadMoreLoading] = useState(false);
   const [hasMoreOlder, setHasMoreOlder] = useState(true);
@@ -354,6 +364,7 @@ export default function Chat({
   const handleSend = async () => {
     const trimmed = inputText.trim();
     if (!trimmed || isSending || !channelId || !wsClient) return;
+    if (new TextEncoder().encode(trimmed).byteLength > MAX_PLAINTEXT_BYTES) return;
     const token = getToken?.();
     if (!token) return;
 
@@ -528,18 +539,29 @@ export default function Chat({
             ref={inputRef}
             className="chat-input"
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={(e) => {
+              const text = e.target.value;
+              setInputText(text);
+              setInputByteLength(new TextEncoder().encode(text).byteLength);
+            }}
             onKeyDown={handleKeyDown}
             placeholder="send a message..."
             rows={1}
-            maxLength={2000}
             disabled={isSending}
             autoComplete="off"
           />
+          {inputByteLength >= MAX_PLAINTEXT_BYTES * COUNTER_SHOW_THRESHOLD && (
+            <span
+              className={`chat-byte-counter${inputByteLength > MAX_PLAINTEXT_BYTES ? ' chat-byte-counter--over' : ''}`}
+              aria-live="polite"
+            >
+              {MAX_PLAINTEXT_BYTES - inputByteLength}
+            </span>
+          )}
           <button
-            className={`chat-send-btn${!inputText.trim() || isSending ? ' chat-send-btn--disabled' : ''}`}
+            className={`chat-send-btn${!inputText.trim() || isSending || inputByteLength > MAX_PLAINTEXT_BYTES ? ' chat-send-btn--disabled' : ''}`}
             onClick={handleSend}
-            disabled={!inputText.trim() || isSending}
+            disabled={!inputText.trim() || isSending || inputByteLength > MAX_PLAINTEXT_BYTES}
           >
             Send
           </button>
