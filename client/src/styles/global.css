@@ -1141,6 +1141,120 @@ a[href]:active {
   flex-shrink: 0;
 }
 
+/* ── Voice channel list avatars ─────────────────── */
+.voice-channel-users {
+  display: flex;
+  align-items: center;
+  padding: 2px 0 2px 28px;
+}
+
+.voice-channel-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--hush-surface);
+  margin-left: -6px;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: var(--hush-elevated);
+}
+
+.voice-channel-avatar:first-child {
+  margin-left: 0;
+}
+
+.voice-channel-avatar-placeholder {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--hush-surface);
+  margin-left: -6px;
+  flex-shrink: 0;
+  background: var(--hush-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  color: var(--hush-text-muted);
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+.voice-channel-avatar-placeholder:first-child {
+  margin-left: 0;
+}
+
+.voice-channel-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--hush-text-muted);
+  margin-left: 4px;
+}
+
+/* ── Voice connected panel (bottom of sidebar) ── */
+.voice-panel {
+  border-top: 1px solid var(--hush-border);
+  padding: 8px;
+  background: var(--hush-surface);
+  flex-shrink: 0;
+}
+
+.voice-panel-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.voice-panel-channel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--hush-live);
+}
+
+.voice-panel-status {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--hush-text-muted);
+}
+
+.voice-panel-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.voice-panel-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--hush-elevated);
+  border: none;
+  color: var(--hush-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.voice-panel-btn:hover {
+  background: var(--hush-hover);
+  color: var(--hush-text);
+}
+
+.voice-panel-btn.disconnect {
+  background: var(--hush-danger);
+  color: white;
+}
+
+.voice-panel-btn.disconnect:hover {
+  opacity: 0.9;
+}
+
+.voice-panel-btn.muted {
+  color: var(--hush-danger);
+}
+
 .cl-channel-delete-btn {
   background: none;
   border: none;
