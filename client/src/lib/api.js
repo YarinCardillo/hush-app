@@ -233,6 +233,20 @@ export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, d
  * @returns {Promise<{ token: string, user: object }>}
  */
 /**
+ * Request an ephemeral guest session token.
+ * No account is created. The JWT carries is_guest=true and a short expiry.
+ *
+ * @param {string} [baseUrl='']
+ * @returns {Promise<{ token: string, guestId: string, expiresAt: string }>}
+ */
+export async function requestGuestSession(baseUrl = '') {
+  const res = await fetch(`${baseUrl}/api/auth/guest`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `requestGuestSession ${res.status}`);
+  return data;
+}
+
+/**
  * Check if a username is available for registration.
  * @param {string} username
  * @param {string} [baseUrl='']

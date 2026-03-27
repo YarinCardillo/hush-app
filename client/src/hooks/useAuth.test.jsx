@@ -22,6 +22,7 @@ vi.mock('../lib/api', () => ({
   requestChallenge: vi.fn(),
   verifyChallenge: vi.fn(),
   registerWithPublicKey: vi.fn(),
+  requestGuestSession: vi.fn(),
   listDeviceKeys: vi.fn().mockResolvedValue([]),
   revokeDeviceKey: vi.fn().mockResolvedValue(undefined),
 }));
@@ -91,6 +92,16 @@ function mockFetchOk(body) {
   return { ok: true, json: () => Promise.resolve(body) };
 }
 
+/**
+ * Builds a fake (unsigned) JWT with the given payload.
+ * The client only reads the payload; it does not verify the signature.
+ */
+function buildFakeJwt(payload) {
+  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const body = btoa(JSON.stringify(payload));
+  return `${header}.${body}.fake-signature`;
+}
+
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -110,6 +121,11 @@ beforeEach(() => {
   vi.mocked(apiMod.registerWithPublicKey).mockResolvedValue({
     token: 'jwt-register',
     user: { id: 'user-reg', username: 'newuser', displayName: 'New User' },
+  });
+  vi.mocked(apiMod.requestGuestSession).mockResolvedValue({
+    token: 'jwt-guest',
+    guestId: 'guest_abc123',
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
   });
   vi.mocked(vaultMod.deleteVaultDatabase).mockClear();
   vi.mocked(vaultMod.saveEncryptedKey).mockClear();
@@ -522,5 +538,118 @@ describe('useAuth — lockVault', () => {
     await waitFor(() => expect(result.current.vaultState).toBe('locked'));
 
     expect(vaultMod.deleteVaultDatabase).not.toHaveBeenCalled();
+  });
+});
+
+// ── Guest session ──────────────────────────────────────────────────────────────
+
+describe('useAuth — guest session', () => {
+  /**
+   * Builds a fake JWT with is_guest=true and the given expiry.
+   * The client reads claims from the payload only (no sig verification).
+   */
+  function makeGuestJwt(expiresAtMs) {
+    const payload = {
+      sub: 'guest_abc123',
+      sid: 'sess-guest-1',
+      is_guest: true,
+      exp: Math.floor(expiresAtMs / 1000),
+      iat: Math.floor(Date.now() / 1000),
+    };
+    const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+    const body = btoa(JSON.stringify(payload));
+    return `${header}.${body}.fake-sig`;
+  }
+
+  it('performGuestAuth sets isGuest=true and guestExpiresAt', async () => {
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const guestToken = makeGuestJwt(new Date(expiresAt).getTime());
+    vi.mocked(apiMod.requestGuestSession).mockResolvedValue({
+      token: guestToken,
+      guestId: 'guest_abc123',
+      expiresAt,
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.performGuestAuth();
+    });
+
+    expect(result.current.isGuest).toBe(true);
+    expect(result.current.guestExpiresAt).toBe(expiresAt);
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.vaultState).toBe('unlocked');
+  });
+
+  it('guest JWT with T-5min remaining triggers hush_guest_expiry_warning event', async () => {
+    // Expires in exactly 5 minutes — warning fires immediately (warningMs <= 0).
+    const expiresAtMs = Date.now() + 5 * 60 * 1000;
+    const guestToken = makeGuestJwt(expiresAtMs);
+    vi.mocked(apiMod.requestGuestSession).mockResolvedValue({
+      token: guestToken,
+      guestId: 'guest_abc123',
+      expiresAt: new Date(expiresAtMs).toISOString(),
+    });
+
+    const warningHandler = vi.fn();
+    window.addEventListener('hush_guest_expiry_warning', warningHandler);
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.performGuestAuth();
+    });
+
+    // The warning fires synchronously when <= 5 min remaining.
+    expect(warningHandler).toHaveBeenCalledOnce();
+    window.removeEventListener('hush_guest_expiry_warning', warningHandler);
+  });
+
+  it('guest session expiry fires hush_guest_session_expired event and resets state', async () => {
+    // Very short expiry so we can use real timers with a short wait.
+    const expiresAtMs = Date.now() + 300;
+    const guestToken = makeGuestJwt(expiresAtMs);
+    vi.mocked(apiMod.requestGuestSession).mockResolvedValue({
+      token: guestToken,
+      guestId: 'guest_abc123',
+      expiresAt: new Date(expiresAtMs).toISOString(),
+    });
+
+    const expiredHandler = vi.fn();
+    window.addEventListener('hush_guest_session_expired', expiredHandler);
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.performGuestAuth();
+    });
+
+    expect(result.current.isGuest).toBe(true);
+
+    // Wait for the expiry timer to fire (300ms).
+    await waitFor(() => expect(expiredHandler).toHaveBeenCalledOnce(), { timeout: 3000 });
+    await waitFor(() => expect(result.current.isGuest).toBe(false), { timeout: 3000 });
+    expect(result.current.isAuthenticated).toBe(false);
+
+    window.removeEventListener('hush_guest_session_expired', expiredHandler);
+  }, 10_000);
+
+  it('performGuestAuth failure resets state', async () => {
+    vi.mocked(apiMod.requestGuestSession).mockRejectedValueOnce(new Error('server error'));
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      try { await result.current.performGuestAuth(); } catch { /* expected */ }
+    });
+
+    expect(result.current.isGuest).toBe(false);
+    expect(result.current.token).toBeNull();
+    expect(result.current.vaultState).toBe('none');
   });
 });

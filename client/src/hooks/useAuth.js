@@ -41,7 +41,34 @@ import {
   requestChallenge,
   verifyChallenge,
   registerWithPublicKey,
+  requestGuestSession,
 } from '../lib/api';
+
+// ── JWT utilities ─────────────────────────────────────────────────────────────
+
+/**
+ * Decodes a JWT payload without verifying the signature.
+ * Used client-side only to read claims (expiry, is_guest) that were already
+ * signed by the trusted server — signature verification is the server's job.
+ *
+ * @param {string} token - JWT string
+ * @returns {object | null} Parsed payload claims, or null on error
+ */
+function parseJwtClaims(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    // Base64url → base64 → JSON
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), '='));
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+/** Guest session warning shown 5 minutes before expiry. */
+const GUEST_EXPIRY_WARNING_MS = 5 * 60 * 1000;
 
 // ── Module-level constants ───────────────────────────────────────────────────
 
@@ -154,9 +181,13 @@ function clearPinAttempts(userId) {
  *   isAuthenticated: boolean,
  *   loading: boolean,
  *   error: Error|null,
+ *   isGuest: boolean,
+ *   guestExpiresAt: string|null,
+ *   voiceDisconnectRef: React.MutableRefObject<(() => void)|null>,
  *   performChallengeResponse: (privateKey: Uint8Array, publicKey: Uint8Array) => Promise<void>,
  *   performRegister: (username: string, displayName: string, mnemonic: string, inviteCode?: string) => Promise<void>,
  *   performRecovery: (mnemonic: string, revokeOtherDevices?: boolean) => Promise<void>,
+ *   performGuestAuth: () => Promise<{ user: object }>,
  *   unlockVault: (pin: string) => Promise<void>,
  *   lockVault: () => void,
  *   setPIN: (pin: string) => Promise<void>,
@@ -181,15 +212,110 @@ export function useAuth() {
    */
   const [transparencyError, setTransparencyError] = useState(null);
 
+  /** True when the current session is a guest (short-lived, no BIP39 identity). */
+  const [isGuest, setIsGuest] = useState(false);
+  /**
+   * ISO timestamp of guest session expiry. Non-null only when isGuest === true.
+   * Used by the UI to display the expiry countdown.
+   */
+  const [guestExpiresAt, setGuestExpiresAt] = useState(null);
+
   // In-memory identity key — never persisted to any storage as plaintext.
   const identityKeyRef = useRef(null);
 
   // Inactivity timer handle.
   const inactivityTimerRef = useRef(null);
 
+  // Guest session expiry timers.
+  const guestWarningTimerRef = useRef(null);
+  const guestExpiryTimerRef = useRef(null);
+
+  /**
+   * Optional voice-disconnect callback. Set by the voice layer so that guest
+   * expiry can cleanly disconnect an active call before redirecting.
+   *
+   * Pattern: voiceDisconnectRef.current = () => room.disconnect()
+   * Clear on voice component unmount: voiceDisconnectRef.current = null
+   */
+  const voiceDisconnectRef = useRef(null);
+
   const isAuthenticated = Boolean(token && user);
 
   const clearError = useCallback(() => setError(null), []);
+
+  // ── Guest session timers ───────────────────────────────────────────────────
+
+  /**
+   * Cancels any running guest warning/expiry timers. Safe to call multiple times.
+   */
+  const clearGuestTimers = useCallback(() => {
+    if (guestWarningTimerRef.current != null) {
+      clearTimeout(guestWarningTimerRef.current);
+      guestWarningTimerRef.current = null;
+    }
+    if (guestExpiryTimerRef.current != null) {
+      clearTimeout(guestExpiryTimerRef.current);
+      guestExpiryTimerRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Schedules a 5-minute warning and expiry action for a guest session.
+   *
+   * At T-5 minutes: emits a 'guest_expiry_warning' CustomEvent on window so
+   *   any component can show a persistent toast.
+   * At T-0: disconnects voice (if registered), clears local auth state,
+   *   and redirects to /register (BIP39 onboarding).
+   *
+   * @param {number} expiresAtMs - Unix timestamp in milliseconds
+   */
+  const startGuestExpiryTimers = useCallback((expiresAtMs) => {
+    clearGuestTimers();
+
+    const now = Date.now();
+    const totalMs = expiresAtMs - now;
+    if (totalMs <= 0) return; // Already expired.
+
+    const warningMs = totalMs - GUEST_EXPIRY_WARNING_MS;
+
+    if (warningMs > 0) {
+      guestWarningTimerRef.current = setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('hush_guest_expiry_warning', {
+          detail: { expiresAt: new Date(expiresAtMs).toISOString() },
+        }));
+      }, warningMs);
+    } else {
+      // Less than 5 minutes remaining — show warning immediately.
+      window.dispatchEvent(new CustomEvent('hush_guest_expiry_warning', {
+        detail: { expiresAt: new Date(expiresAtMs).toISOString() },
+      }));
+    }
+
+    guestExpiryTimerRef.current = setTimeout(() => {
+      // 1. Disconnect voice if active.
+      if (voiceDisconnectRef.current) {
+        try { voiceDisconnectRef.current(); } catch { /* ignore */ }
+      }
+
+      // 2. Show expiry toast (via CustomEvent — decoupled from any toast lib).
+      window.dispatchEvent(new CustomEvent('hush_guest_session_expired'));
+
+      // 3. Clear auth state (silent — no BroadcastChannel; guest has no other tabs).
+      sessionStorage.removeItem(JWT_KEY);
+      sessionStorage.removeItem(VAULT_SESSION_FLAG);
+      setToken(null);
+      setUser(null);
+      setVaultState('none');
+      setIsGuest(false);
+      setGuestExpiresAt(null);
+      clearGuestTimers();
+
+      // 4. Redirect to BIP39 registration (not login — guests have no account).
+      if (typeof window !== 'undefined') {
+        window.location.href = '/register';
+      }
+    }, totalMs);
+  }, [clearGuestTimers]);
 
   // ── Inactivity timer ───────────────────────────────────────────────────────
 
@@ -258,11 +384,38 @@ export function useAuth() {
 
   /**
    * Shared post-auth finalisation: upload MLS KeyPackages, persist JWT, update state.
-   * @param {{ token: string, user: object }} data
+   * For guest sessions (no user object): pass { token, guestId, expiresAt } and
+   * set user to a synthetic guest object.
+   *
+   * @param {{ token: string, user?: object, guestId?: string, expiresAt?: string }} data
    */
   const finishAuth = useCallback(async (data) => {
     const { token: jwt, user: u } = data;
-    if (!jwt || !u?.id) throw new Error('invalid auth response');
+    if (!jwt) throw new Error('invalid auth response');
+
+    // Guest auth path: no persisted user, no KeyPackage upload.
+    const claims = parseJwtClaims(jwt);
+    if (claims?.is_guest) {
+      sessionStorage.setItem(JWT_KEY, jwt);
+      setToken(jwt);
+      // Build a synthetic guest user object so isAuthenticated returns true.
+      const guestUser = {
+        id: claims.sub,
+        username: claims.sub,
+        displayName: 'Guest',
+        role: 'guest',
+      };
+      setUser(guestUser);
+      setIsGuest(true);
+      const expiresAtIso = data.expiresAt ?? (claims.exp ? new Date(claims.exp * 1000).toISOString() : null);
+      setGuestExpiresAt(expiresAtIso);
+      if (expiresAtIso) {
+        startGuestExpiryTimers(new Date(expiresAtIso).getTime());
+      }
+      return { token: jwt, user: guestUser };
+    }
+
+    if (!u?.id) throw new Error('invalid auth response');
 
     const deviceId = getDeviceId();
     await uploadKeyPackagesAfterAuth(jwt, u.id, deviceId);
@@ -271,7 +424,7 @@ export function useAuth() {
     setToken(jwt);
     setUser(u);
     return { token: jwt, user: u };
-  }, []);
+  }, [startGuestExpiryTimers]);
 
   // ── Challenge-response login ───────────────────────────────────────────────
 
@@ -414,6 +567,34 @@ export function useAuth() {
       setLoading(false);
     }
   }, [performChallengeResponse]);
+
+  // ── Guest auth ─────────────────────────────────────────────────────────────
+
+  /**
+   * Starts an ephemeral guest session: calls POST /api/auth/guest and sets
+   * in-memory auth state. No vault, no BIP39 identity — guests have a
+   * short-lived JWT and are redirected to registration on expiry.
+   *
+   * @returns {Promise<{ user: object }>}
+   */
+  const performGuestAuth = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await requestGuestSession();
+      const result = await finishAuth(data);
+      setVaultState('unlocked'); // Guests have no vault but are "unlocked" to use the app.
+      return { user: result.user };
+    } catch (err) {
+      setError(err);
+      setToken(null);
+      setUser(null);
+      setVaultState('none');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [finishAuth]);
 
   // ── Vault PIN management ───────────────────────────────────────────────────
 
@@ -618,12 +799,15 @@ export function useAuth() {
     // 7. Reset in-memory state.
     identityKeyRef.current = null;
     clearInactivityTimer();
+    clearGuestTimers();
     setToken(null);
     setUser(null);
     setVaultState('none');
+    setIsGuest(false);
+    setGuestExpiresAt(null);
     setError(null);
     setLoading(false);
-  }, [user, clearInactivityTimer]);
+  }, [user, clearInactivityTimer, clearGuestTimers]);
 
   // ── Startup: session rehydration ──────────────────────────────────────────
 
@@ -802,13 +986,21 @@ export function useAuth() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
-  // ── Inactivity cleanup on vault lock ──────────────────────────────────────
+  // ── Inactivity cleanup on vault lock / guest timer cleanup on unmount ──────
 
   useEffect(() => {
     if (vaultState !== 'unlocked') {
       clearInactivityTimer();
     }
   }, [vaultState, clearInactivityTimer]);
+
+  useEffect(() => {
+    return () => {
+      // Cancel guest timers when the hook unmounts (e.g. during tests or
+      // full page navigation) to prevent state updates on unmounted components.
+      clearGuestTimers();
+    };
+  }, [clearGuestTimers]);
 
   // ── BroadcastChannel logout listener ─────────────────────────────────────
 
@@ -841,6 +1033,7 @@ export function useAuth() {
     performChallengeResponse,
     performRegister,
     performRecovery,
+    performGuestAuth,
     unlockVault,
     lockVault,
     setPIN,
@@ -854,6 +1047,14 @@ export function useAuth() {
     // Non-null value blocks the app UI (hard-fail policy).
     transparencyError,
     setTransparencyError,
+    // Guest session state. isGuest=true for ephemeral guest sessions;
+    // guestExpiresAt is an ISO timestamp string for countdown display.
+    isGuest,
+    guestExpiresAt,
+    // Voice disconnect hook. Voice components should set:
+    //   voiceDisconnectRef.current = () => room.disconnect()
+    // and clear it on unmount. Used by guest expiry to clean up the call.
+    voiceDisconnectRef,
     // Legacy aliases preserved for compatibility with existing consumers.
     isLoading: loading,
   };
