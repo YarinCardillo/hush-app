@@ -73,7 +73,7 @@ describe('ChannelList', () => {
     expect(screen.queryByText('—')).not.toBeInTheDocument();
   });
 
-  it('shows voice participant names when participants are present', () => {
+  it('shows voice participant avatars when participants are present', () => {
     const participants = [
       { userId: 'u1', displayName: 'Alice' },
       { userId: 'u2', displayName: 'Bob' },
@@ -91,9 +91,14 @@ describe('ChannelList', () => {
         voiceParticipants={new Map([[voiceChannel.id, participants]])}
       />
     );
-    expect(screen.getByText('Alice')).toBeInTheDocument();
-    expect(screen.getByText('Bob')).toBeInTheDocument();
-    expect(screen.getByText('Charlie')).toBeInTheDocument();
+    // Participants are shown as initials avatars with full name in title attribute
+    expect(screen.getByTitle('Alice')).toBeInTheDocument();
+    expect(screen.getByTitle('Bob')).toBeInTheDocument();
+    expect(screen.getByTitle('Charlie')).toBeInTheDocument();
+    // Initials are displayed inside the avatar elements
+    expect(screen.getByText('A')).toBeInTheDocument();
+    expect(screen.getByText('B')).toBeInTheDocument();
+    expect(screen.getByText('C')).toBeInTheDocument();
   });
 
   it('category header shows drag handle for admin', () => {
