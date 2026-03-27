@@ -5,10 +5,11 @@
 
 :root {
   /* ── Core Surfaces ── */
-  --hush-black:        #0a0a09;  /* page bg */
-  --hush-surface:      #111110;  /* sidebar panels */
-  --hush-elevated:     #1a1a18;  /* raised elements, inputs */
-  --hush-hover:        rgba(255,255,255,.04);  /* hover states on dark surfaces */
+  --hush-black:        #0d0d0c;  /* L ~4, server strip */
+  --hush-surface:      #1a1a19;  /* L ~10, sidebar/member list */
+  --hush-elevated:     #242423;  /* L ~14, chat area base */
+  --hush-hover:        rgba(255,255,255,.06);  /* hover states on dark surfaces */
+  --hush-modal:        #2c2c2a;  /* L ~18, modals/voice panel */
 
   /* ── Signature Orange (Adobe RGB 213, 79, 18) ── */
   --hush-amber:        #d54f12;
@@ -16,7 +17,7 @@
   --hush-amber-dim:    #a33d0e;
   --hush-amber-glow:   rgba(213, 79, 18, 0.14);
   --hush-amber-ghost:  rgba(213, 79, 18, 0.08);
-  --hush-on-amber:     #0a0a09;
+  --hush-on-amber:     #0d0d0c;
 
   /* ── Borders (subtle rgba) ── */
   --hush-border:       rgba(255,255,255,.07);
@@ -36,8 +37,8 @@
   --hush-danger-ghost: rgba(239, 68, 68, 0.10);
 
   /* ── Theme-specific (glass, overlays) ── */
-  --hush-glass-bg:         rgba(10, 10, 9, 0.68);
-  --hush-video-label-bg:  rgba(10, 10, 9, 0.7);
+  --hush-glass-bg:         rgba(13, 13, 12, 0.68);
+  --hush-video-label-bg:  rgba(13, 13, 12, 0.7);
   --hush-badge-live-bg:   rgba(52, 211, 153, 0.1);
   --hush-btn-danger-hover: rgba(239, 68, 68, 0.15);
   --hush-header-block-bg:    rgba(255, 255, 255, 0.03);
@@ -121,13 +122,14 @@
 
 [data-theme="dark"] {
   /* Dark theme: cooler palette */
-  --hush-black:        #0a0a09;
-  --hush-surface:      #111110;
-  --hush-elevated:     #1a1a18;
-  --hush-hover:        rgba(255,255,255,.04);
+  --hush-black:        #0d0d0c;
+  --hush-surface:      #1a1a19;
+  --hush-elevated:     #242423;
+  --hush-hover:        rgba(255,255,255,.06);
+  --hush-modal:        #2c2c2a;
   --hush-amber-glow:   rgba(213, 79, 18, 0.14);
   --hush-amber-ghost:  rgba(213, 79, 18, 0.08);
-  --hush-on-amber:     #0a0a09;
+  --hush-on-amber:     #0d0d0c;
   --hush-border:       rgba(255,255,255,.07);
   --hush-border-hover: rgba(255,255,255,.12);
   --hush-border-focus: rgba(255,255,255,.18);
@@ -135,8 +137,8 @@
   --hush-text-secondary: #888884;
   --hush-text-muted:   #555552;
   --hush-text-ghost:   #333330;
-  --hush-glass-bg:         rgba(10, 10, 9, 0.68);
-  --hush-video-label-bg:  rgba(10, 10, 9, 0.7);
+  --hush-glass-bg:         rgba(13, 13, 12, 0.68);
+  --hush-video-label-bg:  rgba(13, 13, 12, 0.7);
   --hush-badge-live-bg:   rgba(52, 211, 153, 0.1);
   --hush-btn-danger-hover: rgba(239, 68, 68, 0.15);
   --hush-header-block-bg:    rgba(255, 255, 255, 0.03);
