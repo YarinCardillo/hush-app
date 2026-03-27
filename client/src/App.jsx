@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { InstanceProvider } from './contexts/InstanceContext';
 import AppBackground from './components/AppBackground';
 import { applyThemeMode, getStoredThemeMode } from './components/UserSettingsModal';
+import { useSingleTab } from './hooks/useSingleTab';
 
 // Apply stored theme before first paint to avoid FOUC.
 applyThemeMode(getStoredThemeMode());
@@ -72,7 +73,54 @@ function FaviconThemeSync() {
   return null;
 }
 
+/**
+ * Full-screen overlay shown when the app detects it is open in a duplicate
+ * browser tab. Prevents two tabs from sharing the same MLS/vault state.
+ *
+ * @param {{ takeOver: () => void }} props
+ */
+function BlockedTabOverlay({ takeOver }) {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--hush-black)',
+        color: 'var(--hush-text)',
+        textAlign: 'center',
+        padding: '24px',
+        zIndex: 9999,
+      }}
+    >
+      <p style={{ fontSize: '1.1rem', marginBottom: '8px' }}>
+        Hush is already open in another tab.
+      </p>
+      <p style={{ fontSize: '0.9rem', color: 'var(--hush-text-muted)', marginBottom: '24px' }}>
+        Close the other tab or click below to use this one instead.
+      </p>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={takeOver}
+        style={{ padding: '10px 24px' }}
+      >
+        Use this one instead
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
+  const { isBlockedTab, takeOver } = useSingleTab();
+
+  if (isBlockedTab) {
+    return <BlockedTabOverlay takeOver={takeOver} />;
+  }
+
   return (
     <AuthProvider>
       <InstanceProvider>
