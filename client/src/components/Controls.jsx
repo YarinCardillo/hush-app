@@ -55,9 +55,9 @@ export function VoiceConnectedPanel({ channelName, isMuted, isDeafened, onMute, 
         >
           {isDeafened ? (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M11 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5" />
-              <polyline points="17 3 21 3 21 7" />
-              <line x1="15" y1="9" x2="21" y2="3" />
+              <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+              <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+              <line x1="1" y1="1" x2="23" y2="23" />
             </svg>
           ) : (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -103,6 +103,7 @@ export default function Controls({
   isReady,
   isScreenSharing,
   isMicOn,
+  isDeafened = false,
   isWebcamOn,
   quality,
   isMobile = false,
@@ -113,6 +114,7 @@ export default function Controls({
   onScreenShare,
   onOpenQualityOrWindow,
   onMic,
+  onDeafen,
   onWebcam,
   onMicDeviceSwitch,
   onWebcamDeviceSwitch,
@@ -173,8 +175,8 @@ export default function Controls({
           className="ctrl-device-group"
           style={{
             height: btnSize,
-            background: isMicOn ? 'var(--hush-amber)' : 'var(--hush-surface)',
-            color: isMicOn ? 'var(--hush-black)' : 'var(--hush-text-secondary)',
+            background: isMicOn ? 'var(--hush-amber)' : 'var(--hush-danger-ghost)',
+            color: isMicOn ? 'var(--hush-black)' : 'var(--hush-danger)',
             ...(mediaDisabled ? { opacity: 0.6, pointerEvents: 'none' } : {}),
           }}
         >
@@ -221,7 +223,7 @@ export default function Controls({
         </div>
       ) : (
         <button
-          className={`ctrl-icon-btn${isMicOn ? ' ctrl-icon-btn--active' : ''}`}
+          className={`ctrl-icon-btn${isMicOn ? ' ctrl-icon-btn--active' : ' ctrl-icon-btn--danger'}`}
           style={{
             width: btnSize,
             height: btnSize,
@@ -245,6 +247,29 @@ export default function Controls({
               <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .51-.06 1-.16 1.47" />
               <line x1="12" y1="19" x2="12" y2="23" />
               <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          )}
+        </button>
+      )}
+
+      {/* Deafen (mute audio output) */}
+      {onDeafen && (
+        <button
+          className={`ctrl-icon-btn${isDeafened ? ' ctrl-icon-btn--danger' : ''}`}
+          style={{ width: btnSize, height: btnSize }}
+          onClick={onDeafen}
+          title={isDeafened ? 'Undeafen' : 'Deafen'}
+        >
+          {isDeafened ? (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+              <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+              <line x1="1" y1="1" x2="23" y2="23" />
+            </svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+              <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
             </svg>
           )}
         </button>

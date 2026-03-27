@@ -122,6 +122,7 @@ function buildStreams(localTracks, remoteTracks, availableScreens, watchedScreen
         track: info.track.mediaStreamTrack,
         audioTrack,
         label: info.participant.name || info.participant.identity,
+        participantId: info.participant.identity,
         source: videoSource === Track.Source.ScreenShare ? MEDIA_SOURCES.SCREEN : MEDIA_SOURCES.WEBCAM,
       });
     }
@@ -152,6 +153,26 @@ function buildStreams(localTracks, remoteTracks, availableScreens, watchedScreen
  * Video grid: renders StreamView tiles, ScreenShareCards, and orphan audio elements.
  * Extracted from VoiceChannel to keep components under 300 lines.
  */
+/** Extracts initials from a display name — first letter of each word. */
+function getInitials(name) {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return parts[0][0].toUpperCase();
+}
+
+/** Mute icon SVG for overlay on muted participant tiles. */
+function MuteIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <line x1="1" y1="1" x2="23" y2="23" />
+      <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+      <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .76-.13 1.49-.35 2.17" />
+      <line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
+    </svg>
+  );
+}
+
 export default function VideoGrid({
   localTracks,
   remoteTracks,
@@ -166,20 +187,41 @@ export default function VideoGrid({
   onUnwatchScreen,
   onWatchLocalScreen,
   onUnwatchLocalScreen,
+  participants = [],
+  currentUserId,
+  currentDisplayName,
+  activeSpeakerIds = [],
+  isMicOn = true,
 }) {
   const { allStreams, orphanAudioConsumers, unwatchedScreens } = buildStreams(
     localTracks, remoteTracks, availableScreens, watchedScreens, localScreenWatched,
   );
 
+  const speakerSet = new Set(activeSpeakerIds);
+
+  // Build set of participant identities that already have a video stream
+  const identitiesWithVideo = new Set();
+  for (const stream of allStreams) {
+    if (stream.type === 'local') {
+      identitiesWithVideo.add(currentUserId);
+    } else {
+      identitiesWithVideo.add(stream.participantId);
+    }
+  }
+
+  // Participants without video get placeholder tiles
+  const audioOnlyParticipants = participants.filter(
+    (p) => !identitiesWithVideo.has(p.userId),
+  );
+
   const localScreenCard = isScreenSharing && !localScreenWatched;
-  const totalCards = allStreams.length + unwatchedScreens.length + (localScreenCard ? 1 : 0);
+  const totalCards = allStreams.length + audioOnlyParticipants.length + unwatchedScreens.length + (localScreenCard ? 1 : 0);
   const gridStyle = getGridStyle(totalCards, breakpoint);
   const heroId = pickHeroId(allStreams);
   const cols = isMobile ? 2 : getColumnCount(totalCards);
   const heroIsAlone = totalCards > 1 && totalCards % cols === 1;
   const orderedStreams = orderWithHeroLast(allStreams, heroId);
 
-  // Computed layout styles — grid template columns/rows and overflow depend on totalCards and breakpoint.
   const streamsAreaStyle = {
     overflow: isMobile && totalCards !== 2 ? 'auto' : 'hidden',
     alignItems: isMobile && totalCards !== 2 ? 'start' : 'stretch',
@@ -205,30 +247,52 @@ export default function VideoGrid({
     <>
       <div className="vg-streams-area" style={streamsAreaStyle}>
         {totalCards === 0 ? (
-          // Empty div preserves the flex layout; status indicator shows through via z-index.
           <div className="vg-empty" />
         ) : (
           <>
-            {orderedStreams.map((stream) => (
-              <div key={stream.id} style={getTileStyle(stream.id)}>
-                <StreamView
-                  track={stream.track}
-                  audioTrack={stream.audioTrack}
-                  label={stream.label}
-                  source={stream.source}
-                  isLocal={stream.type === 'local'}
-                  objectFit={isMobile ? 'cover' : 'contain'}
-                  onUnwatch={
-                    stream.type === 'remote' && stream.source === MEDIA_SOURCES.SCREEN
-                      ? () => onUnwatchScreen(stream.id)
-                      : stream.type === 'local' && stream.source === MEDIA_SOURCES.SCREEN
-                        ? onUnwatchLocalScreen
-                        : undefined
-                  }
-                  standByAfterMs={stream.source === MEDIA_SOURCES.SCREEN ? STANDBY_AFTER_MS : undefined}
-                />
-              </div>
-            ))}
+            {orderedStreams.map((stream) => {
+              const pid = stream.type === 'local' ? currentUserId : stream.participantId;
+              const isSpeaking = (stream.type === 'local' && !isMicOn) ? false : speakerSet.has(pid);
+              return (
+                <div key={stream.id} style={getTileStyle(stream.id)} className={isSpeaking ? 'vg-tile-speaking' : undefined}>
+                  <StreamView
+                    track={stream.track}
+                    audioTrack={stream.audioTrack}
+                    label={stream.label}
+                    source={stream.source}
+                    isLocal={stream.type === 'local'}
+                    objectFit={isMobile ? 'cover' : 'contain'}
+                    isSpeaking={isSpeaking}
+                    onUnwatch={
+                      stream.type === 'remote' && stream.source === MEDIA_SOURCES.SCREEN
+                        ? () => onUnwatchScreen(stream.id)
+                        : stream.type === 'local' && stream.source === MEDIA_SOURCES.SCREEN
+                          ? onUnwatchLocalScreen
+                          : undefined
+                    }
+                    standByAfterMs={stream.source === MEDIA_SOURCES.SCREEN ? STANDBY_AFTER_MS : undefined}
+                  />
+                </div>
+              );
+            })}
+            {audioOnlyParticipants.map((p) => {
+              const isSelf = p.userId === currentUserId;
+              const name = isSelf ? 'You' : (p.displayName || 'Anonymous');
+              const isMuted = isSelf ? !isMicOn : false;
+              const isSpeaking = isMuted ? false : speakerSet.has(p.userId);
+              const tileClass = `vg-placeholder-tile${isSpeaking ? ' vg-speaking' : ''}`;
+              return (
+                <div key={`placeholder-${p.userId}`} style={normalTileStyle}>
+                  <div className={tileClass}>
+                    <div className="vg-placeholder-avatar">{getInitials(name)}</div>
+                    <span className="vg-placeholder-name">{name}</span>
+                    {isMuted && (
+                      <div className="vg-mute-overlay"><MuteIcon /></div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
             {localScreenCard && (
               <div key="local-screen-card" style={getLocalScreenCardStyle()}>
                 <ScreenShareCard isSelf onWatch={onWatchLocalScreen} />

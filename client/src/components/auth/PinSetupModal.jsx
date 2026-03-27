@@ -153,6 +153,7 @@ export function PinSetupModal({ onSetPin, onSkip, isLoading = false }) {
             id="pin-setup-confirm"
             className="input"
             type="password"
+            inputMode={isPin ? 'numeric' : undefined}
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             placeholder={`Repeat your ${isPin ? 'PIN' : 'passphrase'}`}

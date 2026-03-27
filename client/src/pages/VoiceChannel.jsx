@@ -43,7 +43,7 @@ function getFriendlyRoomError(errorMessage) {
  * Voice channel view: LiveKit room (server-{serverId}-channel-{channel.id}), video grid, controls, chat sidebar.
  * Used by ServerLayout when currentChannel.type === 'voice'.
  */
-export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], members = [], onlineUserIds, myRole = 'member', showToast, onMemberUpdate, showMembers = false, showChatPanel = false, showParticipantsPanel = false, onTogglePanel, onLeave, onOrbPhaseChange, serverParticipants = [] }) {
+export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], members = [], onlineUserIds, myRole = 'member', showToast, onMemberUpdate, showMembers = false, showChatPanel = false, showParticipantsPanel = false, onTogglePanel, onLeave, onOrbPhaseChange, serverParticipants = [], onMobileBack, voiceControlsRef, onVoiceStateChange }) {
   const navigate = useNavigate();
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile';
@@ -65,6 +65,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   const liveUploadPrevRef = useRef({ bytesSent: null, timestamp: null });
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
+  const [isDeafened, setIsDeafened] = useState(false);
   const [isWebcamOn, setIsWebcamOn] = useState(false);
   const [showQualityPicker, setShowQualityPicker] = useState(false);
   const [qualityChangeError, setQualityChangeError] = useState(null);
@@ -99,6 +100,8 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     unpublishWebcam,
     publishMic,
     unpublishMic,
+    muteMic,
+    unmuteMic,
     availableScreens,
     watchedScreens,
     loadingScreens,
@@ -107,6 +110,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     isE2EEEnabled,
     voiceEpoch,
     isVoiceReconnecting,
+    activeSpeakerIds,
   } = useRoom({
     wsClient,
     getToken,
@@ -145,6 +149,27 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
       onLeave?.();
     }
   }, [error, showToast, onLeave]);
+
+  // Auto-publish mic when room is ready
+  const autoMicFiredRef = useRef(false);
+  useEffect(() => {
+    if (!isReady || autoMicFiredRef.current) return;
+    autoMicFiredRef.current = true;
+    (async () => {
+      try {
+        if (hasSavedMic) {
+          await publishMic(selectedMicId);
+          micPublishedRef.current = true;
+          setIsMicOn(true);
+        } else {
+          await requestPermission('audio');
+          setShowMicPicker(true);
+        }
+      } catch (err) {
+        console.warn('[VoiceChannel] Auto-mic failed:', err);
+      }
+    })();
+  }, [isReady, hasSavedMic, selectedMicId, publishMic, requestPermission]);
 
   useEffect(() => {
     if (!wsClient || !channel?.id) return;
@@ -261,15 +286,24 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     }
   };
 
+  const micPublishedRef = useRef(false);
   const handleMic = async () => {
     if (isMicOn) {
-      await unpublishMic();
+      // Mic is on — mute it (keep track published)
+      await muteMic();
       setIsMicOn(false);
-    } else if (!hasSavedMic) {
+    } else if (!micPublishedRef.current && !hasSavedMic) {
+      // Never published — need device selection first
       await requestPermission('audio');
       setShowMicPicker(true);
-    } else {
+    } else if (!micPublishedRef.current) {
+      // Never published — publish with saved device
       await publishMic(selectedMicId);
+      micPublishedRef.current = true;
+      setIsMicOn(true);
+    } else {
+      // Already published — unmute
+      await unmuteMic();
       setIsMicOn(true);
     }
   };
@@ -277,8 +311,9 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
   const handleMicDevicePick = async (deviceId) => {
     setShowMicPicker(false);
     selectMic(deviceId);
-    if (isMicOn) await unpublishMic();
+    if (micPublishedRef.current) await unpublishMic();
     await publishMic(deviceId);
+    micPublishedRef.current = true;
     setIsMicOn(true);
   };
 
@@ -308,6 +343,30 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     await requestPermission('audio');
     setShowMicPicker(true);
   };
+
+  const handleDeafen = useCallback(() => {
+    setIsDeafened((prev) => {
+      const next = !prev;
+      // Mute/unmute all remote audio elements
+      document.querySelectorAll('audio[autoplay]').forEach((el) => {
+        el.muted = next;
+      });
+      return next;
+    });
+  }, []);
+
+  // Expose controls to parent via ref (for VoiceConnectedPanel)
+  const handleMicRef = useRef(handleMic);
+  handleMicRef.current = handleMic;
+  useEffect(() => {
+    if (voiceControlsRef) {
+      voiceControlsRef.current = {
+        toggleMic: () => handleMicRef.current(),
+        toggleDeafen: handleDeafen,
+      };
+    }
+    onVoiceStateChange?.({ isMicOn, isDeafened });
+  }, [voiceControlsRef, isMicOn, isDeafened, handleDeafen, onVoiceStateChange]);
 
   const handleWebcamDeviceSwitch = async () => {
     await requestPermission('video');
@@ -346,33 +405,41 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     <div className="vc-page">
       <div className="vc-header">
         <div className="vc-header-left">
-          <span className="vc-room-title">#{channel._displayName ?? channel.name ?? ''}</span>
-          {isE2EEEnabled && !isVoiceReconnecting && (
-            <span
-              title={`Encrypted${voiceEpoch != null ? ` \u00b7 Epoch ${voiceEpoch}` : ''}`}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                cursor: 'default',
-                color: 'var(--hush-success, #22c55e)',
-                marginLeft: '4px',
-              }}
+          {onMobileBack && (
+            <button
+              type="button"
+              className="vc-back-btn"
+              onClick={onMobileBack}
+              aria-label="Back to channels"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6" />
               </svg>
-            </span>
+            </button>
           )}
-          {isVoiceReconnecting && (
+          <span className="vc-room-title">#{channel._displayName ?? channel.name ?? ''}</span>
+          {isVoiceReconnecting ? (
             <div role="status" className="vc-reconnecting">
               Reconnecting...
             </div>
+          ) : (
+            <span
+              className="vc-secure-live-badge"
+              title={isE2EEEnabled
+                ? `Encrypted${voiceEpoch != null ? ` \u00b7 Epoch ${voiceEpoch}` : ''} \u00b7 Live`
+                : 'Live'}
+            >
+              {isE2EEEnabled ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              ) : (
+                <span className="live-dot" />
+              )}
+              Live
+            </span>
           )}
-          <span className="vc-header-badge">
-            <span className="live-dot" />
-            Live
-          </span>
         </div>
         <div className="vc-header-right">
           <button
@@ -383,7 +450,6 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-            Chat
             {unreadChatCount > 0 && <span className="vc-unread-dot" />}
           </button>
           <button
@@ -406,7 +472,11 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
             onClick={() => onTogglePanel('members')}
             aria-pressed={showMembers}
           >
-            Members
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
           </button>
         </div>
       </div>
@@ -427,11 +497,17 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
             onUnwatchScreen={unwatchScreen}
             onWatchLocalScreen={() => setLocalScreenWatched(true)}
             onUnwatchLocalScreen={() => setLocalScreenWatched(false)}
+            participants={serverParticipants}
+            currentUserId={currentUserId}
+            currentDisplayName={displayName}
+            activeSpeakerIds={activeSpeakerIds}
+            isMicOn={isMicOn}
           />
           <Controls
             isReady={isReady}
             isScreenSharing={isScreenSharing}
             isMicOn={isMicOn}
+            isDeafened={isDeafened}
             isWebcamOn={isWebcamOn}
             quality={quality}
             isMobile={isMobile}
@@ -441,6 +517,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
             onScreenShare={handleScreenShare}
             onOpenQualityOrWindow={() => setShowQualityPicker(true)}
             onMic={handleMic}
+            onDeafen={handleDeafen}
             onWebcam={handleWebcam}
             onMicDeviceSwitch={handleMicDeviceSwitch}
             onWebcamDeviceSwitch={handleWebcamDeviceSwitch}

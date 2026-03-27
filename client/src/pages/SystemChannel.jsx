@@ -9,7 +9,7 @@ const PAGE_SIZE = 50;
  * No message input, no encryption. Fetches from GET /api/servers/:id/system-messages.
  * Listens for 'system_message' WS events for real-time updates.
  */
-export default function SystemChannel({ channel, serverId, getToken, wsClient, members = [], onToggleDrawer }) {
+export default function SystemChannel({ channel, serverId, getToken, wsClient, members = [], onToggleDrawer, onMobileBack }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
@@ -122,7 +122,18 @@ export default function SystemChannel({ channel, serverId, getToken, wsClient, m
     <div className="sc-root">
       <header className="sc-header">
         <div className="sc-header-left">
-          {onToggleDrawer && (
+          {onMobileBack ? (
+            <button
+              type="button"
+              className="sc-back-btn"
+              onClick={onMobileBack}
+              aria-label="Back to channels"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          ) : onToggleDrawer ? (
             <button
               type="button"
               className="sc-drawer-toggle"
@@ -133,7 +144,7 @@ export default function SystemChannel({ channel, serverId, getToken, wsClient, m
                 <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
               </svg>
             </button>
-          )}
+          ) : null}
           <span className="sc-channel-name">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />

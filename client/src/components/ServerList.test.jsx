@@ -328,23 +328,22 @@ describe('ServerList — multi-instance mode via InstanceContext', () => {
   });
 });
 
-describe('ServerList — DM section expansion', () => {
+describe('ServerList — DM button', () => {
   beforeEach(() => {
     cleanup();
   });
 
-  it('DM section starts collapsed and expands on click', () => {
+  it('DM button calls onDmOpen when clicked', () => {
+    const onDmOpen = vi.fn();
     const ctxValue = {
       mergedGuilds: [],
       instanceStates: new Map(),
       guildOrder: [],
       setGuildOrder: vi.fn(),
     };
-    renderWithInstanceCtx(ctxValue);
+    renderWithInstanceCtx(ctxValue, { onDmOpen });
     const dmBtn = screen.getByTitle('Direct Messages');
-    expect(dmBtn.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(dmBtn);
-    expect(dmBtn.getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getByText('No direct messages yet')).toBeInTheDocument();
+    expect(onDmOpen).toHaveBeenCalledTimes(1);
   });
 });

@@ -56,6 +56,7 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
   const [isE2EEEnabled, setIsE2EEEnabled] = useState(false);
   const [voiceEpoch, setVoiceEpoch] = useState(null);
   const [isVoiceReconnecting, setIsVoiceReconnecting] = useState(false);
+  const [activeSpeakerIds, setActiveSpeakerIds] = useState([]);
 
   // ─── Click-to-Watch Screen Shares ─────────────────────
   const [availableScreens, setAvailableScreens] = useState(new Map());
@@ -184,6 +185,7 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
         setAvailableScreens(new Map());
         setWatchedScreens(new Set());
         setParticipants([]);
+        setActiveSpeakerIds([]);
         setIsReady(false);
         setIsE2EEEnabled(false);
         setVoiceEpoch(null);
@@ -363,6 +365,11 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
           console.log('[livekit] Disconnected from room');
           setIsReady(false);
           setError('Disconnected from room');
+        });
+
+        room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+          if (isStale()) return;
+          setActiveSpeakerIds(speakers.map((s) => s.identity));
         });
 
         // Derive LiveKit URL from the current page origin so it works
@@ -710,6 +717,27 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
     scheduleLocalTracksUpdate();
   }, [scheduleLocalTracksUpdate, cleanupMicPipeline]);
 
+  // ─── Mute/Unmute Microphone (keeps track published) ──
+  const muteMic = useCallback(async () => {
+    const room = roomRef.current;
+    if (!room) return;
+    for (const [, info] of localTracksRef.current.entries()) {
+      if (info.source === 'microphone' && info.track) {
+        await info.track.mute();
+      }
+    }
+  }, []);
+
+  const unmuteMic = useCallback(async () => {
+    const room = roomRef.current;
+    if (!room) return;
+    for (const [, info] of localTracksRef.current.entries()) {
+      if (info.source === 'microphone' && info.track) {
+        await info.track.unmute();
+      }
+    }
+  }, []);
+
   // ─── Watch Screen Share ───────────────────────────────
   const watchScreen = useCallback(
     async (trackSid) => {
@@ -803,6 +831,7 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
     isE2EEEnabled,
     voiceEpoch,
     isVoiceReconnecting,
+    activeSpeakerIds,
     // Room connection
     connectRoom,
     disconnectRoom,
@@ -817,6 +846,8 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
     // Microphone
     publishMic,
     unpublishMic,
+    muteMic,
+    unmuteMic,
     // Click-to-watch
     availableScreens,
     watchedScreens,

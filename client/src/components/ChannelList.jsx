@@ -602,26 +602,17 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, voic
         )}
       </div>
       {voiceParticipants.length > 0 && (
-        <div className="voice-channel-users">
-          {voiceParticipants.slice(0, 5).map((p) => {
-            const initials = (p.displayName || p.userId || '?')
-              .split(/\s+/)
-              .slice(0, 2)
-              .map((word) => word[0]?.toUpperCase() ?? '')
-              .join('');
+        <div className="cl-voice-participants">
+          {voiceParticipants.map((p) => {
+            const name = p.displayName || p.userId || 'Anonymous';
+            const initial = name.charAt(0).toUpperCase();
             return (
-              <div
-                key={p.userId}
-                className="voice-channel-avatar-placeholder"
-                title={p.displayName || p.userId}
-              >
-                {initials}
+              <div key={p.userId} className="cl-voice-user" title={name}>
+                <div className="cl-voice-user-avatar">{initial}</div>
+                <span className="cl-voice-user-name">{name}</span>
               </div>
             );
           })}
-          {voiceParticipants.length > 5 && (
-            <span className="voice-channel-count">+{voiceParticipants.length - 5}</span>
-          )}
         </div>
       )}
     </div>

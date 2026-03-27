@@ -141,6 +141,8 @@ export function PinUnlockScreen({ username, avatarUrl, onUnlock, onSwitchAccount
             id="pin-input"
             className="input"
             type="password"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={pin}
             onChange={(e) => setPin(e.target.value)}
             placeholder="Enter your PIN"

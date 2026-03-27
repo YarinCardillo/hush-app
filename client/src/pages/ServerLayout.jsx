@@ -22,6 +22,7 @@ import * as hushCryptoLib from '../lib/hushCrypto';
 import * as mlsGroup from '../lib/mlsGroup';
 import { slugify } from '../lib/slugify';
 import ConfirmModal from '../components/ConfirmModal';
+import DmListView from '../components/DmListView';
 import EmptyState from '../components/EmptyState';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
@@ -178,6 +179,13 @@ export default function ServerLayout() {
   const [activeVoiceChannel, setActiveVoiceChannel] = useState(null);
   const [pendingVoiceSwitch, setPendingVoiceSwitch] = useState(null);
   const activeVoiceMemberIdsRef = useRef([]);
+  const voiceControlsRef = useRef(null);
+  const [voiceMicOn, setVoiceMicOn] = useState(false);
+  const [voiceDeafened, setVoiceDeafened] = useState(false);
+  const handleVoiceStateChange = useCallback(({ isMicOn: mic, isDeafened: deaf }) => {
+    setVoiceMicOn(mic);
+    setVoiceDeafened(deaf);
+  }, []);
   const leavingVoiceRef = useRef(false);
 
   const [orbPhase, setOrbPhase] = useState('idle');
@@ -195,6 +203,7 @@ export default function ServerLayout() {
   // Mobile stack navigation: 1 = server+channel list, 2 = channel content
   const [mobileStack, setMobileStack] = useState(1);
   const [memberDrawerOpen, setMemberDrawerOpen] = useState(false);
+  const [dmMode, setDmMode] = useState(false);
   const closeMemberDrawer = useCallback(() => setMemberDrawerOpen(false), []);
   const toggleMemberDrawer = useCallback(() => setMemberDrawerOpen((p) => !p), []);
 
@@ -202,6 +211,12 @@ export default function ServerLayout() {
   const handleMobileBack = useCallback(() => {
     setMobileStack(1);
     setMemberDrawerOpen(false);
+    // If viewing a DM, go back to DM list
+    if (activeGuild?.isDm) setDmMode(true);
+  }, [activeGuild]);
+
+  const handleDmOpen = useCallback(() => {
+    setDmMode(true);
   }, []);
 
   const { toasts, show: showToast } = useToast();
@@ -470,6 +485,8 @@ export default function ServerLayout() {
     setOrbPhase('idle');
     setActiveVoiceChannel(null);
     activeVoiceMemberIdsRef.current = [];
+    setMobileStack(1);
+    setMemberDrawerOpen(false);
     navigateToGuild(serverId);
   }, [serverId, navigateToGuild]);
 
@@ -994,7 +1011,15 @@ export default function ServerLayout() {
    */
   const handleGuildSelect = useCallback((guild) => {
     setShowDrawer(false);
+    setDmMode(false);
     navigateToGuild(guild.id);
+  }, [navigateToGuild]);
+
+  const handleDmSelect = useCallback((dmGuild) => {
+    setDmMode(false);
+    setShowDrawer(false);
+    setMobileStack(2);
+    navigateToGuild(dmGuild.id);
   }, [navigateToGuild]);
 
   /** Called by GuildCreateModal on success — refresh guilds and navigate to new guild. */
@@ -1244,13 +1269,17 @@ export default function ServerLayout() {
     );
   }
 
+  const dmGuilds = (mergedGuilds ?? []).filter((g) => g.isDm === true);
+
   const serverListEl = (
     <ServerList
       getToken={getToken}
       guilds={mergedGuilds}
-      activeGuild={activeGuild}
+      activeGuild={dmMode ? null : activeGuild}
       onGuildSelect={handleGuildSelect}
       onGuildCreated={handleGuildCreated}
+      onDmOpen={handleDmOpen}
+      isDmActive={dmMode || activeGuild?.isDm}
       getMetadataKey={getMetadataKey}
       instanceData={instanceData}
       userRole={myRole}
@@ -1259,48 +1288,16 @@ export default function ServerLayout() {
     />
   );
 
-  // ── DM simplified layout ─────────────────────────────────────────────────
-  // When viewing a DM guild (isDm=true), render a focused chat-only view with
-  // no channel list, no member panel, and no guild settings.
-  if (activeGuild?.isDm) {
-    const dmChannel = channels[0] ?? null;
-    const otherUser = activeGuild.otherUser;
-    const dmDisplayName = otherUser?.displayName || otherUser?.username || 'Direct Message';
+  // DM list element — shown in sidebar when dmMode is active or viewing a DM guild
+  const dmListEl = (
+    <DmListView
+      dmGuilds={dmGuilds}
+      onSelectDm={handleDmSelect}
+      getToken={getToken}
+    />
+  );
 
-    return (
-      <div className="lay-container" data-testid="dm-layout">
-        {serverListEl}
-        <div className="lay-main">
-          {dmChannel ? (
-            <TextChannel
-              channel={dmChannel}
-              serverId={serverId}
-              getToken={getToken}
-              wsClient={wsClient}
-              members={[]}
-              showMembers={false}
-              onToggleMembers={() => {}}
-              onToggleDrawer={isMobile ? toggleDrawer : undefined}
-            />
-          ) : loading ? (
-            <div className="lay-placeholder" style={{ position: 'relative', zIndex: 1 }}>Loading…</div>
-          ) : (
-            <div className="lay-placeholder">
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--hush-text)' }}>
-                  {dmDisplayName}
-                </div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--hush-text-muted)', marginTop: 8 }}>
-                  Start a conversation
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-        <Toast toasts={toasts} />
-      </div>
-    );
-  }
+  const isDmView = dmMode || activeGuild?.isDm;
 
   const channelListEl = (
     <ChannelList
@@ -1324,14 +1321,14 @@ export default function ServerLayout() {
   /** Channel list column with optional voice-connected panel at the bottom. */
   const channelSidebarEl = (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-      <div style={{ flex: 1, overflow: 'hidden' }}>{channelListEl}</div>
+      <div style={{ flex: 1, overflow: 'hidden' }}>{isDmView ? dmListEl : channelListEl}</div>
       {activeVoiceChannel && (
         <VoiceConnectedPanel
           channelName={activeVoiceChannel._displayName ?? activeVoiceChannel.name}
-          isMuted={false}
-          isDeafened={false}
-          onMute={undefined}
-          onDeafen={undefined}
+          isMuted={voiceMicOn === false}
+          isDeafened={voiceDeafened}
+          onMute={() => voiceControlsRef.current?.toggleMic()}
+          onDeafen={() => voiceControlsRef.current?.toggleDeafen()}
           onSettings={undefined}
           onDisconnect={handleVoiceLeave}
         />
@@ -1391,38 +1388,6 @@ export default function ServerLayout() {
               </button>
             )}
 
-            {/* Mobile top bar with back + channel name + members button */}
-            <div className="mobile-topbar">
-              <button
-                type="button"
-                className="mobile-back-btn"
-                onClick={handleMobileBack}
-                aria-label="Back to channels"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                  <polyline points="15 18 9 12 15 6" />
-                </svg>
-              </button>
-              <span className="mobile-topbar-title">
-                {currentChannel?._displayName ?? currentChannel?.name ?? (activeVoiceChannel?.name ?? '')}
-              </span>
-              {currentChannel?.type === 'text' && (
-                <button
-                  type="button"
-                  className={`mobile-members-btn${memberDrawerOpen ? ' active' : ''}`}
-                  onClick={toggleMemberDrawer}
-                  aria-label="Toggle members"
-                  aria-pressed={memberDrawerOpen}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-                  </svg>
-                </button>
-              )}
-            </div>
-
             {/* Channel content area */}
             <div className="mobile-content-area">
               {activeVoiceChannel && (
@@ -1442,10 +1407,13 @@ export default function ServerLayout() {
                     showMembers={false}
                     showChatPanel={showChatPanel}
                     showParticipantsPanel={showParticipantsPanel}
-                    onTogglePanel={togglePanel}
+                    onTogglePanel={(name) => name === 'members' ? toggleMemberDrawer() : togglePanel(name)}
                     onLeave={handleVoiceLeave}
                     onOrbPhaseChange={handleOrbPhaseChange}
                     serverParticipants={voiceParticipants.get(activeVoiceChannel.id) ?? []}
+                    onMobileBack={handleMobileBack}
+                    voiceControlsRef={voiceControlsRef}
+                    onVoiceStateChange={handleVoiceStateChange}
                   />
                 </div>
               )}
@@ -1461,6 +1429,7 @@ export default function ServerLayout() {
                     wsClient={wsClient}
                     members={members}
                     onToggleDrawer={undefined}
+                    onMobileBack={handleMobileBack}
                   />
                 ) : currentChannel?.type === 'text' ? (
                   <TextChannel
@@ -1472,6 +1441,7 @@ export default function ServerLayout() {
                     showMembers={false}
                     onToggleMembers={toggleMemberDrawer}
                     onToggleDrawer={undefined}
+                    onMobileBack={handleMobileBack}
                     sidebarSlot={null}
                   />
                 ) : currentChannel && currentChannel.type !== 'voice' ? (
@@ -1509,7 +1479,7 @@ export default function ServerLayout() {
       )}
 
       {/* ── Desktop layout ── */}
-      <div className={`lay-main${isMobile ? ' mobile-only' : ''}`}>
+      {!isMobile && <div className="lay-main">
         <div className="lay-content-row">
           <div className="lay-channel-area">
             {activeVoiceChannel && (
@@ -1533,6 +1503,8 @@ export default function ServerLayout() {
                   onLeave={handleVoiceLeave}
                   onOrbPhaseChange={handleOrbPhaseChange}
                   serverParticipants={voiceParticipants.get(activeVoiceChannel.id) ?? []}
+                  voiceControlsRef={voiceControlsRef}
+                  onVoiceStateChange={handleVoiceStateChange}
                 />
               </div>
             )}
@@ -1670,7 +1642,7 @@ export default function ServerLayout() {
           </div>
 
         </div>
-      </div>
+      </div>}
       {pendingVoiceSwitch && (
         <ConfirmModal
           title="Switch voice channel"

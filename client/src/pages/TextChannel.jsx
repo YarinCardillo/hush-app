@@ -17,6 +17,7 @@ export default function TextChannel({
   showMembers = false,
   onToggleMembers,
   onToggleDrawer,
+  onMobileBack,
   sidebarSlot = null,
 }) {
   const { user } = useAuth();
@@ -29,7 +30,18 @@ export default function TextChannel({
     <div className="tc-root">
       <header className="tc-header">
         <div className="tc-header-left">
-          {onToggleDrawer && (
+          {onMobileBack ? (
+            <button
+              type="button"
+              className="tc-back-btn"
+              onClick={onMobileBack}
+              aria-label="Back to channels"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          ) : onToggleDrawer ? (
             <button
               type="button"
               className="tc-drawer-toggle"
@@ -40,7 +52,7 @@ export default function TextChannel({
                 <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
               </svg>
             </button>
-          )}
+          ) : null}
           <span className="tc-channel-name">#{channel._displayName ?? channel.name ?? ''}</span>
         </div>
         {onToggleMembers && (
