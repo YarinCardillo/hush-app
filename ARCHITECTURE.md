@@ -1,448 +1,346 @@
-# ARCHITECTURE.md: Hush Codebase Reference
+# Hush Architecture
 
-> This file is read by orchestra agents (architect + programmer).
-> It maps the CURRENT state of the codebase.
-> Update this file as the codebase evolves.
+This document describes Hush's system architecture as it exists at v1.0. It covers system overview, directory structure, data flow, authentication, encryption, multi-tenant model, backend opacity, key transparency, and infrastructure.
 
 ---
 
-## Current Stack
+## 1. System Overview
 
-| Layer | Technology | Status |
+```mermaid
+graph LR
+    Client["Client\n(React + WASM)"]
+    Admin["Admin Dashboard\n(Standalone Vite)"]
+    Caddy["Caddy\n(TLS + Reverse Proxy)"]
+    API["Go API\n(Chi + WebSocket Hub)"]
+    PG["PostgreSQL"]
+    Redis["Redis"]
+    LK["LiveKit\n(WebRTC SFU)"]
+
+    Client -->|HTTPS / WSS| Caddy
+    Admin -->|HTTPS| Caddy
+    Caddy -->|HTTP| API
+    Caddy -->|HTTP| LK
+    API --> PG
+    API --> Redis
+    API -->|Token endpoint| LK
+```
+
+**Summary:** The client is a React single-page app with OpenMLS compiled to WASM. All encryption happens in the browser. The Go backend routes ciphertext between clients and stores blobs it cannot read. Caddy handles TLS termination and proxying. LiveKit is the WebRTC SFU for voice/video — it forwards encrypted frames. PostgreSQL stores ciphertext and public key material. Redis provides session caching and rate limiting.
+
+---
+
+## 2. Directory Structure
+
+```
+hush-app/
+├── server/                      # Go backend
+│   ├── cmd/hush/main.go         # Entry point, Chi router, graceful shutdown
+│   └── internal/
+│       ├── api/                 # HTTP handlers (auth, guilds, channels, MLS, admin)
+│       ├── auth/                # JWT sign/verify, Ed25519 challenge-response
+│       ├── config/              # Environment-based configuration
+│       ├── db/                  # PostgreSQL queries (store interface for DI)
+│       ├── livekit/             # LiveKit access token generation
+│       ├── models/              # Shared data types
+│       └── ws/                  # WebSocket hub, client relay, message routing
+├── migrations/                  # Sequential SQL migration files (golang-migrate)
+│
+├── client/                      # React frontend (Vite)
+│   └── src/
+│       ├── App.jsx              # Router (guild/channel layout)
+│       ├── hooks/               # useAuth, useMLS, useRoom, useKeyPackageMaintenance
+│       ├── lib/                 # API client, BIP39 identity, MLS group ops, vault, WebSocket client
+│       ├── pages/               # TextChannel, VoiceChannel, ServerLayout, Home
+│       └── components/          # Chat, ChannelList, MemberList, ServerList, Controls
+│
+├── client/admin/                # Standalone admin dashboard (no WASM, API key auth)
+│   └── src/
+│       ├── lib/adminApi.js      # Admin API client (X-Admin-Key header)
+│       └── pages/               # GuildListPage, UserListPage, HealthPage, ConfigPage
+│
+├── hush-crypto/                 # Rust crate: OpenMLS 0.8.1 → WASM
+│   └── src/
+│       ├── credential.rs        # Ed25519 BasicCredential generation
+│       ├── key_package.rs       # MLS KeyPackage builder
+│       ├── group.rs             # Group ops: create, add/remove, commit, export_secret
+│       └── wasm.rs              # wasm-bindgen JS bindings
+│
+├── scripts/
+│   ├── setup.sh                 # First-run self-hoster script (secrets, TLS, health check)
+│   └── update.sh                # Upgrade script (pg_dump backup, image pull, restart)
+│
+├── caddy/
+│   ├── Caddyfile                # Dev/local reverse proxy config
+│   └── Caddyfile.self-hoster.tmpl  # Production template with __DOMAIN__/__EMAIL__ placeholders
+│
+└── livekit/
+    └── livekit.yaml             # LiveKit server config (API key/secret, port config)
+```
+
+---
+
+## 3. Data Flow
+
+### Message send
+
+```mermaid
+sequenceDiagram
+    participant U as User (browser)
+    participant W as WASM (hush-crypto)
+    participant WS as WebSocket (Go)
+    participant DB as PostgreSQL
+
+    U->>W: plaintext message
+    W->>W: MlsGroup.create_message()
+    W-->>U: MLS ciphertext
+    U->>WS: {type: "message.send", channel_id, ciphertext}
+    WS->>DB: INSERT messages (ciphertext BYTEA)
+    WS-->>WS: BroadcastToServer(serverID, ciphertext)
+    Note over WS: All guild members receive ciphertext
+    WS-->>U: {type: "message.new", ciphertext}
+    U->>W: process_message(ciphertext)
+    W-->>U: plaintext
+```
+
+### Voice frame encryption
+
+When a user joins a voice channel:
+
+1. The client creates or joins a voice-type MLS group for that channel.
+2. Frame key derived: `mlsGroup.export_secret("hush-voice-frame-key", epoch)`.
+3. Key is applied to LiveKit's `ExternalE2EEKeyProvider`.
+4. LiveKit E2EE worker encrypts outgoing frames and decrypts incoming frames using AES-256-GCM.
+5. The LiveKit SFU forwards encrypted frames — it never has the frame key.
+6. When membership changes (join/leave), MLS epoch advances, new key derived automatically.
+
+---
+
+## 4. Authentication
+
+### BIP39 identity derivation
+
+```
+12-word mnemonic (BIP39)
+        ↓ deterministic derivation
+Ed25519 root keypair (private key stays on device)
+        ↓
+MLS BasicCredential (public key + identity)
+        ↓ uploaded once on registration
+Go backend stores: root public key + credential
+```
+
+### Session auth (challenge-response)
+
+1. `POST /api/auth/challenge` — server generates random nonce (stored with short TTL)
+2. Client signs nonce with Ed25519 root private key
+3. `POST /api/auth/authenticate` — server verifies signature, issues JWT session token
+4. All subsequent requests use JWT in `Authorization: Bearer` header
+
+No passwords. No email. The server authenticates by verifying cryptographic ownership of a public key.
+
+### Multi-device
+
+Each device has an independent Ed25519 device keypair. Authorization flow:
+
+1. New device generates its keypair, displays a QR code containing its public key.
+2. Existing authenticated device scans the QR code, produces: `certificate = Sign(IK_existing_priv, IK_new_pub)`.
+3. Certificate is uploaded to the server, which verifies the signature against the existing device's known public key.
+4. New device is now trusted for authentication.
+
+Private keys never leave the device that generated them.
+
+### Guest access
+
+Guests get an ephemeral keypair (no mnemonic). A short-lived JWT is issued directly without challenge-response. MLS state is lost when the guest session ends.
+
+---
+
+## 5. Encryption Architecture
+
+### Chat (MLS, RFC 9420)
+
+Each text channel is an independent MLS group. Ciphersuite: `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`.
+
+| Operation | MLS Call | Result |
 |-|-|-|
-| Frontend | React 18 + Vite + hush-crypto (WASM) + livekit-client | DONE |
-| Admin Dashboard | Standalone Vite app (client/admin/), API key auth | DONE |
-| Media SFU | LiveKit Server | DONE |
-| Signaling | Go WebSocket (ws hub + client) | DONE |
-| Auth | Go backend (BIP39 mnemonic identity, cryptographic auth, JWT sessions, guest) | DONE |
-| Chat | WebSocket + MLS group encryption (per-channel MLS groups) | DONE |
-| E2EE Chat | MLS (RFC 9420) via OpenMLS Rust crate, compiled to WASM | DONE |
-| E2EE Media | LiveKit Insertable Streams + MLS export_secret frame key derivation | DONE |
-| Backend Opacity | Server is blind relay: guild/channel metadata encrypted (AES-256-GCM), permission_level integers | DONE |
-| Rooms | Go backend + PostgreSQL (servers/channels/members) | DONE |
-| LiveKit Auth | Go token endpoint (POST /api/livekit/token) | DONE |
-| Rate Limiting | Go middleware (per-IP and per-user) | DONE |
-| Deployment | docker-compose: Go backend + Postgres + LiveKit + Redis + Caddy | DONE |
+| Create channel | `MlsGroup::new()` | New epoch, fresh key material |
+| Add member | Propose `Add`, commit | New epoch, Welcome message sent to new member |
+| Remove member | Propose `Remove`, commit | New epoch, removed member locked out |
+| Send message | `MlsGroup::create_message(plaintext)` | MLS Application Message ciphertext |
+| Receive message | `process_message(ciphertext)` | Plaintext, epoch validated |
+| Key rotation | Propose `Update`, commit | New epoch, fresh leaf node |
+
+Forward secrecy: each epoch has unique key material derived via TreeKEM. Prior epoch keys are deleted after epoch advancement. Post-compromise security: a single `Update + Commit` by a compromised member restores forward secrecy for subsequent epochs.
+
+**Implementation:** `hush-crypto/` Rust crate (OpenMLS 0.8.1) compiled to WASM via wasm-pack. The WASM binary is bundled with the client. `client/src/lib/hushCrypto.js` is the WASM wrapper. `client/src/hooks/useMLS.js` manages group lifecycle.
+
+### Voice frame keys (MLS-derived AES-256-GCM)
+
+Frame keys are derived from the voice channel's MLS group, not generated randomly:
+
+```
+Voice MLS group epoch N
+    ↓ export_secret("hush-voice-frame-key", epoch)
+AES-256-GCM frame key
+    ↓ applied to LiveKit ExternalE2EEKeyProvider
+LiveKit E2EE worker encrypts/decrypts frames
+```
+
+No leader election. Every participant derives the same key from their local MLS group state. Key rotates automatically on every epoch change (membership event).
+
+### Guild/channel metadata (AES-256-GCM, MLS-derived key)
+
+Guild names and channel names are encrypted client-side before transmission:
+
+```
+Guild metadata MLS group
+    ↓ export_secret("hush-guild-metadata")
+AES-256-GCM metadata key
+    ↓ encrypt(guild_name)
+Server stores: encrypted_metadata BYTEA
+```
+
+The server stores only opaque blobs. It knows a guild exists (by UUID) but cannot read its name.
 
 ---
 
-## Current File Map
+## 6. Multi-Tenant Model
 
-```
-server/
-├── cmd/
-│   └── hush/
-│       └── main.go              # Go entry point, Chi router, graceful shutdown
-├── internal/
-│   ├── api/
-│   │   ├── admin.go             # RequireAdminAPIKey middleware + admin routes (opaque data only)
-│   │   ├── admin_test.go        # Admin handler tests
-│   │   ├── auth.go              # Register (public key), authenticate (signature challenge), guest, logout, me
-│   │   ├── auth_test.go         # Auth handler tests
-│   │   ├── channels.go          # Channel CRUD, message retrieval
-│   │   ├── channels_crud_test.go# Channel CRUD tests
-│   │   ├── channels_test.go     # Channel message retrieval tests
-│   │   ├── context.go           # Request context helpers (userID, sessionID)
-│   │   ├── handshake.go         # Client handshake endpoints
-│   │   ├── handshake_test.go    # Handshake tests
-│   │   ├── headers.go           # Security headers middleware
-│   │   ├── headers_test.go      # Security headers tests
-│   │   ├── instance.go          # Instance configuration endpoints
-│   │   ├── instance_test.go     # Instance tests
-│   │   ├── invites.go           # Invite link endpoints
-│   │   ├── invites_test.go      # Invite tests
-│   │   ├── livekit.go           # POST /api/livekit/token
-│   │   ├── livekit_test.go      # LiveKit token tests
-│   │   ├── middleware.go        # RequireAuth (JWT + session validation)
-│   │   ├── mls.go               # MLS key package + credential endpoints (upload, fetch, group info)
-│   │   ├── mls_test.go          # MLS endpoint tests
-│   │   ├── mock_store_test.go   # Function-field mock for db.Store
-│   │   ├── moderation.go        # Ban, mute, kick, audit log
-│   │   ├── moderation_test.go   # Moderation tests
-│   │   ├── ratelimit.go         # Rate limiting middleware
-│   │   ├── ratelimit_test.go    # Rate limit tests
-│   │   ├── servers.go           # Server (guild) CRUD, join/leave, membership
-│   │   ├── servers_test.go      # Server handler tests
-│   │   ├── system_messages.go   # System message endpoints
-│   │   ├── system_messages_test.go
-│   │   ├── webhook.go           # LiveKit webhook handler (voice state)
-│   │   ├── webhook_test.go      # Webhook tests
-│   │   └── webhook_voice_test.go# Voice webhook tests
-│   ├── auth/
-│   │   ├── jwt.go               # JWT sign/verify/claims (session tokens after cryptographic auth)
-│   │   ├── jwt_test.go
-│   │   ├── challenge.go         # Ed25519 nonce generation + signature verification (BIP39 auth)
-│   │   └── challenge_test.go
-│   ├── config/
-│   │   └── config.go            # Env-based config
-│   ├── db/
-│   │   ├── auth_nonces.go       # Challenge-response nonce queries
-│   │   ├── channels.go          # Channel queries
-│   │   ├── db.go                # PostgreSQL connection pool
-│   │   ├── device_keys.go       # Device key certificate queries (multi-device)
-│   │   ├── instance.go          # Instance config queries
-│   │   ├── integration_test.go  # End-to-end DB tests
-│   │   ├── invites.go           # Invite queries
-│   │   ├── messages.go          # Message insert/query (ciphertext blobs)
-│   │   ├── messages_test.go
-│   │   ├── mls.go               # MLS credential + key package queries
-│   │   ├── mls_groups.go        # MLS group info queries (text, voice, metadata groups)
-│   │   ├── moderation.go        # Moderation queries (bans, mutes, audit log)
-│   │   ├── server_members.go    # Server membership queries (permission_level integers)
-│   │   ├── servers.go           # Server (guild) queries (encrypted_metadata, access_policy)
-│   │   ├── sessions.go          # Session CRUD
-│   │   ├── store.go             # Store interface (DI for testing)
-│   │   ├── system_messages.go   # System message queries
-│   │   ├── testdb.go            # Test DB setup/migration utilities
-│   │   └── users.go             # User CRUD (root_public_key, no password_hash)
-│   ├── livekit/
-│   │   ├── token.go             # LiveKit access token generation
-│   │   └── token_test.go
-│   ├── models/
-│   │   └── models.go            # User, Session, Message, Server, Channel, Member, MLS DTOs
-│   └── ws/
-│       ├── client.go            # Read/write pumps, message relay
-│       ├── client_test.go       # Client relay tests
-│       ├── handler.go           # HTTP upgrade + JWT auth
-│       ├── handlers.go          # Message routing (message.send, history, typing)
-│       ├── handlers_test.go     # Message handler tests
-│       ├── hub.go               # Hub: presence, channels, broadcast, BroadcastToServer, BroadcastToUser
-│       ├── hub_test.go          # Hub presence/subscribe/broadcast tests
-│       └── ratelimit.go         # WebSocket rate limiting
-├── migrations/
-│   ├── 000001_init_schema.up/down.sql       # Base schema: users, sessions, servers, channels, members, messages, devices, invites
-│   ├── 000002_messages_recipient_id.up/down.sql
-│   ├── 000003_voice_mode_low_latency.up/down.sql
-│   ├── 000004_add_category_type.up/down.sql
-│   ├── 000005_single_tenant.up/down.sql
-│   ├── 000006_moderation.up/down.sql
-│   ├── 000007_multi_tenant.up/down.sql
-│   ├── 000008_moderation_indices.up/down.sql
-│   ├── 000009_instance_admin.up/down.sql
-│   ├── 000010_system_messages.up/down.sql
-│   ├── 000011_server_template.up/down.sql
-│   ├── 000012_server_templates_table.up/down.sql
-│   ├── 000013_spk_lifecycle.up/down.sql
-│   ├── 000014_mls_migration.up/down.sql     # Drop signal_* tables, add mls_credentials + mls_key_packages
-│   ├── 000015_mls_groups.up/down.sql        # Add mls_group_info table (text, voice group types)
-│   ├── 000016_voice_mls.up/down.sql         # Voice MLS group support
-│   └── 000017_backend_opacity.up/down.sql   # Drop name/icon_url/owner_id/role, add encrypted_metadata/permission_level/access_policy/discoverable
-├── go.mod
-└── go.sum
+One Hush instance hosts multiple guilds (servers). Each guild is isolated by server ID.
 
-client/
-├── src/
-│   ├── App.jsx                   # Router: guild/channel layout
-│   ├── main.jsx                  # React entry point
-│   │
-│   ├── assets/
-│   │   └── logo-wordmark.svg     # SVG wordmark
-│   │
-│   ├── contexts/
-│   │   └── AuthContext.jsx       # Auth context (BIP39 identity + JWT session, wraps useAuth)
-│   │
-│   ├── hooks/
-│   │   ├── useAuth.js            # BIP39 identity auth (mnemonic -> keypair, signature challenge, JWT session, guest)
-│   │   ├── useAuth.test.jsx      # Auth hook tests
-│   │   ├── useBreakpoint.js      # Responsive breakpoint detection
-│   │   ├── useDevices.js         # Device enumeration (cameras, mics)
-│   │   ├── useKeyPackageMaintenance.js  # Periodic KeyPackage replenishment (replaces SPK rotation)
-│   │   ├── useMLS.js             # MLS group operations: create, join (Welcome), encrypt/decrypt messages
-│   │   ├── useRoom.js            # LiveKit room: MLS-derived frame keys, track management
-│   │   ├── useRoom.voice.test.jsx# Voice room tests
-│   │   ├── useSidebarResize.js   # Sidebar resize interaction
-│   │   └── useToast.js           # Toast notification hook
-│   │
-│   ├── lib/
-│   │   ├── api.js                # HTTP client for Go backend REST API
-│   │   ├── api.test.js           # API client tests
-│   │   ├── bandwidthEstimator.js # Upload speed test -> quality recommendation
-│   │   ├── bip39Identity.js      # BIP39 mnemonic generation, Ed25519 derivation, signing
-│   │   ├── bip39Identity.test.js # BIP39 identity tests
-│   │   ├── deviceLinking.js      # Device certificates, QR payload encode/decode
-│   │   ├── deviceLinking.test.js # Device linking tests
-│   │   ├── guildMetadata.js      # AES-256-GCM encrypt/decrypt for guild/channel names (MLS-derived key)
-│   │   ├── guildMetadata.test.js # Guild metadata encryption tests
-│   │   ├── hushCrypto.js         # WASM wrapper: MLS credential, KeyPackage, group ops, export_secret
-│   │   ├── hushCrypto.test.js    # WASM wrapper tests
-│   │   ├── hush-crypto-wasm/     # hush-crypto WASM build output
-│   │   ├── identityVault.js      # AES-256-GCM vault: encrypt IK seed with PIN (PBKDF2-SHA256)
-│   │   ├── identityVault.test.js # Identity vault tests
-│   │   ├── mlsGroup.js           # MLS group lifecycle (create, add/remove members, commit, Welcome)
-│   │   ├── mlsGroup.voice.test.js# MLS voice group tests
-│   │   ├── mlsStore.js           # MLS state persistence in IndexedDB (credentials, groups, epochs)
-│   │   ├── mlsStore.test.js      # MLS store tests
-│   │   ├── noiseGateWorklet.js   # AudioWorklet processor for mic noise gating
-│   │   ├── trackManager.js       # LiveKit track publishing/subscribing, quality settings
-│   │   ├── uploadKeyPackages.js  # Post-auth MLS KeyPackage generation and upload
-│   │   ├── uploadKeyPackages.test.js # KeyPackage upload tests
-│   │   ├── ws.js                 # WebSocket client for Go backend (JWT session, reconnect, events)
-│   │   └── ws.test.js            # WebSocket client tests
-│   │
-│   ├── pages/
-│   │   ├── Home.jsx              # Auth UI (mnemonic generation/entry, guest access)
-│   │   ├── Invite.jsx            # Invite link handler
-│   │   ├── MascotDemo.jsx        # Vesper mascot demo
-│   │   ├── Roadmap.jsx           # Public roadmap page
-│   │   ├── Room.jsx              # Legacy room view
-│   │   ├── ServerLayout.jsx      # Server layout: channel list + content area
-│   │   ├── ServerLayout.test.jsx # Server layout tests
-│   │   ├── SystemChannel.jsx     # System channel view
-│   │   ├── TextChannel.jsx       # Chat-only view (MLS-encrypted)
-│   │   ├── TextChannel.test.jsx  # Text channel tests
-│   │   ├── VoiceChannel.jsx      # Media + optional chat sidebar (MLS E2EE)
-│   │   └── VoiceChannel.test.jsx # Voice channel tests
-│   │
-│   ├── components/
-│   │   ├── AppBackground.jsx     # Ambient background effect
-│   │   ├── ChannelList.jsx       # Text/voice channels within a server
-│   │   ├── ChannelList.test.jsx  # Channel list tests
-│   │   ├── Chat.jsx              # Chat panel (MLS encrypted, WebSocket transport)
-│   │   ├── ConfirmModal.jsx      # Confirmation dialog
-│   │   ├── Controls.jsx          # Mic, camera, screen share, quality, settings
-│   │   ├── DevicePickerModal.jsx # Camera/mic device selection
-│   │   ├── GuildCreateModal.jsx  # Guild creation with encrypted metadata
-│   │   ├── LogoWordmark.jsx      # Logo component (Cormorant Garamond + orange dot)
-│   │   ├── MemberContextMenu.jsx # Right-click member actions
-│   │   ├── MemberList.jsx        # Server members with presence
-│   │   ├── MemberList.test.jsx   # Member list tests
-│   │   ├── MemberProfileCard.jsx # Member profile display
-│   │   ├── modalStyles.js        # Shared modal CSS-in-JS
-│   │   ├── ModerationModal.jsx   # Moderation controls (ban, mute, kick)
-│   │   ├── QualityPickerModal.jsx# Resolution/framerate picker
-│   │   ├── ScreenShareCard.jsx   # Screen share display card
-│   │   ├── ServerList.jsx        # Vertical server sidebar
-│   │   ├── ServerList.test.jsx   # Server list tests
-│   │   ├── ServerSettingsModal.jsx# Server settings
-│   │   ├── StreamView.jsx        # Video element wrapper with stats overlay
-│   │   ├── SystemMessageRow.jsx  # System message display
-│   │   ├── Toast.jsx             # Toast notification component
-│   │   ├── UserSettingsModal.jsx # User settings
-│   │   ├── Vesper.jsx            # Mascot component
-│   │   └── VideoGrid.jsx         # Video grid layout
-│   │
-│   ├── test/
-│   │   ├── cryptoMocks.js        # Crypto mock utilities
-│   │   └── setup.js              # Vitest global setup (IndexedDB mock)
-│   │
-│   ├── utils/
-│   │   └── constants.js          # QUALITY_PRESETS, DEFAULT_QUALITY, MEDIA_SOURCES
-│   │
-│   └── styles/
-│       └── global.css            # Design system: deep dark, orange accent #d54f12
-│
-├── public/
-│   └── wasm/                     # hush-crypto WASM build output (legacy path)
-│
-├── vitest.config.js              # Vitest config (jsdom, test setup)
+**Database tables:**
+- `servers` — guild records: `id`, `encrypted_metadata` (BYTEA), `access_policy`, `discoverable`
+- `server_members` — membership: `server_id`, `user_id`, `permission_level` (integer 0–3)
+- `channels` — channel records: `id`, `server_id`, `type` (text/voice/category), `encrypted_metadata` (BYTEA)
 
-client/admin/                     # Standalone admin dashboard (separate Vite app)
-├── index.html
-├── package.json
-├── vite.config.js
-└── src/
-    ├── App.jsx                   # Admin app shell
-    ├── main.jsx                  # Admin entry point
-    ├── admin.css                 # Admin styles
-    ├── lib/
-    │   └── adminApi.js           # Admin API client (X-Admin-Key header auth)
-    └── pages/
-        ├── ConfigPage.jsx        # Instance configuration
-        ├── GuildListPage.jsx     # Guild list (opaque: UUIDs, counts, dates only)
-        ├── HealthPage.jsx        # System health
-        └── UserListPage.jsx      # User list (opaque data only)
+**Permission levels (opaque integers):**
 
-hush-crypto/                      # Rust crate wrapping OpenMLS (RFC 9420)
-├── src/
-│   ├── lib.rs                    # Public API re-exports
-│   ├── credential.rs             # Ed25519 BasicCredential generation
-│   ├── key_package.rs            # MLS KeyPackage builder (MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519)
-│   ├── group.rs                  # MLS group operations: create, add/remove, commit, export_voice_frame_key, export_metadata_key
-│   ├── storage.rs                # MLS state storage abstraction
-│   ├── storage_bridge.rs         # WASM <-> Rust storage bridge
-│   └── wasm.rs                   # wasm-bindgen bindings (MLS ops for web)
-├── tests/
-│   ├── mls_e2e.rs                # MLS end-to-end integration tests (credential + KeyPackage + group round-trip)
-│   └── mls_group_e2e.rs          # MLS group lifecycle integration tests
-├── Cargo.toml                    # Dependencies: openmls 0.8.1, openmls_rust_crypto, ed25519-dalek, etc.
-└── vendor/
-    └── keccak/                   # Vendored keccak RC2 for sha3 compatibility
+| Integer | Role |
+|-|-|
+| 0 | Member |
+| 1 | Moderator |
+| 2 | Admin |
+| 3 | Owner |
 
-caddy/
-└── Caddyfile                     # Reverse proxy: routes to Go backend + LiveKit + static
+Human-readable role labels exist only in encrypted guild metadata. The server sees only integers.
 
-livekit/
-└── livekit.yaml                  # LiveKit server config
+**WebSocket hub:** `hub.BroadcastToServer(serverID, msg)` fans out events to all members of a specific guild. Subscription is per-server-ID, enforced by membership check at WebSocket upgrade.
 
-scripts/
-├── setup.sh                      # Docker setup script
-├── reset-dev.sh                  # Dev environment reset
-├── init-hush-db.sql              # Database initialization SQL
-├── generate-changelog.mjs        # Changelog generation
-└── checkpoint-B-test.md          # Manual test checklist
-```
+**Instance configuration:** `registration_mode` (open/invite-only) and `server_creation_policy` are stored in the `instance_config` table. Configured via the admin dashboard.
 
 ---
 
-## Target docker-compose Services
+## 7. Backend Opacity
 
-| Service | Image | Purpose | Port |
+The server is a blind relay. It cannot read message content, guild names, channel names, or role labels.
+
+| What the server stores | Format |
+|-|-|
+| Chat messages | MLS ciphertext (BYTEA) |
+| Guild/channel metadata | AES-256-GCM ciphertext (BYTEA) |
+| MLS KeyPackages | Public key material |
+| MLS Commits, Welcome messages | MLS protocol messages |
+| User root public key | Ed25519 public key |
+| Permission levels | Integer 0–3 |
+| Timestamps, UUIDs | Plaintext (routing metadata) |
+
+| What the server never stores | Reason |
+|-|-|
+| Plaintext message content | Encrypted by MLS before transmission |
+| Guild names | Encrypted by AES-256-GCM before transmission |
+| Channel names | Encrypted by AES-256-GCM before transmission |
+| Role labels | Exist only in encrypted metadata |
+| Private keys | Never transmitted |
+| Voice frame keys | Derived client-side from MLS, never sent |
+| Media content (audio/video) | Encrypted frames forwarded by LiveKit SFU |
+
+**Admin dashboard isolation:** The admin dashboard (`client/admin/`) uses API key authentication (`X-Admin-Key` header). It is not a Hush user account. It has access only to aggregated, opaque data: UUIDs, member counts, message counts, timestamps. There is no admin view of guild names, channel names, or message content.
+
+---
+
+## 8. Key Transparency
+
+Hush implements T.1 key transparency: a signed Merkle log of key operations scoped to each instance.
+
+**Logged events:**
+- User registration (public key recorded)
+- Device key added (device certificate recorded)
+- Device key revoked
+- MLS KeyPackage rotation
+
+**Verification:** Clients call `GET /api/transparency/verify` at login and on key changes. The server returns an inclusion proof (Merkle path). The client verifies the proof against the locally cached root hash.
+
+**Signing:** Each leaf is signed with an Ed25519 key whose seed is `TRANSPARENCY_LOG_PRIVATE_KEY` in `.env`. This seed is generated once by `setup.sh` and must never change — rotating it invalidates all existing proofs.
+
+**T.2 limitation:** The log is instance-scoped. Cross-instance split-view resistance (T.2) requires a gossip protocol or global auditor and is not yet implemented.
+
+---
+
+## 9. Multi-Instance Client
+
+The Hush web client can connect to multiple Hush instances simultaneously.
+
+- Each instance has its own WebSocket connection with independent JWT authentication.
+- Guilds from all instances appear in a unified sidebar, aggregated by instance color.
+- The instance registry (URLs, auth tokens) is stored in browser storage.
+- Identity is per-instance: the same mnemonic can derive credentials for multiple instances independently.
+
+This is the architecture for a federated model where users self-host or use different providers.
+
+---
+
+## 10. Infrastructure
+
+**docker-compose.prod.yml** — 5 services:
+
+| Service | Image | Port | Purpose |
 |-|-|-|-|
-| hush-api | Custom (Go) | Backend API + WebSocket | 8080 |
-| postgres | postgres:16-alpine | Database | 5432 |
-| livekit | livekit/livekit-server:latest | SFU for media | 7880, 7881, 50000-60000/udp |
-| redis | redis:7-alpine | LiveKit pub/sub (self-hosted only) | 6379 |
-| caddy | caddy:2-alpine | Reverse proxy + TLS + static files | 443 |
+| `hush-api` | Custom (Go multi-stage build) | 8080 | Backend API + WebSocket hub |
+| `postgres` | postgres:16-alpine | 5432 | Primary data store |
+| `redis` | redis:7-alpine | 6379 | Session cache, rate limiting |
+| `livekit` | livekit/livekit-server:latest | 7880 (WS), 50000-60000/UDP | WebRTC SFU |
+| `caddy` | caddy:2-alpine | 443 (prod), 8081 (dev) | TLS termination + reverse proxy |
+
+**Database migrations:** Sequential SQL files in `server/migrations/`, applied by `golang-migrate` at startup. Migration naming: `000001_init_schema`, `000002_...`, etc.
+
+**TLS:** Caddy handles Let's Encrypt certificate acquisition and renewal automatically. The `caddy/Caddyfile.self-hoster.tmpl` template uses a domain-based site block (`__DOMAIN__ { ... }`) that triggers automatic HTTPS when DNS is correct.
+
+**Secrets:** All secrets are generated by `setup.sh` using `openssl rand`. They are written to `.env` and never committed. The six generated secrets are: `JWT_SECRET`, `POSTGRES_PASSWORD`, `ADMIN_API_KEY`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `TRANSPARENCY_LOG_PRIVATE_KEY`.
 
 ---
 
-## Key Design Decisions
+## 11. Key Design Decisions
 
-1. **Go over Node.js**: The backend is a clean rewrite. Go gives strong concurrency (goroutines for WebSocket hub), single binary deployment, and no runtime dependency. Chi is minimal and composable.
-2. **MLS (RFC 9420) over Signal Protocol**: Originally built on Signal Protocol (X3DH + Double Ratchet) via a patched `libsignal-dezire` fork. Migrated to MLS in phases M.1-M.3 (completed 2026-03-22). MLS provides native group encryption (TreeKEM), eliminating fan-out overhead for group chat. Signal required O(N) pairwise sessions per group; MLS provides O(log N) key tree operations. The ciphersuite is `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`. Implementation via OpenMLS 0.8.1 Rust crate.
-3. **Custom backend over Synapse**: Using our own crypto protocol breaks Matrix compatibility. Without Matrix compatibility, Synapse adds only complexity (federation overhead, Matrix event model, Spaces API). A purpose-built Go backend is simpler, faster, and fully controlled.
-4. **LiveKit stays**: LiveKit's Insertable Streams E2EE is solid. Key distribution changed from Signal-encrypted WebSocket relay to MLS `export_secret` derivation. Frame keys are now derived per-epoch from the voice MLS group's export_secret with label `hush-voice-frame-key`. No leader election or fan-out key distribution needed.
-5. **BIP39 mnemonic identity**: Every user's cryptographic identity derives from a 12-word BIP39 mnemonic. The mnemonic deterministically generates the root keypair. The server stores only public keys. Authentication is cryptographic: the client proves ownership of the private key via a signature challenge. JWT is used for session tokens after authentication, not as the identity mechanism. Recovery relies solely on the 12 words; if lost with no linked devices, the account is irrecoverable.
-6. **Multi-device via linked device certificates**: Each device has its own independent keypair. Private keys never leave the device. To add a new device, an existing (authenticated) device signs the new device's public key: `certificate = Sign(IK_existing_priv, IK_new_pub)`. The server maintains a list of certified public keys per account. QR linking: the new device displays a QR (containing its public key, ephemeral DH key, expiry, nonce), the existing device scans and produces the certificate.
-7. **Guest access is mandatory**: Users can try Hush without a mnemonic. Guest accounts use an ephemeral keypair (no mnemonic, no recovery). The Go backend supports temporary guest accounts with limited permissions.
-8. **Backend opacity (blind relay)**: The server never sees plaintext for any data, including guild names, channel names, and metadata. Guild and channel names are encrypted client-side with AES-256-GCM using a key derived from the guild's MLS metadata group `export_secret` (label `hush-guild-metadata`). The server stores only opaque BYTEA blobs. Permission levels are integers (0-3), not human-readable role strings. The admin dashboard shows only opaque data (UUIDs, counts, dates).
-9. **Single Rust crypto crate**: `hush-crypto` wraps OpenMLS. Web uses WASM (via wasm-pack). Desktop (Electron) loads the same WASM build inside Chromium's renderer — identical to the browser path. Mobile will use UniFFI bindings (Swift, Kotlin). One implementation, zero cross-platform interop risk.
-10. **Electron desktop is MVP**: The desktop app is an Electron shell wrapping the hush-web production build. One web codebase, two delivery mechanisms (browser and Electron). Electron-specific code is limited to: custom titlebar, system tray, auto-update (electron-updater), deep links (hush://), OS keystore (keytar), push-to-talk (globalShortcut). hush-crypto runs as WASM in the renderer — no separate build target.
-11. **Repo split before desktop**: The monorepo splits into separate repos (hush-server, hush-crypto, hush-web, hush-desktop, hush-mobile, hush-directory) before the desktop phase. hush-crypto publishes as an npm package; hush-web imports it from npm; hush-desktop builds hush-web as part of its pipeline. gethush.live is a private repo (landing, docs, admin dashboard, download page).
+1. **Go over Node.js** — Clean rewrite. Go gives strong concurrency (goroutines for WebSocket hub), single binary deployment, and no runtime dependency.
+
+2. **MLS (RFC 9420) over Signal Protocol** — Signal's X3DH + Double Ratchet requires O(N) fan-out for group chat. MLS TreeKEM provides O(log N) key operations. Forward secrecy and post-compromise security are equivalent. Migration from Signal to MLS completed in phase M.1–M.3 (2026-03).
+
+3. **OpenMLS 0.8.1 as the single crypto implementation** — `hush-crypto` compiles to WASM for web, loads in Electron's renderer for desktop (identical path), and will use UniFFI for mobile. One implementation, zero cross-platform divergence risk.
+
+4. **BIP39 mnemonic identity** — No email, no password, no central recovery. Authentication is cryptographic. The server stores only public keys. If the mnemonic is lost and all devices are lost, the account is irrecoverable by design.
+
+5. **Backend opacity** — The server cannot read guild names, channel names, message content, or role labels. Encrypted metadata design eliminates the class of vulnerabilities where a compromised server exposes user data. The admin dashboard is a separate app with API key auth that sees only aggregated metrics.
+
+6. **LiveKit for media** — LiveKit's Insertable Streams E2EE was retained across the Signal→MLS migration. Frame key derivation changed from Signal-encrypted relay to MLS `export_secret()`. No leader election needed — all participants independently derive the same key from their local group state.
+
+7. **Standalone setup.sh** — The entire self-hosting flow is one command. `setup.sh` generates secrets, configures TLS, pulls images, runs migrations, and health-checks the running instance. `update.sh` is separate to prevent accidental secret overwriting on re-run.
 
 ---
 
 ## WebSocket Broadcast Events
 
-The WS hub broadcasts server-scoped events so all connected members see real-time updates. Every API mutation that changes shared state must emit a broadcast.
+Every API mutation that changes shared guild state must emit a WebSocket broadcast so connected clients stay in sync.
 
-| Event | Payload fields | Trigger |
-|-|-|-|
-| `channel_created` | `channel` (full object, encrypted_metadata blob) | Channel created |
-| `channel_deleted` | `channel_id`, `server_id` | Channel deleted |
-| `channel_moved` | `channel_id`, `server_id`, `parent_id`, `position` | Channel reordered |
-| `server_updated` | `server_id`, `encrypted_metadata` | Server metadata changed (opaque blob) |
-| `server_deleted` | `server_id` | Server deleted (broadcast before DB delete) |
-| `member_joined` | `user_id`, `display_name` | User joins server |
-| `member_left` | `user_id` | User leaves server |
-| `member_role_changed` | `user_id`, `permission_level` | Permission level change (0=member, 1=mod, 2=admin, 3=owner) |
-| `voice_state_update` | `channel_id`, `participants` | LiveKit webhook |
+| Event | Trigger |
+|-|-|
+| `channel_created` | POST /servers/:id/channels |
+| `channel_deleted` | DELETE /channels/:id |
+| `channel_moved` | PUT /channels/:id/move |
+| `server_updated` | PUT /servers/:id |
+| `server_deleted` | DELETE /servers/:id |
+| `member_joined` | POST /servers/:id/join |
+| `member_left` | POST /servers/:id/leave |
+| `member_role_changed` | Permission level change |
+| `voice_state_update` | LiveKit webhook |
 
-**Pattern**: nil-check hub, `json.Marshal` with `type` field, `h.hub.BroadcastToServer(serverID, msg)`.
-
-**When adding new endpoints**: if the mutation affects what other users see, add a broadcast event.
-
----
-
-## End-to-End Encryption (E2EE)
-
-### MLS Protocol for Chat
-
-**Protocol**: Chat messages are encrypted using MLS (RFC 9420, Messaging Layer Security) via the OpenMLS Rust crate. Each channel has its own MLS group. The ciphersuite is `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`.
-
-**Credential and KeyPackage Lifecycle**:
-1. On registration, user receives a BIP39 12-word mnemonic (shown once, irrecoverable if lost). The mnemonic deterministically derives the root identity key pair (Ed25519). The client generates an MLS BasicCredential and a batch of MLS KeyPackages.
-2. Credential and KeyPackages uploaded to Go backend (`POST /api/mls/key-packages`). Server stores public material only.
-3. To add a user to a channel: fetch their KeyPackage, create an MLS Add proposal, commit. The resulting Welcome message is delivered to the new member.
-4. Subsequent messages use `MlsGroup::create_message()` for encryption and `process_message()` for decryption. Forward secrecy advances per epoch.
-
-**Group Operations**:
-- **Create**: Channel creator creates an MLS group, stores group info on server.
-- **Add member**: Fetch member's KeyPackage, propose Add, commit. Welcome sent to new member.
-- **Remove member**: Propose Remove, commit. Remaining members advance to new epoch; removed member cannot decrypt future messages.
-- **Message send**: `MlsGroup::create_message(plaintext)` produces MLS ciphertext, sent via WebSocket.
-- **Message receive**: `process_message(ciphertext)` decrypts using current epoch keys.
-
-**Forward Secrecy**: MLS provides forward secrecy through epoch advancement. Each commit creates a new epoch with fresh key material. Compromising current state does not reveal messages from prior epochs.
-
-**MLS State Storage**: MLS state (credentials, group state, epoch secrets) persisted in IndexedDB via `mlsStore.js`.
-
-**KeyPackage Replenishment**: `useKeyPackageMaintenance.js` periodically checks remaining KeyPackages on the server and uploads fresh ones when the count drops below threshold. This replaces the Signal-era SPK rotation and OPK replenishment.
-
-**Implementation Files**:
-- `client/src/hooks/useMLS.js`: MLS group operations (create, join, encrypt, decrypt)
-- `client/src/lib/mlsStore.js`: IndexedDB persistence for MLS state
-- `client/src/lib/mlsGroup.js`: MLS group lifecycle (create, add/remove, commit, Welcome)
-- `client/src/lib/hushCrypto.js`: WASM wrapper (MLS credential, KeyPackage, group ops, export_secret)
-- `client/src/lib/uploadKeyPackages.js`: Post-auth KeyPackage generation and upload
-- `client/src/hooks/useKeyPackageMaintenance.js`: Periodic KeyPackage replenishment
-- `hush-crypto/`: Rust crate (OpenMLS: credential, KeyPackage, group, WASM bindings)
-- `server/internal/api/mls.go`: MLS KeyPackage and credential endpoints
-- `server/internal/db/mls.go`: MLS credential and KeyPackage queries
-- `server/internal/db/mls_groups.go`: MLS group info queries
-
-### LiveKit E2EE for Media
-
-**Protocol**: WebRTC media streams (voice, video, screen share) are encrypted using LiveKit's Insertable Streams with AES-256-GCM. The SFU forwards encrypted frames without access to plaintext.
-
-**Key Derivation**: Frame keys are derived from the voice MLS group's `export_secret`:
-1. When a user joins a voice channel, a voice-type MLS group is created or the user is added to the existing one.
-2. Frame key derived via `MlsGroup::export_secret()` with label `hush-voice-frame-key` and the current epoch.
-3. The derived key is applied to LiveKit's `ExternalE2EEKeyProvider`.
-4. LiveKit E2EE worker encrypts/decrypts media frames using the derived key.
-
-**Key Rotation**: Epoch-based. When a member joins or leaves the voice channel, the MLS group membership changes, advancing the epoch. All remaining members derive the new frame key from the new epoch's export_secret. No leader election or fan-out key distribution needed.
-
-**Implementation Files**:
-- `client/src/hooks/useRoom.js`: LiveKit Room with `ExternalE2EEKeyProvider`, MLS-derived frame keys
-- `client/src/lib/mlsGroup.js`: Voice group lifecycle (create voice group, add/remove voice members)
-- `hush-crypto/src/group.rs`: `export_voice_frame_key` function
-- `server/internal/db/mls_groups.go`: Voice group info storage
-
-**No Silent Degradation**: If E2EE setup fails (worker load failure, key derivation failure), the client does NOT connect to LiveKit. Media without encryption is never permitted.
-
-### Guild Metadata Encryption
-
-**Protocol**: Guild names, channel names, and other metadata are encrypted client-side before being sent to the server. The server stores only opaque BYTEA blobs and never sees plaintext.
-
-**Key Derivation**: Metadata encryption key derived from the guild's metadata-type MLS group `export_secret` with label `hush-guild-metadata`. Each guild has a dedicated metadata MLS group for this purpose.
-
-**MLS Group Types**:
-| Type | Purpose | Scope |
-|-|-|-|
-| `text` | Channel message encryption | Per channel |
-| `voice` | Voice frame key derivation | Per voice channel |
-| `metadata` | Guild/channel name encryption | Per guild |
-
-**Implementation Files**:
-- `client/src/lib/guildMetadata.js`: AES-256-GCM encrypt/decrypt for metadata
-- `hush-crypto/src/group.rs`: `export_metadata_key` function
-- `server/internal/db/mls_groups.go`: Metadata group info storage (server_id reference, XOR constraint with channel_id)
-
----
-
-## Preserve List (DO NOT delete/break these)
-
-- `client/src/styles/global.css`: design system
-- `client/src/lib/noiseGateWorklet.js`: reuse in LiveKit audio pipeline
-- `client/src/lib/bandwidthEstimator.js`: quality recommendation
-- `client/src/utils/constants.js`: quality presets (adapt to LiveKit encoding params)
-- `client/src/hooks/useBreakpoint.js`: responsive utils
-- `client/src/hooks/useDevices.js`: device enumeration
-- `client/src/components/StreamView.jsx`: video wrapper
-- `client/src/components/Controls.jsx`: media controls
-- `client/src/components/AppBackground.jsx`: ambient background
-- `client/src/components/LogoWordmark.jsx`: brand wordmark
-- `client/src/assets/logo-wordmark.svg`: SVG wordmark asset
-- `design-system.md`: UI design language
-- `livekit/livekit.yaml`: LiveKit server config
-
-## Remove List (completed)
-
-All Matrix/Synapse components removed (pre-refactor):
-- `server/src/`: entire old Node.js server (replaced by Go backend)
-- `synapse/`: Synapse config and data
-- `client/src/hooks/useMatrixAuth.js`, `client/src/lib/matrixClient.js`: Matrix client code
-- `docker-compose.yml`: Synapse service, old Node.js `hush` service
-- All `matrix-js-sdk` imports removed from client
-
-All Signal Protocol components removed (M.1-M.3 migration):
-- `client/src/hooks/useSignal.js`: Signal session management (replaced by `useMLS.js`)
-- `client/src/lib/signalStore.js`: Signal IndexedDB state (replaced by `mlsStore.js`)
-- `client/src/lib/e2eeKeyManager.js`: Leader-based key distribution (replaced by MLS export_secret)
-- `client/src/lib/uploadKeysAfterAuth.js`: Signal pre-key upload (replaced by `uploadKeyPackages.js`)
-- `server/internal/api/keys.go`: Signal pre-key endpoints (replaced by `mls.go`)
-- `server/internal/db/keys.go`: Signal key queries (replaced by `db/mls.go`)
-- `hush-crypto/src/identity.rs`, `prekey.rs`, `x3dh_wrap.rs`, `session.rs`: Signal crypto (replaced by `credential.rs`, `key_package.rs`, `group.rs`)
-- `hush-crypto/tests/e2e_signal_flow.rs`: Signal integration tests (replaced by `mls_e2e.rs`, `mls_group_e2e.rs`)
-- All `signal_*` database tables dropped in migration 000014
+Pattern: nil-check hub, marshal JSON with `type` field, call `h.hub.BroadcastToServer(serverID, msg)`.
