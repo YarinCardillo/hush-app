@@ -1,6 +1,11 @@
 /**
  * WebSocket client for the Go backend. JWT auth (query param or first message),
  * auto-reconnect with exponential backoff, message type routing via event emitter.
+ *
+ * Reconnect chain:
+ *   disconnect detected -> backoff timer -> connect() -> re-auth via token in URL
+ *   -> emit('open', { isReconnect: true }) -> onReconnected hook -> app handles
+ *   message catch-up and MLS group state recovery -> emit('reconnected', {})
  */
 
 const DEFAULT_WS_PATH = '/ws';
@@ -9,11 +14,26 @@ const RECONNECT_MAX_MS = 30000;
 const RECONNECT_MULTIPLIER = 2;
 
 /**
- * @param {{ url?: string, getToken: () => string | null }} opts - url: full WS URL (e.g. wss://host/ws) or base URL; getToken for auth message when token not in URL
- * @returns {{ connect: () => void, disconnect: () => void, send: (type: string, payload: object) => void, on: (type: string, callback: (data: object) => void) => void, off: (type: string, callback: (data: object) => void) => void }}
+ * @param {{ url?: string, getToken: () => string | null, onReconnected?: () => Promise<void> | void }} opts
+ *   url: full WS URL (e.g. wss://host/ws) or base URL
+ *   getToken: returns the current auth token (refreshed on each reconnect)
+ *   onReconnected: optional async hook called after a successful reconnect.
+ *     Use this to register MLS group state recovery and message catch-up logic.
+ *     The hook is awaited before emitting 'reconnected'. Errors are logged and
+ *     do not abort the reconnect.
+ * @returns {{
+ *   connect: () => void,
+ *   disconnect: () => void,
+ *   send: (type: string, payload: object) => void,
+ *   on: (type: string, callback: (data: object) => void) => void,
+ *   off: (type: string, callback: (data: object) => void) => void,
+ *   isConnected: () => boolean,
+ *   isReconnecting: () => boolean,
+ * }}
  */
 export function createWsClient(opts) {
   const getToken = opts.getToken;
+  const onReconnected = opts.onReconnected ?? null;
   let wsUrl = opts.url;
   if (!wsUrl && typeof location !== 'undefined') {
     const base = location.origin.replace(/^http/, 'ws');
@@ -31,6 +51,12 @@ export function createWsClient(opts) {
   /** @type {Map<string, Set<(data: object) => void>>} */
   const listeners = new Map();
   let authSent = false;
+  /**
+   * True while a reconnect is scheduled or in progress (between onclose and
+   * the completion of the onReconnected hook). The UI can poll isReconnecting()
+   * or listen for the 'reconnecting' and 'reconnected' events.
+   */
+  let reconnecting = false;
 
   function emit(type, data) {
     const cbs = listeners.get(type);
@@ -57,6 +83,8 @@ export function createWsClient(opts) {
 
   function scheduleReconnect() {
     if (reconnectTimer) return;
+    reconnecting = true;
+    emit('reconnecting', {});
     const delay = Math.min(RECONNECT_BASE_MS * Math.pow(RECONNECT_MULTIPLIER, reconnectAttempt), RECONNECT_MAX_MS);
     reconnectAttempt += 1;
     reconnectTimer = setTimeout(() => {
@@ -66,19 +94,42 @@ export function createWsClient(opts) {
   }
 
   function connect() {
-    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
-    const urlWithToken = getToken() ? `${wsUrl}?token=${encodeURIComponent(getToken())}` : wsUrl;
+    // readyState 1 === OPEN, 0 === CONNECTING. Avoid global WebSocket reference.
+    if (socket && (socket.readyState === 1 || socket.readyState === 0)) return;
+    // Always embed a fresh token in the URL so the reconnected session is
+    // immediately authenticated without a separate message round-trip.
+    const token = getToken();
+    const urlWithToken = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl;
     const ws = new WebSocket(urlWithToken);
     socket = ws;
-    authSent = !!getToken();
+    authSent = !!token;
+    const isReconnect = reconnectAttempt > 0 || reconnecting;
 
-    ws.onopen = () => {
+    ws.onopen = async () => {
       reconnectAttempt = 0;
+
+      // Send auth message as fallback when token was not available at connect time.
       if (!authSent && getToken()) {
         authSent = true;
         ws.send(JSON.stringify({ type: 'auth', token: getToken() }));
       }
-      emit('open', {});
+
+      emit('open', { isReconnect });
+
+      if (isReconnect) {
+        // Run the application-registered recovery hook (message catch-up +
+        // MLS group state recovery). Errors are non-fatal — the connection is
+        // usable even if recovery partially fails.
+        if (onReconnected) {
+          try {
+            await onReconnected();
+          } catch (err) {
+            console.error('[ws] onReconnected hook error', err);
+          }
+        }
+        reconnecting = false;
+        emit('reconnected', {});
+      }
     };
 
     ws.onmessage = (event) => {
@@ -109,6 +160,7 @@ export function createWsClient(opts) {
       reconnectTimer = null;
     }
     reconnectAttempt = 0;
+    reconnecting = false;
     if (socket) {
       // Detach handlers before closing so onclose doesn't trigger scheduleReconnect.
       const s = socket;
@@ -116,7 +168,7 @@ export function createWsClient(opts) {
       s.onmessage = null;
       s.onclose = null;
       s.onerror = null;
-      if (s.readyState === WebSocket.CONNECTING) {
+      if (s.readyState === 0 /* CONNECTING */) {
         // Calling close() on a CONNECTING socket causes a browser warning.
         // Instead, let it finish opening then immediately close it.
         s.onopen = () => s.close();
@@ -129,7 +181,13 @@ export function createWsClient(opts) {
   }
 
   function isConnected() {
-    return socket !== null && socket.readyState === WebSocket.OPEN;
+    // readyState 1 === OPEN. Avoid referencing the global WebSocket to allow
+    // environments (tests, SSR) where it may not be defined.
+    return socket !== null && socket.readyState === 1;
+  }
+
+  function isReconnecting() {
+    return reconnecting;
   }
 
   function send(type, payload = {}) {
@@ -147,5 +205,5 @@ export function createWsClient(opts) {
     if (cbs) cbs.delete(callback);
   }
 
-  return { connect, disconnect, send, isConnected, on, off };
+  return { connect, disconnect, send, isConnected, isReconnecting, on, off };
 }
