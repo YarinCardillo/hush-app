@@ -782,7 +782,7 @@ a[href]:active {
 }
 
 .modal-content {
-  background: var(--hush-surface);
+  background: var(--hush-modal);
   border: 1px solid var(--hush-border);
   border-radius: var(--radius-xl);
   box-shadow: 0 8px 32px rgba(0,0,0,.5), 0 0 0 1px var(--hush-border);
@@ -1232,7 +1232,7 @@ a[href]:active {
   top: 100%;
   left: 0;
   right: 0;
-  background: var(--hush-elevated);
+  background: var(--hush-modal);
   border: 1px solid var(--hush-border);
   border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
@@ -1793,7 +1793,7 @@ a[href]:active {
 /* ── Dropdown / Context Menu ────────────────────── */
 
 .dropdown-menu {
-  background: var(--hush-elevated);
+  background: var(--hush-modal);
   border: 1px solid var(--hush-border);
   border-radius: var(--radius-lg);
   box-shadow: 0 4px 16px rgba(0,0,0,.4), 0 0 0 1px var(--hush-border);
@@ -2404,7 +2404,7 @@ a[href]:active {
 }
 
 .logout-confirm-card {
-  background: var(--hush-surface);
+  background: var(--hush-modal);
   border: 1px solid var(--hush-border);
   border-radius: var(--radius-lg);
   padding: 28px;
@@ -2542,7 +2542,7 @@ a[href]:active {
 .gcm-context-menu {
   position: fixed;
   z-index: 9999;
-  background: var(--hush-elevated);
+  background: var(--hush-modal);
   border: 1px solid var(--hush-border-hover);
   border-radius: var(--radius-lg);
   min-width: 200px;
@@ -2631,7 +2631,7 @@ a[href]:active {
   position: absolute;
   left: 100%;
   top: 0;
-  background: var(--hush-elevated);
+  background: var(--hush-modal);
   border: 1px solid var(--hush-border-hover);
   border-radius: var(--radius-lg);
   min-width: 140px;
@@ -2642,7 +2642,7 @@ a[href]:active {
 
 /* MemberContextMenu */
 .mcc-menu {
-  background: var(--hush-elevated);
+  background: var(--hush-modal);
   border: 1px solid var(--hush-border);
   border-radius: var(--radius-lg);
   z-index: 600;
@@ -2675,7 +2675,7 @@ a[href]:active {
 
 /* MemberProfileCard */
 .mpc-card {
-  background: var(--hush-elevated);
+  background: var(--hush-modal);
   border: 1px solid var(--hush-border);
   border-radius: var(--radius-lg);
   padding: 16px;
@@ -2949,7 +2949,7 @@ a[href]:active {
 }
 
 .dm-confirm-modal {
-  background: var(--hush-surface);
+  background: var(--hush-modal);
   border: 1px solid transparent;
   padding: 28px;
   width: 100%;
@@ -4505,7 +4505,7 @@ a[href]:active {
 }
 
 .explore-modal {
-  background: var(--hush-surface);
+  background: var(--hush-modal);
   border: 1px solid var(--hush-border);
   padding: 24px;
   max-width: 480px;
