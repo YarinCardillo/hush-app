@@ -93,12 +93,24 @@ function instanceDomain(url) {
 /**
  * A draggable guild icon using @dnd-kit/sortable.
  * Supports right-click context menu and mobile long-press (500ms).
+ *
+ * @param {{
+ *   guild: object,
+ *   isActive: boolean,
+ *   isOffline: boolean,
+ *   displayName: string,
+ *   unreadCount: number,
+ *   onGuildSelect: function,
+ *   onContextMenu: function,
+ *   onLongPress: function,
+ * }} props
  */
 function SortableGuildIcon({
   guild,
   isActive,
   isOffline,
   displayName,
+  unreadCount = 0,
   onGuildSelect,
   onContextMenu,
   onLongPress,
@@ -138,9 +150,12 @@ function SortableGuildIcon({
     if (dx > 10 || dy > 10) cancelLongPress();
   }, [cancelLongPress]);
 
+  const hasUnread = !isActive && unreadCount > 0;
+
   const className = [
     'sl-guild-btn',
     isActive && 'sl-guild-btn--active',
+    hasUnread && 'sl-guild-btn--unread',
     isOffline && 'sl-guild-btn--offline',
     isDragging && 'sl-guild-btn--dragging',
   ].filter(Boolean).join(' ');
@@ -152,6 +167,8 @@ function SortableGuildIcon({
     cursor: isDragging ? 'grabbing' : 'pointer',
   };
 
+  const badgeLabel = unreadCount > 99 ? '99+' : String(unreadCount);
+
   return (
     <button
       ref={setNodeRef}
@@ -159,7 +176,7 @@ function SortableGuildIcon({
       className={className}
       style={style}
       title={tooltip}
-      aria-label={displayName}
+      aria-label={hasUnread ? `${displayName} (${unreadCount} unread)` : displayName}
       aria-pressed={isActive}
       onClick={() => !isDragging && onGuildSelect?.(guild)}
       onContextMenu={(e) => {
@@ -175,6 +192,11 @@ function SortableGuildIcon({
       <span className="sl-guild-pill" aria-hidden="true" />
       {getInitials(displayName)}
       {isOffline && <span className="sl-offline-dot" aria-label="offline" />}
+      {hasUnread && (
+        <span className="sl-unread-badge" aria-hidden="true">
+          {badgeLabel}
+        </span>
+      )}
     </button>
   );
 }
@@ -496,18 +518,24 @@ function GroupSection({
           {instanceDomain(group.instanceUrl)}
         </div>
       )}
-      {group.guilds.map((guild) => (
-        <SortableGuildIcon
-          key={guild.id}
-          guild={guild}
-          isActive={guild.id === activeGuild?.id}
-          isOffline={isGuildOffline(guild)}
-          displayName={getGuildDisplayName(guild)}
-          onGuildSelect={onGuildSelect}
-          onContextMenu={onContextMenu}
-          onLongPress={onLongPress}
-        />
-      ))}
+      {group.guilds.map((guild) => {
+        const unreadCount = Array.isArray(guild.channels)
+          ? guild.channels.reduce((sum, ch) => sum + (ch.unreadCount ?? 0), 0)
+          : 0;
+        return (
+          <SortableGuildIcon
+            key={guild.id}
+            guild={guild}
+            isActive={guild.id === activeGuild?.id}
+            isOffline={isGuildOffline(guild)}
+            displayName={getGuildDisplayName(guild)}
+            unreadCount={unreadCount}
+            onGuildSelect={onGuildSelect}
+            onContextMenu={onContextMenu}
+            onLongPress={onLongPress}
+          />
+        );
+      })}
     </>
   );
 }
