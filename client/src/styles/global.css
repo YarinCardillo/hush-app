@@ -870,11 +870,36 @@ a[href]:active {
 }
 
 .sl-guild-btn:hover .sl-guild-pill {
-  height: 8px;
+  height: 20px;
 }
 
 .sl-guild-btn--active .sl-guild-pill {
-  height: 20px;
+  height: 40px;
+}
+
+/* Unread state: small 8px pill even when not hovered */
+.sl-guild-btn--unread .sl-guild-pill {
+  height: 8px;
+}
+
+/* Unread count badge: bottom-right of server icon */
+.sl-unread-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--hush-amber);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  pointer-events: none;
 }
 
 .sl-separator {
@@ -1047,8 +1072,23 @@ a[href]:active {
 .cl-channel-item--active {
   color: var(--hush-text);
   background: var(--hush-hover);
-  border-left: 2px solid var(--hush-amber);
+  border-left: 3px solid var(--hush-amber);
   border-radius: var(--radius-md);
+}
+
+/* Unread channel: primary text color + medium weight */
+.cl-channel-item.unread {
+  color: var(--hush-text);
+  font-weight: 500;
+}
+
+/* Small unread dot displayed to the left of the channel name */
+.cl-channel-unread-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--hush-text-secondary);
+  flex-shrink: 0;
 }
 
 .cl-channel-hash {
