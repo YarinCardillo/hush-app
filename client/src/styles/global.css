@@ -1658,6 +1658,133 @@ a[href]:active {
   max-width: 200px;
 }
 
+/* ── Message grouping & separators ─────────────── */
+
+.message-group {
+  display: flex;
+  gap: 8px;
+  padding: 2px 16px;
+}
+
+.message-group:hover {
+  background: var(--hush-hover);
+}
+
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.message-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.message-username {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--hush-text);
+}
+
+.message-timestamp {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--hush-text-muted);
+}
+
+.message-body {
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--hush-text);
+  line-height: 1.4;
+}
+
+/* Consecutive (collapsed) messages */
+/* 32px avatar + 16px left-padding + 8px gap = 56px indent */
+.message-consecutive {
+  padding-left: 56px;
+}
+
+.message-consecutive .message-timestamp {
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+}
+
+.message-consecutive:hover .message-timestamp {
+  opacity: 1;
+}
+
+/* Date separator */
+.date-separator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+.date-separator::before,
+.date-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hush-border);
+}
+
+.date-separator-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--hush-text-muted);
+  background: var(--hush-elevated);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+/* New messages separator */
+.new-messages-separator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 16px;
+}
+
+.new-messages-separator::before,
+.new-messages-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hush-amber);
+}
+
+.new-messages-separator-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--hush-amber);
+  white-space: nowrap;
+}
+
+/* Reaction chips */
+.reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--hush-hover);
+  border: 1px solid var(--hush-border);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.reaction-chip:hover {
+  background: var(--hush-amber-ghost);
+  border-color: var(--hush-amber-dim);
+}
+
 /* ── Member List (MemberList.jsx) ───────────────── */
 
 .ml-container {
