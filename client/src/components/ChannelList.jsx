@@ -601,12 +601,29 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, voic
           </button>
         )}
       </div>
-      {voiceParticipants.length > 0 && voiceParticipants.map((p) => (
-        <div key={p.userId} className="cl-voice-participant-row">
-          <span className="cl-voice-participant-dot" />
-          <span>{p.displayName}</span>
+      {voiceParticipants.length > 0 && (
+        <div className="voice-channel-users">
+          {voiceParticipants.slice(0, 5).map((p) => {
+            const initials = (p.displayName || p.userId || '?')
+              .split(/\s+/)
+              .slice(0, 2)
+              .map((word) => word[0]?.toUpperCase() ?? '')
+              .join('');
+            return (
+              <div
+                key={p.userId}
+                className="voice-channel-avatar-placeholder"
+                title={p.displayName || p.userId}
+              >
+                {initials}
+              </div>
+            );
+          })}
+          {voiceParticipants.length > 5 && (
+            <span className="voice-channel-count">+{voiceParticipants.length - 5}</span>
+          )}
         </div>
-      ))}
+      )}
     </div>
   );
 }
