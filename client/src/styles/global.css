@@ -67,14 +67,15 @@
 /* Light theme: cream palette. Follows system unless overridden by data-theme. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --hush-black:        #f5f5f1;  /* page bg */
-    --hush-surface:      #f0efeb;  /* sidebar panels */
-    --hush-elevated:     #e3e2dd;  /* raised elements */
-    --hush-hover:        rgba(0,0,0,.04);  /* hover states on light surfaces */
+    --hush-black:        #f7f7f3;  /* lightest, server strip */
+    --hush-surface:      #eeedea;  /* sidebar/member list */
+    --hush-elevated:     #e5e4e0;  /* chat area base */
+    --hush-hover:        rgba(0,0,0,.05);  /* hover states on light surfaces */
+    --hush-modal:        #ffffff;  /* modals/voice panel */
 
     --hush-amber-glow:   rgba(213, 79, 18, 0.12);
     --hush-amber-ghost:  rgba(213, 79, 18, 0.06);
-    --hush-on-amber:     #f5f5f1;
+    --hush-on-amber:     #f7f7f3;
 
     --hush-border:       rgba(0,0,0,.07);
     --hush-border-hover: rgba(0,0,0,.12);
@@ -85,7 +86,7 @@
     --hush-text-muted:   #7a7973;
     --hush-text-ghost:   #9a9992;
 
-    --hush-glass-bg:         rgba(229, 228, 223, 0.82);
+    --hush-glass-bg:         rgba(229, 228, 222, 0.82);
     --hush-video-label-bg:  rgba(26, 26, 24, 0.65);
     --hush-badge-live-bg:   rgba(52, 211, 153, 0.12);
     --hush-btn-danger-hover: rgba(239, 68, 68, 0.12);
@@ -97,13 +98,14 @@
 
 /* Explicit theme override (for future in-app setting: system / light / dark) */
 [data-theme="light"] {
-  --hush-black:        #f5f5f1;
-  --hush-surface:      #f0efeb;
-  --hush-elevated:     #e3e2dd;
-  --hush-hover:        rgba(0,0,0,.04);
+  --hush-black:        #f7f7f3;
+  --hush-surface:      #eeedea;
+  --hush-elevated:     #e5e4e0;
+  --hush-hover:        rgba(0,0,0,.05);
+  --hush-modal:        #ffffff;
   --hush-amber-glow:   rgba(213, 79, 18, 0.12);
   --hush-amber-ghost:  rgba(213, 79, 18, 0.06);
-  --hush-on-amber:     #f5f5f1;
+  --hush-on-amber:     #f7f7f3;
   --hush-border:       rgba(0,0,0,.07);
   --hush-border-hover: rgba(0,0,0,.12);
   --hush-border-focus: rgba(0,0,0,.18);
@@ -111,7 +113,7 @@
   --hush-text-secondary: #5c5b56;
   --hush-text-muted:   #7a7973;
   --hush-text-ghost:   #9a9992;
-  --hush-glass-bg:         rgba(229, 228, 223, 0.82);
+  --hush-glass-bg:         rgba(229, 228, 222, 0.82);
   --hush-video-label-bg:  rgba(26, 26, 24, 0.65);
   --hush-badge-live-bg:   rgba(52, 211, 153, 0.12);
   --hush-btn-danger-hover: rgba(239, 68, 68, 0.12);
