@@ -50,11 +50,12 @@
   --font-mono:  'Geist Mono', 'SF Mono', Consolas, monospace;
 
   /* ── Spacing & Radius ── */
-  --radius-sm:   4px;
-  --radius-md:   6px;
-  --radius-lg:   8px;
-  --radius-xl:   12px;
-  --radius-full: 9999px;
+  --radius-sm:   4px;    /* text badges, tiny chips */
+  --radius-md:   8px;    /* channel items, list items, cards */
+  --radius-lg:   12px;   /* modals, dropdowns, panels */
+  --radius-xl:   16px;   /* voice panel, bottom sheets */
+  --radius-pill: 20px;   /* input bar, primary buttons, search bar */
+  --radius-full: 9999px; /* avatars, status dots, unread badges, server icons */
 
   /* ── Motion (no spring/bounce; transitions only) ── */
   --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
@@ -269,6 +270,7 @@ code, .mono {
 .btn-primary {
   background: var(--hush-amber);
   color: var(--hush-on-amber);
+  border-radius: var(--radius-pill);
 }
 
 .btn-primary:hover {
@@ -290,6 +292,7 @@ code, .mono {
   background: var(--hush-danger-ghost);
   color: var(--hush-danger);
   border: 1px solid transparent;
+  border-radius: var(--radius-pill);
 }
 
 .btn-danger:hover {
@@ -1466,7 +1469,7 @@ a[href]:active {
   padding: 8px 12px;
   background: var(--hush-elevated);
   border: 1px solid var(--hush-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-pill);
   color: var(--hush-text);
   font-family: var(--font-sans);
   font-size: 13px;
@@ -4380,6 +4383,7 @@ a[href]:active {
   padding: 8px 12px;
   background: var(--hush-surface);
   border: 1px solid var(--hush-border);
+  border-radius: var(--radius-pill);
   color: var(--hush-text);
   font-size: 0.85rem;
   font-family: var(--font-sans);
