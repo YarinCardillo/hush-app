@@ -5534,7 +5534,7 @@ a[href]:active {
 
 /* ── Mobile Stack Navigation (<768px) ─────────────────────────────────── */
 
-@media (max-width: 767px) {
+@media (max-width: 639px) {
   /* Stack container — clips overflow so stacks slide without scrollbars */
   .lay-container { position: relative; overflow: hidden; }
 
@@ -5722,7 +5722,7 @@ a[href]:active {
 }
 
 /* Desktop: hide mobile-only elements */
-@media (min-width: 768px) {
+@media (min-width: 640px) {
   .mobile-only { display: none !important; }
   .mobile-topbar { display: none !important; }
   .mobile-member-drawer { display: none !important; }
