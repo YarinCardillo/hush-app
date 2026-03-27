@@ -535,8 +535,14 @@ function CategorySection({ group, collapsed = false, onToggleCollapsed, activeCh
 }
 
 function ChannelRowContent({ channel, isActive, onSelect, participantCount, voiceParticipants = [], dragStyle, dragRef, dragListeners, isDragging, isAdmin, onDelete }) {
-  const [hover, setHover] = useState(false);
   const isVoice = channel.type === CHANNEL_TYPE_VOICE;
+  const isUnread = !isActive && (channel.unreadCount ?? 0) > 0;
+
+  const itemClass = [
+    'cl-channel-item',
+    isActive && 'cl-channel-item--active',
+    isUnread && 'unread',
+  ].filter(Boolean).join(' ');
 
   return (
     <div>
@@ -544,7 +550,7 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, voic
         ref={dragRef}
         role="button"
         tabIndex={0}
-        className={`cl-channel-item${isActive ? ' cl-channel-item--active' : ''}`}
+        className={itemClass}
         style={{
           ...dragStyle,
           opacity: isDragging ? 0.4 : 1,
@@ -558,6 +564,7 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, voic
         }}
         {...dragListeners}
       >
+        {isUnread && <span className="cl-channel-unread-dot" aria-hidden />}
         <span className="cl-channel-hash" aria-hidden>
           {isVoice ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -570,7 +577,9 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, voic
             <span style={{ opacity: 0.8 }}>#</span>
           )}
         </span>
-        <span className="cl-channel-name">{channel._displayName ?? channel.name ?? ''}</span>
+        <span className="cl-channel-name">
+          {channel._displayName ?? (channel.name || (channel.type === 'voice' ? 'General' : 'general'))}
+        </span>
         {isVoice && participantCount != null && (
           <span className="cl-voice-count">{participantCount}</span>
         )}
