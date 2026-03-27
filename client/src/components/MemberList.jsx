@@ -79,6 +79,13 @@ const ACTION_SUCCESS_MESSAGES = {
 };
 
 /**
+ * MemberList — renders grouped member rows for a guild.
+ *
+ * On desktop: rendered inside the desktop sidebar panel (sidebar-desktop-inner).
+ * On mobile: rendered inside the mobile-member-drawer container in ServerLayout.
+ * The mobile-member-drawer open/close state is managed by ServerLayout; this
+ * component is unaware of the drawer lifecycle.
+ *
  * @param {{
  *   members: Array<object>,
  *   onlineUserIds: Set<string>,
@@ -89,6 +96,7 @@ const ACTION_SUCCESS_MESSAGES = {
  *   onMemberUpdate: () => void,
  *   serverId: string,
  *   onSendMessage: ((member: object) => void) | undefined,
+ *   onCloseDrawer: (() => void) | undefined,
  * }} props
  */
 export default function MemberList({
@@ -101,6 +109,7 @@ export default function MemberList({
   onMemberUpdate,
   serverId,
   onSendMessage,
+  onCloseDrawer,
 }) {
   const [selectedMember, setSelectedMember] = useState(null);
   const [profilePosition, setProfilePosition] = useState({ x: 0, y: 0 });
@@ -210,7 +219,10 @@ export default function MemberList({
           member={selectedMember}
           position={profilePosition}
           onClose={() => setSelectedMember(null)}
-          onSendMessage={onSendMessage}
+          onSendMessage={onSendMessage ? (member) => {
+            onCloseDrawer?.();
+            onSendMessage(member);
+          } : undefined}
           currentUserId={currentUserId}
         />
       )}

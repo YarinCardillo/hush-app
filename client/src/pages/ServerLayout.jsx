@@ -1501,6 +1501,7 @@ export default function ServerLayout() {
                 onMemberUpdate={handleMemberUpdate}
                 serverId={serverId}
                 onSendMessage={handleSendMessage}
+                onCloseDrawer={closeMemberDrawer}
               />
             </div>
           </div>

@@ -5670,6 +5670,12 @@ a[href]:active {
   /* Server guild buttons: 44px touch target on mobile */
   .sl-guild-btn { width: 44px; height: 44px; }
 
+  /* Member list items: 44px touch target on mobile */
+  .ml-member-item { height: 44px; }
+
+  /* Remove border-left on member panel when inside mobile drawer */
+  .mobile-member-drawer .ml-panel { border-left: none; }
+
   /* Chat input sticky bottom */
   .chat-input-bar {
     position: sticky;
