@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import ServerList from './ServerList';
 import { InstanceContext } from '../contexts/InstanceContext.jsx';
 
 // GuildCreateModal calls createGuild — mock it so the modal renders without real API calls
 vi.mock('../lib/api', () => ({
   createGuild: vi.fn(() => Promise.resolve({ id: 'g-new', name: 'New Guild' })),
+  createGuildInvite: vi.fn(() => Promise.resolve({ code: 'invite-123' })),
+  searchUsersForDM: vi.fn(),
+  createOrFindDM: vi.fn(),
 }));
 
 // UserSettingsModal requires matchMedia — mock the whole component
@@ -75,6 +78,12 @@ function renderWithInstanceCtx(ctxValue, props = {}) {
 describe('ServerList — legacy prop-based mode', () => {
   beforeEach(() => {
     cleanup();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
   });
 
   it('renders guild initials for each guild', () => {
@@ -183,6 +192,12 @@ describe('ServerList — legacy prop-based mode', () => {
 describe('ServerList — multi-instance mode via InstanceContext', () => {
   beforeEach(() => {
     cleanup();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
   });
 
   it('renders guilds from mergedGuilds when InstanceContext is provided', () => {
@@ -325,6 +340,36 @@ describe('ServerList — multi-instance mode via InstanceContext', () => {
     expect(
       gammaBtn.compareDocumentPosition(alphaBtn) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('creates and copies an instance-aware invite link from the context menu', async () => {
+    const apiModule = await import('../lib/api');
+    const ctxValue = {
+      mergedGuilds: [{ id: 'g1', name: 'Alpha Guild', instanceUrl: 'https://a.example.com' }],
+      instanceStates: new Map([
+        ['https://a.example.com', { connectionState: 'connected' }],
+      ]),
+      getTokenForInstance: vi.fn((instanceUrl) => (
+        instanceUrl === 'https://a.example.com' ? 'instance-jwt' : null
+      )),
+      guildOrder: [],
+      setGuildOrder: vi.fn(),
+    };
+
+    renderWithInstanceCtx(ctxValue);
+
+    fireEvent.contextMenu(screen.getByLabelText('Alpha Guild'), { clientX: 100, clientY: 200 });
+    fireEvent.click(screen.getByText('Copy invite link'));
+
+    await waitFor(() => {
+      expect(ctxValue.getTokenForInstance).toHaveBeenCalledWith('https://a.example.com');
+      expect(apiModule.createGuildInvite).toHaveBeenCalledWith(
+        'instance-jwt',
+        'g1',
+        {},
+        'https://a.example.com',
+      );
+    });
   });
 });
 

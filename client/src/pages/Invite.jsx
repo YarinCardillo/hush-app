@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getInviteInfo, claimInvite } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useInstanceContext } from '../contexts/InstanceContext';
-import { slugify } from '../lib/slugify';
 import { decodeGuildNameFromInvite } from '../lib/guildMetadata';
 
 
@@ -36,7 +35,7 @@ export default function Invite() {
   const { code, instance: instanceParam } = useParams();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
-  const { bootInstance, getTokenForInstance, instanceStates, mergedGuilds } = useInstanceContext();
+  const { bootInstance, getTokenForInstance } = useInstanceContext();
 
   /** Whether this is a cross-instance invite. */
   const isCrossInstance = Boolean(instanceParam);
@@ -106,40 +105,47 @@ export default function Invite() {
   useEffect(() => {
     if (isCrossInstance) return; // handled separately
     if (!isAuthenticated || !invite || !code) return;
+    let cancelled = false;
 
-    // Get token from the first (only) connected instance.
-    const firstEntry = [...instanceStates.values()][0];
-    const token = firstEntry?.jwt ?? null;
-    if (!token) return;
-    const firstInstanceUrl = [...instanceStates.keys()][0] ?? undefined;
+    async function claimSameInstanceInvite() {
+      const sameInstanceUrl = window.location.origin;
+      setJoining(true);
+      setError(null);
 
-    setJoining(true);
-    claimInvite(token, code, firstInstanceUrl)
-      .then((result) => {
+      try {
+        let token = getTokenForInstance(sameInstanceUrl);
+        if (!token) {
+          await bootInstance(sameInstanceUrl);
+          if (cancelled) return;
+          token = getTokenForInstance(sameInstanceUrl);
+        }
+        if (!token) {
+          throw new Error('Authentication failed for instance.');
+        }
+
+        const result = await claimInvite(token, code, sameInstanceUrl);
+        if (cancelled) return;
+
         const serverId = result?.serverId ?? invite?.serverId;
         if (serverId) {
-          const guild = mergedGuilds.find((g) => g.id === serverId);
-          if (guild?.instanceUrl) {
-            const host = (() => {
-              try { return new URL(guild.instanceUrl).host; } catch { return null; }
-            })();
-            const slug = slugify(guild._localName ?? guild.name ?? serverId);
-            if (host) {
-              navigate(`/${host}/${slug}`, { replace: true });
-              return;
-            }
-          }
           navigate(`/servers/${serverId}/channels`, { replace: true });
         } else {
           navigate('/home', { replace: true });
         }
-      })
-      .catch((err) => {
-        setError(inviteErrorMessage(err));
-        setJoining(false);
-      });
+      } catch (err) {
+        if (!cancelled) {
+          setError(inviteErrorMessage(err));
+          setJoining(false);
+        }
+      }
+    }
+
+    claimSameInstanceInvite();
+    return () => {
+      cancelled = true;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, invite, code, isCrossInstance]);
+  }, [isAuthenticated, invite, code, isCrossInstance, bootInstance, getTokenForInstance, navigate]);
 
   // ── Cross-instance: user pressed "Join" ──────────────────────────────
 
@@ -163,8 +169,7 @@ export default function Invite() {
 
       // Step 4: Navigate to the guild using instance-aware URL.
       if (serverId) {
-        const slug = slugify(guildName);
-        navigate(`/${instanceParam}/${slug}`, { replace: true });
+        navigate(`/servers/${serverId}/channels`, { replace: true });
       } else {
         navigate(`/${instanceParam}`, { replace: true });
       }
@@ -174,7 +179,7 @@ export default function Invite() {
       setBooting(false);
       setJoining(false);
     }
-  }, [instanceUrl, code, bootInstance, getTokenForInstance, invite, guildName, instanceParam, navigate]);
+  }, [instanceUrl, code, bootInstance, getTokenForInstance, invite, instanceParam, navigate]);
 
   // ── Unauthenticated flow: redirect to / with pending invite queued ────
 

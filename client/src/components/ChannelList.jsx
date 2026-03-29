@@ -20,7 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { getGuildChannels, createGuildChannel, createGuildInvite, moveChannel, deleteGuildChannel } from '../lib/api';
 import * as apiLib from '../lib/api';
-import { encodeGuildNameForInvite } from '../lib/guildMetadata';
+import { buildGuildInviteLink } from '../lib/inviteLinks';
 import * as mlsGroupLib from '../lib/mlsGroup';
 import * as mlsStoreLib from '../lib/mlsStore';
 import * as hushCryptoLib from '../lib/hushCrypto';
@@ -322,7 +322,7 @@ function CreateCategoryModal({ getToken, serverId, onClose, onCreated }) {
   );
 }
 
-function InviteModal({ getToken, serverId, guildName, onClose }) {
+function InviteModal({ getToken, serverId, guildName, instanceUrl, onClose }) {
   const [isOpen, setIsOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
@@ -348,19 +348,19 @@ function InviteModal({ getToken, serverId, guildName, onClose }) {
       const token = getToken();
       if (!token) { setError('Not authenticated'); setLoading(false); return; }
       try {
-        const inv = await createGuildInvite(token, serverId);
+        const inv = await createGuildInvite(token, serverId, {}, instanceUrl ?? '');
         if (!cancelled) { setInviteCode(inv.code); setLoading(false); }
       } catch (err) {
         if (!cancelled) { setError(err.message || 'Failed to create invite'); setLoading(false); }
       }
     })();
     return () => { cancelled = true; };
-  }, [getToken]);
+  }, [getToken, instanceUrl, serverId]);
 
   // Embed guild name in URL fragment so the invite page can display it without
   // the server knowing which guild the link is for (backend opacity model).
   const inviteLink = inviteCode
-    ? `${window.location.origin}/invite/${inviteCode}${guildName ? `#name=${encodeGuildNameForInvite(guildName)}` : ''}`
+    ? buildGuildInviteLink(window.location.origin, instanceUrl, inviteCode, guildName)
     : '';
 
   const handleCopy = async () => {
@@ -754,6 +754,7 @@ export default function ChannelList({
   getToken,
   serverId,
   guildName,
+  instanceUrl = null,
   instanceData,
   channels,
   myRole,
@@ -1165,6 +1166,7 @@ export default function ChannelList({
           getToken={getToken}
           serverId={serverId}
           guildName={guildName}
+          instanceUrl={instanceUrl}
           onClose={() => setShowInviteModal(false)}
         />
       )}

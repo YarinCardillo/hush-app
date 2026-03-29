@@ -1311,6 +1311,7 @@ export default function ServerLayout() {
       getToken={getToken}
       serverId={serverId}
       guildName={activeGuildName ?? activeGuild?.name}
+      instanceUrl={activeGuild?.instanceUrl ?? null}
       instanceData={instanceData}
       channels={channels}
       myRole={myRole}

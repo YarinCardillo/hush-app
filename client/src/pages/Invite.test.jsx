@@ -17,10 +17,6 @@ vi.mock('../contexts/InstanceContext', () => ({
   useInstanceContext: vi.fn(),
 }));
 
-vi.mock('../lib/slugify', () => ({
-  slugify: vi.fn((name) => name.toLowerCase().replace(/\s+/g, '-')),
-}));
-
 vi.mock('../lib/guildMetadata', () => ({
   decodeGuildNameFromInvite: vi.fn((encoded) => decodeURIComponent(encoded)),
 }));
@@ -38,6 +34,7 @@ function renderInvite(path, routes = []) {
   const allRoutes = [
     <Route key="invite" path="/invite/:code" element={<Invite />} />,
     <Route key="join" path="/join/:instance/:code" element={<Invite />} />,
+    <Route key="server" path="/servers/:serverId/channels" element={<div>Server channel</div>} />,
     ...routes,
   ];
   return render(
@@ -50,9 +47,13 @@ function renderInvite(path, routes = []) {
 function makeInstanceContext(overrides = {}) {
   return {
     bootInstance: vi.fn().mockResolvedValue(undefined),
-    getTokenForInstance: vi.fn(() => 'instance-jwt'),
+    getTokenForInstance: vi.fn((instanceUrl) => {
+      if (instanceUrl === window.location.origin) return 'local-jwt';
+      return 'instance-jwt';
+    }),
     instanceStates: new Map([
-      ['https://local.example.com', { connectionState: 'connected', jwt: 'local-jwt' }],
+      ['https://remote.example.com', { connectionState: 'connected', jwt: 'instance-jwt' }],
+      [window.location.origin, { connectionState: 'connected', jwt: 'local-jwt' }],
     ]),
     mergedGuilds: [],
     ...overrides,
@@ -101,9 +102,8 @@ describe('Invite — same-instance flow', () => {
     useAuth.mockReturnValue({ isAuthenticated: true });
     useInstanceContext.mockReturnValue(makeInstanceContext({
       instanceStates: new Map([
-        ['https://local.example.com', { connectionState: 'connected', jwt: 'local-jwt' }],
+        [window.location.origin, { connectionState: 'connected', jwt: 'local-jwt' }],
       ]),
-      mergedGuilds: [{ id: 'srv-1', instanceUrl: 'https://local.example.com', name: 'My Guild' }],
     }));
     apiModule.getInviteInfo.mockResolvedValue({ serverId: 'srv-1' });
     apiModule.claimInvite.mockResolvedValue({ serverId: 'srv-1' });
@@ -111,7 +111,30 @@ describe('Invite — same-instance flow', () => {
     renderInvite('/invite/abc123');
 
     await waitFor(() => {
-      expect(apiModule.claimInvite).toHaveBeenCalledWith('local-jwt', 'abc123', 'https://local.example.com');
+      expect(apiModule.claimInvite).toHaveBeenCalledWith('local-jwt', 'abc123', window.location.origin);
+    });
+  });
+
+  it('uses the current origin token instead of the first connected instance', async () => {
+    useAuth.mockReturnValue({ isAuthenticated: true });
+    const ctx = makeInstanceContext({
+      instanceStates: new Map([
+        ['https://remote.example.com', { connectionState: 'connected', jwt: 'wrong-first-jwt' }],
+        [window.location.origin, { connectionState: 'connected', jwt: 'local-jwt' }],
+      ]),
+      getTokenForInstance: vi.fn((instanceUrl) => (
+        instanceUrl === window.location.origin ? 'local-jwt' : 'wrong-first-jwt'
+      )),
+    });
+    useInstanceContext.mockReturnValue(ctx);
+    apiModule.getInviteInfo.mockResolvedValue({ serverId: 'srv-1' });
+    apiModule.claimInvite.mockResolvedValue({ serverId: 'srv-1' });
+
+    renderInvite('/invite/abc123');
+
+    await waitFor(() => {
+      expect(ctx.getTokenForInstance).toHaveBeenCalledWith(window.location.origin);
+      expect(apiModule.claimInvite).toHaveBeenCalledWith('local-jwt', 'abc123', window.location.origin);
     });
   });
 
@@ -168,7 +191,7 @@ describe('Invite — same-instance flow', () => {
     useAuth.mockReturnValue({ isAuthenticated: true });
     useInstanceContext.mockReturnValue(makeInstanceContext({
       instanceStates: new Map([
-        ['https://local.example.com', { connectionState: 'connected', jwt: 'local-jwt' }],
+        [window.location.origin, { connectionState: 'connected', jwt: 'local-jwt' }],
       ]),
       mergedGuilds: [],
     }));

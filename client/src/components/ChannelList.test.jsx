@@ -20,6 +20,12 @@ const categoryChannel = { id: 'cat1', serverId: 's1', name: 'Gaming', type: 'cat
 describe('ChannelList', () => {
   beforeEach(() => {
     cleanup();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
   });
 
   it('renders text and voice channels with correct icons', async () => {
@@ -255,6 +261,40 @@ describe('ChannelList', () => {
     typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
     await waitFor(() => {
       expect(screen.getByLabelText('Voice mode')).toBeInTheDocument();
+    });
+  });
+
+  it('builds and copies an instance-aware invite link from the invite modal', async () => {
+    const { createGuildInvite } = await import('../lib/api');
+    createGuildInvite.mockResolvedValueOnce({ code: 'abc123' });
+
+    render(
+      <ChannelList
+        getToken={getToken}
+        serverId="s1"
+        guildName="My Server"
+        instanceUrl="https://remote.example.com"
+        channels={[textChannel]}
+        myRole="admin"
+        activeChannelId={null}
+        onChannelSelect={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('Server menu'));
+    fireEvent.click(screen.getByRole('button', { name: /invite people/i }));
+
+    const expectedLink = `${window.location.origin}/join/remote.example.com/abc123#name=My%20Server`;
+
+    await waitFor(() => {
+      expect(createGuildInvite).toHaveBeenCalledWith('test-token', 's1', {}, 'https://remote.example.com');
+      expect(screen.getByDisplayValue(expectedLink)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /copy link/i }));
+
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expectedLink);
     });
   });
 });

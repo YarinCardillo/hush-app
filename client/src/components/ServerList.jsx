@@ -18,9 +18,10 @@ import { CSS } from '@dnd-kit/utilities';
 import UserSettingsModal from './UserSettingsModal';
 import GuildCreateModal from './GuildCreateModal';
 import GuildContextMenu from './GuildContextMenu';
+import { buildGuildInviteLink } from '../lib/inviteLinks';
 import { decryptGuildMetadata, fromBase64, importMetadataKey } from '../lib/guildMetadata';
 import { InstanceContext } from '../contexts/InstanceContext.jsx';
-import { searchUsersForDM, createOrFindDM } from '../lib/api';
+import { createGuildInvite, searchUsersForDM, createOrFindDM } from '../lib/api';
 
 // Icon size and strip width are now defined in CSS (.sl-guild-btn, .sl-strip).
 // These constants are kept for any remaining inline fallback usage.
@@ -327,6 +328,7 @@ export default function ServerList({
   const instanceCtx = useContext(InstanceContext);
 
   const mergedGuildsFromCtx = instanceCtx?.mergedGuilds ?? null;
+  const getTokenForInstance = instanceCtx?.getTokenForInstance ?? null;
   const instanceStates = instanceCtx?.instanceStates ?? new Map();
   const guildOrderFromCtx = instanceCtx?.guildOrder ?? [];
   const setGuildOrder = instanceCtx?.setGuildOrder ?? null;
@@ -479,13 +481,20 @@ export default function ServerList({
 
   const handleCopyInvite = useCallback(async (guild) => {
     try {
-      await navigator.clipboard.writeText(
-        `${window.location.origin}/invite?guild=${guild.id}`,
-      );
+      const baseUrl = guild.instanceUrl ?? '';
+      const token = guild.instanceUrl && getTokenForInstance
+        ? getTokenForInstance(guild.instanceUrl)
+        : getToken();
+      if (!token) return;
+
+      const invite = await createGuildInvite(token, guild.id, {}, baseUrl);
+      const guildName = metadataCache.get(guild.id)?.name ?? guild.name ?? guild.id;
+      const inviteLink = buildGuildInviteLink(window.location.origin, guild.instanceUrl, invite.code, guildName);
+      await navigator.clipboard.writeText(inviteLink);
     } catch {
       // Clipboard API not available in this environment — silently skip.
     }
-  }, []);
+  }, [getToken, getTokenForInstance, metadataCache]);
 
   const handleMarkRead = useCallback((_guild) => {
     // Phase U scaffolding — unread tracking wired in a later plan.
