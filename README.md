@@ -10,17 +10,36 @@ End-to-end encrypted communication platform. Every message, every call, every sc
 
 ## Quick Start (Self-Hosting)
 
-**Prerequisites:** Linux server with [Docker](https://docs.docker.com/engine/install/) and docker-compose installed.
+**Prerequisites:**
+- Linux server (Ubuntu 22.04+ recommended, 1 GB RAM minimum)
+- [Docker](https://docs.docker.com/engine/install/) and docker-compose installed
+- Ports 80, 443, 7880-7881/tcp and 50020-50100/udp open
 
-**With a domain name** (recommended — gives you a real TLS certificate):
+### With a domain (recommended)
+
+A domain gives you a real TLS certificate from Let's Encrypt — no browser warnings, and no friction when users from other instances connect to yours.
+
+**1. Point a domain at your server** (A record in your DNS provider):
+
+```
+chat.example.com  ->  YOUR_SERVER_IP
+```
+
+> **Don't have a domain?** Free subdomains from [DuckDNS](https://www.duckdns.org) or [Afraid.org](https://freedns.afraid.org) work perfectly. Create one, point it at your server IP, and use it below.
+
+**2. Run setup:**
 
 ```bash
 git clone https://github.com/YarinCardillo/hush-app
 cd hush-app
-./scripts/setup.sh --domain chat.example.com --email ops@example.com
+./scripts/setup.sh --domain chat.example.com --email you@example.com
 ```
 
-**With just an IP address** (self-signed TLS — browsers show a certificate warning):
+**3. Open `https://chat.example.com`.** No warnings, no extra steps. Register and you're live.
+
+### With just an IP (self-signed TLS)
+
+If you can't use a domain, you can deploy with an IP address. This works, but browsers will show a certificate warning because the TLS certificate is self-signed.
 
 ```bash
 git clone https://github.com/YarinCardillo/hush-app
@@ -28,29 +47,43 @@ cd hush-app
 ./scripts/setup.sh --ip 203.0.113.42
 ```
 
-That's it. The script generates secrets, configures TLS, starts all services, and prints your live URL. Expected time: under 10 minutes.
+**After setup, accept the certificate in your browser:**
 
-> **IP mode note:** Caddy generates a self-signed certificate from its internal CA. Browsers will show a certificate warning on first visit — accept it to proceed. E2EE protects your data regardless of the TLS certificate type.
+1. Visit `https://YOUR_SERVER_IP` — the browser shows a warning
+2. Click **Advanced** (or **Show Details** in Safari)
+3. Click **Proceed** / **Accept the Risk and Continue** / **visit this website**
 
-**Flags:**
-- `--domain <domain>` — your public hostname (Let's Encrypt TLS)
-- `--ip <address>` — your server IP (self-signed TLS, no domain needed)
-- `--email <email>` — for Let's Encrypt renewal (required with `--domain`, ignored with `--ip`)
-- `--force` — re-run on an already-configured instance (overwrites `.env`)
+This is safe. The warning means the certificate wasn't issued by a public authority, not that the connection is insecure. Your messages are still end-to-end encrypted regardless.
 
-**What `setup.sh` does:**
-1. Checks for Docker and docker-compose — fails fast with a clear message if missing
+> **Important:** Users connecting to your instance from the Hush web client on a different machine must also accept this certificate by visiting your IP directly first. For a seamless experience, use a domain instead.
+
+### Flags
+
+| Flag | Purpose |
+|-|-|
+| `--domain <host>` | Public hostname (Let's Encrypt TLS) |
+| `--ip <address>` | Server IP (self-signed TLS, no domain needed) |
+| `--email <email>` | Let's Encrypt renewal (required with `--domain`) |
+| `--force` | Re-run on an already-configured instance (overwrites config, preserves data) |
+
+### What `setup.sh` does
+
+1. Checks for Docker and docker-compose
 2. Generates all secrets: JWT signing key, admin API key, PostgreSQL password, LiveKit credentials, key transparency seed
 3. Writes `.env` and Caddy config from `--domain` or `--ip`
-4. Builds the Go API and client images locally, pulls third-party images (Postgres, Redis, LiveKit)
-5. Runs database migrations
-6. Starts the stack (Go API, PostgreSQL, Redis, LiveKit, Caddy)
-7. Health-checks the running instance (3 attempts with exponential backoff)
-8. Prints the live URL
+4. Builds the Go API and client images, pulls Postgres/Redis/LiveKit
+5. Runs database migrations and starts the stack
+6. Health-checks the running instance and prints your live URL
 
-For upgrades, use `./scripts/update.sh` — it backs up the database before pulling new images.
+### Updating
 
-For detailed configuration options, see [ARCHITECTURE.md](ARCHITECTURE.md#infrastructure).
+```bash
+./scripts/update.sh
+```
+
+This backs up the database, pulls the latest code, rebuilds images, and restarts.
+
+For detailed configuration, see [ARCHITECTURE.md](ARCHITECTURE.md#infrastructure).
 
 ---
 
