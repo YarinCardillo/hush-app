@@ -289,7 +289,55 @@ This is the architecture for a federated model where users self-host or use diff
 
 ---
 
-## 10. Infrastructure
+## 10. Multi-Instance Authentication
+
+Hush supports simultaneous connections to N independent instances from a single
+browser session. All instances share the same BIP39 identity (Ed25519 keypair)
+but each instance maintains its own user record and JWT.
+
+### Identity Model
+
+| Scope | Storage | What it holds |
+|-|-|-|
+| Identity (global) | IndexedDB vault, encrypted with PIN | BIP39 private key — one per browser |
+| Home instance | `localStorage['hush_home_instance']` | URL of the instance where the user first registered |
+| Per-instance JWT | `sessionStorage['hush_jwt_{host}']` | Session token for each connected instance |
+| Instance registry | IndexedDB `hush-instance-registry` | Known instances with connection state |
+
+### Auth Flows
+
+**First registration:**
+1. User selects an instance on the Home page and registers
+2. Instance becomes the "home instance" (persisted in localStorage)
+3. JWT stored per-instance in sessionStorage
+4. Vault created with PIN (encrypts the private key in IDB)
+
+**PIN unlock (returning user):**
+1. No instance selector shown — PIN unlocks the local identity
+2. If sessionStorage JWT is missing (tab was closed), re-authenticates against
+   the home instance via challenge-response
+3. `useInstances` boots all known instances from the registry
+
+**Joining a new instance (invite link or manual add):**
+1. `useInstances.bootInstance(foreignUrl)` runs while the user is already
+   authenticated on the home instance
+2. Challenge-response against the foreign instance
+3. If the public key is unknown (server returns 404), auto-registers
+4. Foreign instance issues its own JWT — stored per-instance
+5. WS connection established, guilds fetched and merged into the sidebar
+
+### Design Rules
+
+- The **vault/PIN** is identity-scoped, not instance-scoped. One vault per browser.
+- The **instance selector** only appears on the fresh registration screen (no vault).
+- **Instance management** (add, remove, switch) happens inside the app after authentication.
+- The server returns **404** (not 401) for unknown public keys at `/api/auth/verify`,
+  enabling clients to distinguish "not registered" from "bad credentials."
+- JWTs are **never shared** between instances. Each instance issues its own.
+
+---
+
+## 11. Infrastructure
 
 **docker-compose.prod.yml** — 5 services:
 
@@ -309,7 +357,7 @@ This is the architecture for a federated model where users self-host or use diff
 
 ---
 
-## 11. Key Design Decisions
+## 12. Key Design Decisions
 
 1. **Go over Node.js** — Clean rewrite. Go gives strong concurrency (goroutines for WebSocket hub), single binary deployment, and no runtime dependency.
 
