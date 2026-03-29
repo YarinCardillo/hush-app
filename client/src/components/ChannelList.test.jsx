@@ -12,6 +12,7 @@ vi.mock('../lib/api', () => ({
 
 const getToken = () => 'test-token';
 
+const systemChannel = { id: 'sys1', serverId: 's1', name: 'System', type: 'system', position: 0, parentId: null };
 const textChannel = { id: 'c1', serverId: 's1', name: 'general', type: 'text', position: 0, parentId: null };
 const voiceChannel = { id: 'c2', serverId: 's1', name: 'voice-1', type: 'voice', position: 1, parentId: null };
 const channelInCategory = { id: 'c3', serverId: 's1', name: 'chat', type: 'text', position: 0, parentId: 'cat1' };
@@ -60,6 +61,29 @@ describe('ChannelList', () => {
     expect(screen.getByText('Gaming')).toBeInTheDocument();
     expect(screen.getByText('general')).toBeInTheDocument();
     expect(screen.getByText('chat')).toBeInTheDocument();
+  });
+
+  it('renders uncategorized channels between the system row and the first category', () => {
+    render(
+      <ChannelList
+        getToken={getToken}
+        serverId="s1"
+        serverName="My Server"
+        channels={[channelInCategory, categoryChannel, textChannel, systemChannel]}
+        myRole="member"
+        activeChannelId={null}
+        onChannelSelect={() => {}}
+      />
+    );
+
+    const system = screen.getByText('System');
+    const general = screen.getByText('general');
+    const gaming = screen.getByText('Gaming');
+    const chat = screen.getByText('chat');
+
+    expect(system.compareDocumentPosition(general) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(general.compareDocumentPosition(gaming) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(gaming.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('does not show voice participants when list is empty', () => {

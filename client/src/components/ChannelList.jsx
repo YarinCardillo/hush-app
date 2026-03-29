@@ -83,16 +83,14 @@ function groupChannelsByParent(channels) {
   const uncategorized = (byParent.get(null) || []).sort(sortFn);
   byParent.forEach((list, key) => { if (key !== null) list.sort(sortFn); });
 
-  // Sort categories by position, then add their children
+  // Uncategorized channels always sit directly below the system channel row.
+  const ordered = [{ key: null, label: null, channels: uncategorized }];
+
+  // Sort categories by position, then add their children after uncategorized.
   const categories = nonSystemChannels.filter((ch) => ch.type === CHANNEL_TYPE_CATEGORY).sort(sortFn);
-  const ordered = [];
   categories.forEach((cat) => {
     ordered.push({ key: cat.id, label: cat.name ?? 'Category', channels: byParent.get(cat.id) || [] });
   });
-
-  // Uncategorized bucket always at the bottom — persistent droppable target so
-  // channels can be dragged out of categories.
-  ordered.push({ key: null, label: null, channels: uncategorized });
 
   return ordered;
 }
