@@ -183,4 +183,15 @@ describe('Home', () => {
     const link = screen.getByRole('link', { name: /link to existing device/i });
     expect(link).toHaveAttribute('href', '/link-device?mode=new');
   });
+
+  it('shows a warning badge instead of a false inactive badge when handshake fails', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    global.fetch = vi.fn().mockRejectedValue(new TypeError('Load failed'));
+
+    renderHome();
+
+    expect(await screen.findByText(/could not verify encryption/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^end-to-end encrypted$/i)).not.toBeInTheDocument();
+    consoleErrorSpy.mockRestore();
+  });
 });

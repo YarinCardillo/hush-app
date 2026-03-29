@@ -133,6 +133,22 @@ describe('getHandshake', () => {
 
     await expect(getHandshake()).rejects.toThrow('handshake failed: 503');
   });
+
+  it('logs and enriches network failures for handshake requests', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Load failed')));
+
+    await expect(getHandshake('https://chat.example.com')).rejects.toThrow(
+      'handshake failed. Could not reach https://chat.example.com/api/handshake.',
+    );
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      '[api] handshake failed',
+      expect.objectContaining({
+        url: 'https://chat.example.com/api/handshake',
+      }),
+    );
+  });
 });
 
 // ── MLS API functions ─────────────────────────────────────────────────────────
@@ -260,6 +276,8 @@ describe('getKeyPackageCount', () => {
 describe('uploadKeyPackagesAfterAuth (api.js wrapper)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    localStorage.clear();
+    sessionStorage.clear();
   });
 
   it('delegates to uploadKeyPackagesAfterAuthImpl with injected deps', async () => {
@@ -301,6 +319,70 @@ describe('uploadKeyPackagesAfterAuth (api.js wrapper)', () => {
 
     expect(mockMlsStore.openStore).toHaveBeenCalledWith(userId, deviceId);
     expect(mockCrypto.generateCredential).toHaveBeenCalled();
+  });
+
+  it('uploads MLS bootstrap material to the selected auth instance by default', async () => {
+    localStorage.setItem('hush_auth_instance_selected', 'https://chat.example.com');
+
+    const TOKEN = 'tok';
+    const userId = 'u1';
+    const deviceId = 'd1';
+
+    const mockCred = {
+      signingPublicKey: new Uint8Array(32).fill(1),
+      signingPrivateKey: new Uint8Array(64).fill(2),
+      credentialBytes: new Uint8Array(64).fill(3),
+    };
+    const mockKP = {
+      keyPackageBytes: new Uint8Array([1]),
+      privateKeyBytes: new Uint8Array(64).fill(4),
+      hashRefBytes: new Uint8Array(32).fill(5),
+    };
+
+    const mockMlsStore = {
+      openStore: vi.fn().mockResolvedValue({}),
+      getCredential: vi.fn().mockResolvedValue(null),
+      setCredential: vi.fn().mockResolvedValue(undefined),
+      setKeyPackage: vi.fn().mockResolvedValue(undefined),
+      setLastResort: vi.fn().mockResolvedValue(undefined),
+    };
+    const mockCrypto = {
+      init: vi.fn().mockResolvedValue(undefined),
+      generateCredential: vi.fn().mockResolvedValue(mockCred),
+      generateKeyPackage: vi.fn().mockResolvedValue(mockKP),
+    };
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({}),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await uploadKeyPackagesAfterAuth(TOKEN, userId, deviceId, {
+      mlsStore: mockMlsStore,
+      crypto: mockCrypto,
+    });
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      'https://chat.example.com/api/mls/credentials',
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://chat.example.com/api/mls/key-packages',
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      3,
+      'https://chat.example.com/api/mls/key-packages',
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
   });
 });
 

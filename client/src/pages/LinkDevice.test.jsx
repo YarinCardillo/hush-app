@@ -14,7 +14,8 @@ const {
   mockCreateDeviceIdentity,
   mockCreateSessionKeyPair,
   mockBuildLinkApprovalUrl,
-  mockGetSelectedAuthInstanceUrlSync,
+  mockChooseInstance,
+  authInstanceSelectionState,
   mockOpenStore,
   mockExportHistorySnapshot,
   mockBytesToBase64,
@@ -32,7 +33,8 @@ const {
   mockCreateDeviceIdentity: vi.fn(),
   mockCreateSessionKeyPair: vi.fn(),
   mockBuildLinkApprovalUrl: vi.fn(),
-  mockGetSelectedAuthInstanceUrlSync: vi.fn(),
+  mockChooseInstance: vi.fn(),
+  authInstanceSelectionState: { current: 'https://chat.example.com' },
   mockOpenStore: vi.fn(),
   mockExportHistorySnapshot: vi.fn(),
   mockBytesToBase64: vi.fn(),
@@ -55,8 +57,13 @@ vi.mock('../hooks/useAuth', () => ({
   getDeviceId: () => 'device-1',
 }));
 
-vi.mock('../lib/authInstanceStore', () => ({
-  getSelectedAuthInstanceUrlSync: () => mockGetSelectedAuthInstanceUrlSync(),
+vi.mock('../hooks/useAuthInstanceSelection.js', () => ({
+  useAuthInstanceSelection: () => ({
+    selectedInstanceUrl: authInstanceSelectionState.current,
+    knownInstances: [{ url: authInstanceSelectionState.current, lastUsedAt: Date.now() }],
+    chooseInstance: (...args) => mockChooseInstance(...args),
+    rememberSelectedInstance: vi.fn(),
+  }),
 }));
 
 vi.mock('../lib/api', () => ({
@@ -119,7 +126,11 @@ describe('LinkDevice', () => {
       user: null,
       identityKeyRef: { current: null },
     };
-    mockGetSelectedAuthInstanceUrlSync.mockReturnValue('https://chat.example.com');
+    authInstanceSelectionState.current = 'https://chat.example.com';
+    mockChooseInstance.mockImplementation(async (value) => {
+      authInstanceSelectionState.current = value;
+      return value;
+    });
   });
 
   afterEach(() => {
@@ -188,6 +199,24 @@ describe('LinkDevice', () => {
     expect(await screen.findByText('ABCD1234')).toBeInTheDocument();
     expect(screen.queryByAltText(/device link qr code/i)).not.toBeInTheDocument();
     expect(screen.getByText(/qr unavailable\. use the fallback code below\./i)).toBeInTheDocument();
+  });
+
+  it('shows a request failure state when the new-device link request cannot be created', async () => {
+    mockCreateDeviceIdentity.mockResolvedValue({
+      publicKeyBase64: 'device-public-key',
+    });
+    mockCreateSessionKeyPair.mockResolvedValue({
+      privateKey: { type: 'private-key' },
+      publicKeyBase64: 'session-public-key',
+    });
+    mockCreateDeviceLinkRequest.mockRejectedValue(
+      new Error('create device link request failed. Could not reach https://chat.example.com/api/auth/link-request.'),
+    );
+
+    renderLinkDevice('/link-device?mode=new');
+
+    expect(await screen.findByText(/could not create link request\./i)).toBeInTheDocument();
+    expect(screen.getByText(/could not reach https:\/\/chat\.example\.com\/api\/auth\/link-request/i)).toBeInTheDocument();
   });
 
   it('resolves a fallback code and approves the requested device', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_AUTH_INSTANCE_URL,
   getInstanceDisplayName,
@@ -12,7 +12,7 @@ const SHELL_STYLE = {
 };
 
 const LABEL_STYLE = {
-  fontSize: '0.78rem',
+  fontSize: '0.72rem',
   color: 'var(--hush-text-muted)',
   display: 'flex',
   alignItems: 'center',
@@ -58,12 +58,66 @@ const LIST_BUTTON_STYLE = {
   cursor: 'pointer',
 };
 
-export function AuthInstanceSelector({ value, instances, onSelect, disabled = false }) {
+export function AuthInstanceSelector({
+  value,
+  instances,
+  onSelect,
+  disabled = false,
+  compact = false,
+}) {
   const rootRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  const shellStyle = useMemo(() => {
+    if (!compact) return SHELL_STYLE;
+    return {
+      ...SHELL_STYLE,
+      marginTop: '10px',
+      gap: '4px',
+    };
+  }, [compact]);
+
+  const labelStyle = useMemo(() => {
+    if (!compact) return LABEL_STYLE;
+    return {
+      ...LABEL_STYLE,
+      fontSize: '0.68rem',
+      letterSpacing: '0.05em',
+      textTransform: 'uppercase',
+    };
+  }, [compact]);
+
+  const buttonStyle = useMemo(() => {
+    if (!compact) return BUTTON_STYLE;
+    return {
+      ...BUTTON_STYLE,
+      padding: '7px 10px',
+      borderRadius: '10px',
+      background: 'transparent',
+    };
+  }, [compact]);
+
+  const panelStyle = useMemo(() => {
+    if (!compact) return PANEL_STYLE;
+    return {
+      ...PANEL_STYLE,
+      padding: '8px',
+      borderRadius: '12px',
+      boxShadow: '0 12px 28px rgba(0, 0, 0, 0.16)',
+    };
+  }, [compact]);
+
+  const listButtonStyle = useMemo(() => {
+    if (!compact) return LIST_BUTTON_STYLE;
+    return {
+      ...LIST_BUTTON_STYLE,
+      padding: '8px 10px',
+      borderRadius: '10px',
+    };
+  }, [compact]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -105,17 +159,18 @@ export function AuthInstanceSelector({ value, instances, onSelect, disabled = fa
   }, [commitSelection, draft]);
 
   return (
-    <div ref={rootRef} style={SHELL_STYLE}>
-      <div style={LABEL_STYLE}>
+    <div ref={rootRef} style={shellStyle}>
+      <div style={labelStyle}>
         <span>Instance</span>
       </div>
 
       <button
         type="button"
-        style={BUTTON_STYLE}
+        style={buttonStyle}
         onClick={() => setIsOpen((open) => !open)}
         disabled={disabled}
         title={value}
+        aria-label={`Connection instance: ${getInstanceDisplayName(value)}`}
       >
         <span
           style={{
@@ -123,7 +178,7 @@ export function AuthInstanceSelector({ value, instances, onSelect, disabled = fa
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
-            fontSize: '0.92rem',
+            fontSize: compact ? '0.84rem' : '0.92rem',
           }}
         >
           {getInstanceDisplayName(value)}
@@ -146,7 +201,7 @@ export function AuthInstanceSelector({ value, instances, onSelect, disabled = fa
       </button>
 
       {isOpen && (
-        <div style={PANEL_STYLE}>
+        <div style={panelStyle}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {instances.map((instance) => {
               const isActive = instance.url === value;
@@ -157,7 +212,7 @@ export function AuthInstanceSelector({ value, instances, onSelect, disabled = fa
                   key={instance.url}
                   type="button"
                   style={{
-                    ...LIST_BUTTON_STYLE,
+                    ...listButtonStyle,
                     borderColor: isActive ? 'var(--hush-amber)' : 'var(--hush-border)',
                     background: isActive
                       ? 'color-mix(in srgb, var(--hush-amber) 10%, transparent)'
@@ -167,12 +222,12 @@ export function AuthInstanceSelector({ value, instances, onSelect, disabled = fa
                   disabled={isSaving}
                 >
                   <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '1px' }}>
-                    <span style={{ fontSize: '0.92rem' }}>{getInstanceDisplayName(instance.url)}</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--hush-text-muted)' }}>
+                    <span style={{ fontSize: compact ? '0.84rem' : '0.92rem' }}>{getInstanceDisplayName(instance.url)}</span>
+                    <span style={{ fontSize: compact ? '0.72rem' : '0.75rem', color: 'var(--hush-text-muted)' }}>
                       {isDefault ? 'Pinned default' : instance.lastUsedAt ? `Last used ${new Date(instance.lastUsedAt).toLocaleDateString()}` : 'Saved instance'}
                     </span>
                   </span>
-                  {isActive && <span style={{ color: 'var(--hush-amber)' }}>Current</span>}
+                  {isActive && <span style={{ color: 'var(--hush-amber)', fontSize: compact ? '0.76rem' : '0.82rem' }}>Current</span>}
                 </button>
               );
             })}

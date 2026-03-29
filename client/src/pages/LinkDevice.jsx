@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { useAuth } from '../contexts/AuthContext';
+import { AuthInstanceSelector } from '../components/auth/AuthInstanceSelector.jsx';
 import { BODY_SCROLL_MODE, useBodyScrollMode } from '../hooks/useBodyScrollMode';
 import { getDeviceId } from '../hooks/useAuth';
-import { getSelectedAuthInstanceUrlSync } from '../lib/authInstanceStore';
+import { useAuthInstanceSelection } from '../hooks/useAuthInstanceSelection.js';
 import * as mlsStore from '../lib/mlsStore';
 import {
   consumeDeviceLinkResult,
@@ -35,7 +36,7 @@ function formatCountdown(expiresAt, now = Date.now()) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-function NewDeviceLinkView({ onLinked }) {
+function NewDeviceLinkView({ onLinked, selectedInstanceUrl, knownInstances, onSelectInstance }) {
   const { completeDeviceLink, loading: authLoading } = useAuth();
   const [requestState, setRequestState] = useState(null);
   const [error, setError] = useState('');
@@ -57,7 +58,7 @@ function NewDeviceLinkView({ onLinked }) {
       setRequestState(null);
 
       try {
-        const instanceUrl = getSelectedAuthInstanceUrlSync();
+        const instanceUrl = selectedInstanceUrl;
         const deviceIdentity = await createDeviceIdentity();
         const session = await createSessionKeyPair();
         const response = await createDeviceLinkRequest({
@@ -97,7 +98,7 @@ function NewDeviceLinkView({ onLinked }) {
     return () => {
       cancelled = true;
     };
-  }, [refreshKey]);
+  }, [refreshKey, selectedInstanceUrl]);
 
   useEffect(() => {
     if (!requestState?.requestId || !requestState?.secret || !requestState?.sessionPrivateKey) return undefined;
@@ -145,6 +146,14 @@ function NewDeviceLinkView({ onLinked }) {
         Scan this QR code from a device that is already signed in to the same account.
       </p>
 
+      <AuthInstanceSelector
+        value={selectedInstanceUrl}
+        instances={knownInstances}
+        onSelect={onSelectInstance}
+        disabled={authLoading}
+        compact
+      />
+
       {requestState && !isExpired ? (
         <>
           {requestState.qrDataUrl ? (
@@ -158,7 +167,13 @@ function NewDeviceLinkView({ onLinked }) {
         </>
       ) : (
         <div className="ld-empty-box">
-          {authLoading ? 'Finalizing device link…' : isExpired ? 'Link request expired.' : 'Generating link request…'}
+          {error
+            ? 'Could not create link request.'
+            : authLoading
+            ? 'Finalizing device link…'
+            : isExpired
+            ? 'Link request expired.'
+            : 'Generating link request…'}
         </div>
       )}
 
@@ -375,6 +390,11 @@ export default function LinkDevice() {
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const {
+    selectedInstanceUrl,
+    knownInstances,
+    chooseInstance,
+  } = useAuthInstanceSelection();
 
   const isNewDeviceMode = searchParams.get('mode') === 'new';
   const qrPayload = useMemo(() => {
@@ -391,7 +411,12 @@ export default function LinkDevice() {
     <div className="home-page ld-page">
       <div className="home-container ld-container">
         {isNewDeviceMode ? (
-          <NewDeviceLinkView onLinked={() => navigate('/', { replace: true })} />
+          <NewDeviceLinkView
+            onLinked={() => navigate('/', { replace: true })}
+            selectedInstanceUrl={selectedInstanceUrl}
+            knownInstances={knownInstances}
+            onSelectInstance={chooseInstance}
+          />
         ) : (
           <ApproveLinkView initialPayload={qrPayload} />
         )}

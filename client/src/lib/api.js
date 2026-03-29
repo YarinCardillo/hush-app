@@ -23,6 +23,31 @@ function resolveFetchBaseUrl(path, baseUrl = '') {
   return '';
 }
 
+function buildRequestUrl(path, baseUrl = '') {
+  if (path.startsWith('http')) {
+    return path;
+  }
+  return `${baseUrl}${path}`;
+}
+
+function resolveRequestUrl(path, baseUrl = '') {
+  return buildRequestUrl(path, resolveFetchBaseUrl(path, baseUrl));
+}
+
+function createNetworkError(operation, targetUrl, err) {
+  const rawMessage = err instanceof Error ? err.message : String(err);
+  const isConnectivityError = /load failed|failed to fetch|networkerror/i.test(rawMessage);
+  const message = isConnectivityError
+    ? `${operation} failed. Could not reach ${targetUrl}.`
+    : `${operation} failed for ${targetUrl}: ${rawMessage}`;
+  const nextError = new Error(message);
+  if (err instanceof Error) {
+    nextError.cause = err;
+  }
+  console.error(`[api] ${operation} failed`, { url: targetUrl, err });
+  return nextError;
+}
+
 /**
  * @param {string} token - JWT
  * @param {string} path - e.g. /api/keys/upload
@@ -47,11 +72,16 @@ export async function fetchWithAuth(token, path, opts = {}, baseUrl = '') {
  * @returns {Promise<void>}
  */
 export async function uploadMLSCredential(token, body, baseUrl = '') {
-  const res = await fetchWithAuth(token, '/api/mls/credentials', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, baseUrl);
+  let res;
+  try {
+    res = await fetchWithAuth(token, '/api/mls/credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }, baseUrl);
+  } catch (err) {
+    throw createNetworkError('upload MLS credential', resolveRequestUrl('/api/mls/credentials', baseUrl), err);
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `upload MLS credential ${res.status}`);
@@ -65,11 +95,16 @@ export async function uploadMLSCredential(token, body, baseUrl = '') {
  * @returns {Promise<void>}
  */
 export async function uploadMLSKeyPackages(token, body, baseUrl = '') {
-  const res = await fetchWithAuth(token, '/api/mls/key-packages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, baseUrl);
+  let res;
+  try {
+    res = await fetchWithAuth(token, '/api/mls/key-packages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }, baseUrl);
+  } catch (err) {
+    throw createNetworkError('upload MLS key packages', resolveRequestUrl('/api/mls/key-packages', baseUrl), err);
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `upload MLS key packages ${res.status}`);
@@ -210,11 +245,17 @@ export async function verifyTransparency(token, pubkeyHex, baseUrl = '') {
  */
 export async function requestChallenge(publicKeyBase64, baseUrl = '') {
   const authBaseUrl = resolveAuthBaseUrl(baseUrl);
-  const res = await fetch(`${authBaseUrl}/api/auth/challenge`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ publicKey: publicKeyBase64 }),
-  });
+  const targetUrl = `${authBaseUrl}/api/auth/challenge`;
+  let res;
+  try {
+    res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publicKey: publicKeyBase64 }),
+    });
+  } catch (err) {
+    throw createNetworkError('request challenge', targetUrl, err);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `requestChallenge ${res.status}`);
   return data;
@@ -231,11 +272,17 @@ export async function requestChallenge(publicKeyBase64, baseUrl = '') {
  */
 export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, deviceId, baseUrl = '') {
   const authBaseUrl = resolveAuthBaseUrl(baseUrl);
-  const res = await fetch(`${authBaseUrl}/api/auth/verify`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ publicKey: publicKeyBase64, nonce, signature: signatureBase64, deviceId }),
-  });
+  const targetUrl = `${authBaseUrl}/api/auth/verify`;
+  let res;
+  try {
+    res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publicKey: publicKeyBase64, nonce, signature: signatureBase64, deviceId }),
+    });
+  } catch (err) {
+    throw createNetworkError('verify challenge', targetUrl, err);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `verifyChallenge ${res.status}`);
   return data;
@@ -260,7 +307,13 @@ export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, d
  */
 export async function requestGuestSession(baseUrl = '') {
   const authBaseUrl = resolveAuthBaseUrl(baseUrl);
-  const res = await fetch(`${authBaseUrl}/api/auth/guest`, { method: 'POST' });
+  const targetUrl = `${authBaseUrl}/api/auth/guest`;
+  let res;
+  try {
+    res = await fetch(targetUrl, { method: 'POST' });
+  } catch (err) {
+    throw createNetworkError('request guest session', targetUrl, err);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `requestGuestSession ${res.status}`);
   return data;
@@ -274,7 +327,13 @@ export async function requestGuestSession(baseUrl = '') {
  */
 export async function checkUsernameAvailable(username, baseUrl = '') {
   const authBaseUrl = baseUrl || getSelectedAuthInstanceUrlSync();
-  const res = await fetch(`${authBaseUrl}/api/auth/check-username/${encodeURIComponent(username)}`);
+  const targetUrl = `${authBaseUrl}/api/auth/check-username/${encodeURIComponent(username)}`;
+  let res;
+  try {
+    res = await fetch(targetUrl);
+  } catch (err) {
+    throw createNetworkError('check username availability', targetUrl, err);
+  }
   if (!res.ok) return false;
   const data = await res.json();
   return data.available === true;
@@ -304,6 +363,7 @@ export async function registerWithPublicKey(
   transparencyTs = null,
 ) {
   const authBaseUrl = resolveAuthBaseUrl(baseUrl);
+  const targetUrl = `${authBaseUrl}/api/auth/register`;
   const body = {
     username,
     displayName,
@@ -316,11 +376,16 @@ export async function registerWithPublicKey(
     body.transparency_sig = transparencySig;
     body.transparency_ts = transparencyTs;
   }
-  const res = await fetch(`${authBaseUrl}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw createNetworkError('register', targetUrl, err);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `registerWithPublicKey ${res.status}`);
   return data;
@@ -459,11 +524,17 @@ export async function createDeviceLinkRequest(body, baseUrl = '') {
     ...body,
     label: body?.label || getReadableDeviceLabel(),
   };
-  const res = await fetch(`${authBaseUrl}/api/auth/link-request`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
-  });
+  const targetUrl = `${authBaseUrl}/api/auth/link-request`;
+  let res;
+  try {
+    res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+  } catch (err) {
+    throw createNetworkError('create device link request', targetUrl, err);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `createDeviceLinkRequest ${res.status}`);
   return data;
@@ -478,11 +549,17 @@ export async function createDeviceLinkRequest(body, baseUrl = '') {
  * @returns {Promise<{ claimToken: string, requestId: string, deviceId: string, devicePublicKey: string, sessionPublicKey: string, label?: string, instanceUrl?: string, expiresAt: string }>}
  */
 export async function resolveDeviceLinkRequest(token, body, baseUrl = '') {
-  const res = await fetchWithAuth(token, '/api/auth/link-resolve', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, baseUrl);
+  const targetUrl = resolveRequestUrl('/api/auth/link-resolve', baseUrl);
+  let res;
+  try {
+    res = await fetchWithAuth(token, '/api/auth/link-resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }, baseUrl);
+  } catch (err) {
+    throw createNetworkError('resolve device link request', targetUrl, err);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `resolveDeviceLinkRequest ${res.status}`);
   return data;
@@ -497,11 +574,17 @@ export async function resolveDeviceLinkRequest(token, body, baseUrl = '') {
  * @returns {Promise<void>}
  */
 export async function verifyDeviceLinkRequest(token, body, baseUrl = '') {
-  const res = await fetchWithAuth(token, '/api/auth/link-verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, baseUrl);
+  const targetUrl = resolveRequestUrl('/api/auth/link-verify', baseUrl);
+  let res;
+  try {
+    res = await fetchWithAuth(token, '/api/auth/link-verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }, baseUrl);
+  } catch (err) {
+    throw createNetworkError('verify device link request', targetUrl, err);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `verifyDeviceLinkRequest ${res.status}`);
 }
@@ -518,11 +601,17 @@ export async function verifyDeviceLinkRequest(token, body, baseUrl = '') {
  */
 export async function consumeDeviceLinkResult(body, baseUrl = '') {
   const authBaseUrl = resolveAuthBaseUrl(baseUrl);
-  const res = await fetch(`${authBaseUrl}/api/auth/link-result`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const targetUrl = `${authBaseUrl}/api/auth/link-result`;
+  let res;
+  try {
+    res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw createNetworkError('consume device link result', targetUrl, err);
+  }
   const data = await res.json().catch(() => ({}));
   if (res.status === 202) {
     return { status: 'pending' };
@@ -539,7 +628,13 @@ export async function consumeDeviceLinkResult(body, baseUrl = '') {
  * @returns {Promise<{ server_version: string, api_version: string, min_client_version: string, key_package_low_threshold: number }>}
  */
 export async function getHandshake(baseUrl = '') {
-  const res = await fetch(`${baseUrl}/api/handshake`);
+  const targetUrl = `${baseUrl}/api/handshake`;
+  let res;
+  try {
+    res = await fetch(targetUrl);
+  } catch (err) {
+    throw createNetworkError('handshake', targetUrl, err);
+  }
   if (!res.ok) throw new Error(`handshake failed: ${res.status}`);
   const data = await res.json();
   if (data?.registrationMode !== undefined && data.registration_mode === undefined) {
@@ -1215,11 +1310,12 @@ export async function deleteServerTemplate(token, id, baseUrl = '') {
  * @param {object} [deps] - Optional deps for testing: { mlsStore, crypto, uploadCredential, uploadKeyPackages }
  */
 export async function uploadKeyPackagesAfterAuth(token, userId, deviceId, deps = {}, baseUrl = '') {
+  const resolvedBaseUrl = resolveAuthBaseUrl(baseUrl);
   await uploadKeyPackagesAfterAuthImpl(token, userId, deviceId, {
     mlsStore: deps.mlsStore ?? mlsStore,
     crypto: deps.crypto ?? hushCrypto,
-    uploadCredential: deps.uploadCredential ?? ((t, b) => uploadMLSCredential(t, b, baseUrl)),
-    uploadKeyPackages: deps.uploadKeyPackages ?? ((t, b) => uploadMLSKeyPackages(t, b, baseUrl)),
+    uploadCredential: deps.uploadCredential ?? ((t, b) => uploadMLSCredential(t, b, resolvedBaseUrl)),
+    uploadKeyPackages: deps.uploadKeyPackages ?? ((t, b) => uploadMLSKeyPackages(t, b, resolvedBaseUrl)),
   });
 }
 
