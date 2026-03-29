@@ -186,10 +186,30 @@ const AUTH_VIEW = {
   PIN_SETUP: 'pin_setup',
 };
 
+function getInstanceLabel(instanceUrl) {
+  try {
+    return new URL(instanceUrl).host;
+  } catch {
+    return String(instanceUrl || 'this instance');
+  }
+}
+
+function getInstanceUnreachableMessage(instanceUrl) {
+  return `Could not reach ${getInstanceLabel(instanceUrl)}. Check the instance URL and that the server is online.`;
+}
+
+function isReachabilityError(err) {
+  const msg = err?.message || String(err);
+  return /could not reach|load failed|failed to fetch|networkerror/i.test(msg);
+}
+
 /** Maps raw auth/join errors to short, user-facing messages. */
-function getFriendlyError(err) {
+function getFriendlyError(err, instanceUrl = '') {
   if (!err) return '';
   const msg = err?.message || String(err);
+  if (isReachabilityError(err)) {
+    return getInstanceUnreachableMessage(instanceUrl);
+  }
   if (/not found|404/i.test(msg)) return 'Not found. Please try again.';
   if (/forbidden|403/i.test(msg)) return 'Access denied.';
   if (/conflict|409|already/i.test(msg)) return 'Username already taken. Please choose another.';
@@ -299,6 +319,9 @@ export default function Home() {
         color: 'var(--hush-text-secondary)',
       }
     : undefined;
+  const instanceReachabilityMessage = handshakeError
+    ? getInstanceUnreachableMessage(selectedInstanceUrl)
+    : '';
 
   const spotlightRef = useRef(null);
   const rafRef = useRef(null);
@@ -372,7 +395,7 @@ export default function Home() {
   // ── Error toast ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const msg = authError ? getFriendlyError(authError) : null;
+    const msg = authError ? getFriendlyError(authError, selectedInstanceUrl) : null;
     setToastMessage(msg);
     if (!msg) return;
     const id = setTimeout(() => {
@@ -380,7 +403,7 @@ export default function Home() {
       clearError?.();
     }, 5000);
     return () => clearTimeout(id);
-  }, [authError, clearError]);
+  }, [authError, clearError, selectedInstanceUrl]);
 
   // ── Spotlight (cursor follow, desktop only) ─────────────────────────────────
 
@@ -778,13 +801,28 @@ export default function Home() {
           {renderFormContent()}
 
           {authView !== AUTH_VIEW.PIN_SETUP && (
-            <AuthInstanceSelector
-              value={selectedInstanceUrl}
-              instances={knownInstances}
-              onSelect={chooseInstance}
-              disabled={authLoading}
-              compact
-            />
+            <>
+              <AuthInstanceSelector
+                value={selectedInstanceUrl}
+                instances={knownInstances}
+                onSelect={chooseInstance}
+                disabled={authLoading}
+                compact
+              />
+              {handshakeError && (
+                <div
+                  role="alert"
+                  style={{
+                    marginTop: '10px',
+                    fontSize: '0.82rem',
+                    lineHeight: 1.45,
+                    color: 'var(--hush-danger)',
+                  }}
+                >
+                  {instanceReachabilityMessage}
+                </div>
+              )}
+            </>
           )}
 
           <div className="home-footer">

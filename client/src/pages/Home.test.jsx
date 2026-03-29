@@ -191,6 +191,7 @@ describe('Home', () => {
     renderHome();
 
     expect(await screen.findByText(/could not verify encryption/i)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/could not reach .*check the instance url and that the server is online/i);
     expect(screen.queryByText(/^end-to-end encrypted$/i)).not.toBeInTheDocument();
     consoleErrorSpy.mockRestore();
   });
