@@ -12,7 +12,7 @@ WORKDIR /build
 COPY hush-crypto/ ./hush-crypto/
 RUN wasm-pack build hush-crypto/ --target web --out-dir /wasm-out
 
-# --- Stage 2: Vite build ---
+# --- Stage 2: Vite build (main client) ---
 FROM node:22-alpine AS client-builder
 WORKDIR /app
 
@@ -25,6 +25,17 @@ ARG VITE_DEBUG_TOOLBAR=false
 ENV VITE_DEBUG_TOOLBAR=$VITE_DEBUG_TOOLBAR
 RUN npm run build
 
+# --- Stage 2b: Vite build (admin dashboard) ---
+FROM node:22-alpine AS admin-builder
+WORKDIR /app
+
+COPY client/admin/package.json client/admin/package-lock.json ./
+RUN npm ci
+
+COPY client/admin/ .
+RUN npx vite build --base /admin/
+
 # --- Stage 3: Caddy serve ---
 FROM caddy:2-alpine
 COPY --from=client-builder /app/dist /srv
+COPY --from=admin-builder /dist-admin /srv/admin
