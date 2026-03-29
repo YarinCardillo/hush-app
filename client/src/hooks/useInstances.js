@@ -33,6 +33,7 @@ import {
   saveGuildOrder,
   getGuildOrder,
 } from '../lib/instanceRegistry.js';
+import { getActiveAuthInstanceUrlSync } from '../lib/authInstanceStore.js';
 import {
   getHandshake,
   requestChallenge,
@@ -510,7 +511,7 @@ export function useInstances() {
   // ── registerLocalInstance (post-auth shortcut) ──────────────────────────
 
   /**
-   * Registers the current origin as a connected instance using an existing JWT.
+   * Registers the active auth instance as a connected instance using an existing JWT.
    * Skips challenge-response auth — used after registration/recovery when
    * the caller already has a valid session.
    *
@@ -519,7 +520,7 @@ export function useInstances() {
    * @returns {Promise<void>}
    */
   const registerLocalInstance = useCallback(async (jwt, authUser) => {
-    const instanceUrl = window.location.origin;
+    const instanceUrl = getActiveAuthInstanceUrlSync();
 
     // Save to IDB.
     try {
@@ -615,22 +616,29 @@ export function useInstances() {
           _setGuildOrderState(storedOrder);
         }
 
+        const localJwt = sessionStorage.getItem('hush_jwt');
         if (storedInstances.length === 0) {
-          // No instances yet — nothing to boot.
-          flushState();
-          return;
+          if (!localJwt) {
+            // No instances yet — nothing to boot.
+            flushState();
+            return;
+          }
+          if (localUser?.id) {
+            await registerLocalInstance(localJwt, { id: localUser.id, username: localUser.username });
+            return;
+          }
         }
 
-        // Boot all instances in parallel.
+        // Boot all stored instances in parallel.
         const results = await Promise.allSettled(
           storedInstances.map(({ instanceUrl }) => bootInstance(instanceUrl)),
         );
 
         // Fallback: if bootInstance failed (no identity key after page refresh)
-        // but a local JWT exists in sessionStorage, use it directly.
-        const localJwt = sessionStorage.getItem('hush_jwt');
+        // but a local JWT exists in sessionStorage, use it directly for the
+        // active auth instance.
         if (localJwt && !cancelled) {
-          const localUrl = window.location.origin;
+          const localUrl = getActiveAuthInstanceUrlSync();
           const localEntry = instancesRef.current.get(localUrl);
           if (!localEntry || localEntry.connectionState === 'offline') {
             try {

@@ -5,11 +5,14 @@ import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
 import { useInstanceContext } from '../contexts/InstanceContext';
 import { slugify } from '../lib/slugify';
+import { getHandshake } from '../lib/api';
+import { AuthInstanceSelector } from '../components/auth/AuthInstanceSelector.jsx';
 import { RegistrationWizard, hasInterruptedRegistration } from '../components/auth/RegistrationWizard';
 import { RecoveryPhraseInput } from '../components/auth/RecoveryPhraseInput';
 import { PinUnlockScreen } from '../components/auth/PinUnlockScreen';
 import { PinSetupModal } from '../components/auth/PinSetupModal';
 import { BODY_SCROLL_MODE, useBodyScrollMode } from '../hooks/useBodyScrollMode';
+import { useAuthInstanceSelection } from '../hooks/useAuthInstanceSelection.js';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your'];
 
@@ -223,15 +226,31 @@ export default function Home() {
   const [isPinSetupLoading, setIsPinSetupLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
 
-  // Handshake data — read from sessionStorage if available (populated by App.jsx).
+  const {
+    selectedInstanceUrl,
+    knownInstances,
+    chooseInstance,
+    rememberSelectedInstance,
+  } = useAuthInstanceSelection();
+
+  // Handshake data for the selected auth instance.
   const [handshakeData, setHandshakeData] = useState(null);
 
   useEffect(() => {
-    fetch('/api/handshake')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data) setHandshakeData(data); })
-      .catch(() => {});
-  }, []);
+    let cancelled = false;
+
+    getHandshake(selectedInstanceUrl)
+      .then((data) => {
+        if (!cancelled) setHandshakeData(data);
+      })
+      .catch(() => {
+        if (!cancelled) setHandshakeData(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedInstanceUrl]);
 
   const registrationMode = handshakeData?.registration_mode ?? 'open';
   const caps = handshakeData?.capabilities ?? handshakeData?.Capabilities ?? {};
@@ -391,8 +410,10 @@ export default function Home() {
   // ── Auth action handlers ────────────────────────────────────────────────────
 
   const handleRegisterComplete = useCallback(async ({ username, displayName, mnemonic, inviteCode }) => {
+    const instanceUrl = await chooseInstance(selectedInstanceUrl);
     try {
       const result = await performRegister(username, displayName, mnemonic, inviteCode);
+      await rememberSelectedInstance(instanceUrl);
       // Use the returned user — React state (setUser) hasn't flushed yet.
       const jwt = sessionStorage.getItem('hush_jwt');
       const authUser = result?.user;
@@ -405,11 +426,13 @@ export default function Home() {
     } catch {
       // Error surfaces via authError toast.
     }
-  }, [performRegister, registerLocalInstance]);
+  }, [chooseInstance, performRegister, registerLocalInstance, rememberSelectedInstance, selectedInstanceUrl]);
 
   const handleRecoverySubmit = useCallback(async (mnemonic, revokeOtherDevices) => {
+    const instanceUrl = await chooseInstance(selectedInstanceUrl);
     try {
       const result = await performRecovery(mnemonic, revokeOtherDevices);
+      await rememberSelectedInstance(instanceUrl);
       const jwt = sessionStorage.getItem('hush_jwt');
       const authUser = result?.user;
       if (jwt && authUser) {
@@ -421,10 +444,12 @@ export default function Home() {
     } catch {
       // Error surfaces via authError toast.
     }
-  }, [performRecovery, registerLocalInstance]);
+  }, [chooseInstance, performRecovery, registerLocalInstance, rememberSelectedInstance, selectedInstanceUrl]);
 
   const handlePinUnlock = useCallback(async (pin) => {
+    const instanceUrl = await chooseInstance(selectedInstanceUrl);
     const result = await unlockVault(pin);
+    await rememberSelectedInstance(instanceUrl);
     // If unlockVault re-authenticated (tab was closed), boot the local instance
     // so guilds appear immediately.
     const authUser = result?.user;
@@ -436,7 +461,7 @@ export default function Home() {
         });
       }
     }
-  }, [unlockVault, registerLocalInstance]);
+  }, [chooseInstance, rememberSelectedInstance, selectedInstanceUrl, unlockVault, registerLocalInstance]);
 
   const handleSwitchAccount = useCallback(() => {
     // Don't wipe the vault yet — user might press Back.
@@ -702,6 +727,15 @@ export default function Home() {
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
           className="glass home-form-card"
         >
+          {authView !== AUTH_VIEW.PIN_SETUP && (
+            <AuthInstanceSelector
+              value={selectedInstanceUrl}
+              instances={knownInstances}
+              onSelect={chooseInstance}
+              disabled={authLoading}
+            />
+          )}
+
           {renderFormContent()}
 
           <div className="home-footer">

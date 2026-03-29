@@ -4,9 +4,24 @@
  */
 
 import * as mlsStore from './mlsStore';
+import { getActiveAuthInstanceUrlSync, getSelectedAuthInstanceUrlSync } from './authInstanceStore';
 import * as hushCrypto from './hushCrypto';
 import { getReadableDeviceLabel } from './deviceLabel';
 import { uploadKeyPackagesAfterAuth as uploadKeyPackagesAfterAuthImpl } from './uploadKeyPackages';
+
+function resolveAuthBaseUrl(baseUrl = '') {
+  return baseUrl || getActiveAuthInstanceUrlSync();
+}
+
+function resolveFetchBaseUrl(path, baseUrl = '') {
+  if (baseUrl || path.startsWith('http')) {
+    return baseUrl;
+  }
+  if (path.startsWith('/api/auth')) {
+    return getActiveAuthInstanceUrlSync();
+  }
+  return '';
+}
 
 /**
  * @param {string} token - JWT
@@ -16,7 +31,8 @@ import { uploadKeyPackagesAfterAuth as uploadKeyPackagesAfterAuthImpl } from './
  * @returns {Promise<Response>}
  */
 export async function fetchWithAuth(token, path, opts = {}, baseUrl = '') {
-  const url = path.startsWith('http') ? path : `${baseUrl}${path}`;
+  const resolvedBaseUrl = resolveFetchBaseUrl(path, baseUrl);
+  const url = path.startsWith('http') ? path : `${resolvedBaseUrl}${path}`;
   const headers = new Headers(opts.headers);
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
@@ -193,7 +209,8 @@ export async function verifyTransparency(token, pubkeyHex, baseUrl = '') {
  * @returns {Promise<{ nonce: string }>} Hex-encoded nonce.
  */
 export async function requestChallenge(publicKeyBase64, baseUrl = '') {
-  const res = await fetch(`${baseUrl}/api/auth/challenge`, {
+  const authBaseUrl = resolveAuthBaseUrl(baseUrl);
+  const res = await fetch(`${authBaseUrl}/api/auth/challenge`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ publicKey: publicKeyBase64 }),
@@ -213,7 +230,8 @@ export async function requestChallenge(publicKeyBase64, baseUrl = '') {
  * @returns {Promise<{ token: string, user: object }>}
  */
 export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, deviceId, baseUrl = '') {
-  const res = await fetch(`${baseUrl}/api/auth/verify`, {
+  const authBaseUrl = resolveAuthBaseUrl(baseUrl);
+  const res = await fetch(`${authBaseUrl}/api/auth/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ publicKey: publicKeyBase64, nonce, signature: signatureBase64, deviceId }),
@@ -241,7 +259,8 @@ export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, d
  * @returns {Promise<{ token: string, guestId: string, expiresAt: string }>}
  */
 export async function requestGuestSession(baseUrl = '') {
-  const res = await fetch(`${baseUrl}/api/auth/guest`, { method: 'POST' });
+  const authBaseUrl = resolveAuthBaseUrl(baseUrl);
+  const res = await fetch(`${authBaseUrl}/api/auth/guest`, { method: 'POST' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `requestGuestSession ${res.status}`);
   return data;
@@ -254,7 +273,8 @@ export async function requestGuestSession(baseUrl = '') {
  * @returns {Promise<boolean>} true if available
  */
 export async function checkUsernameAvailable(username, baseUrl = '') {
-  const res = await fetch(`${baseUrl}/api/auth/check-username/${encodeURIComponent(username)}`);
+  const authBaseUrl = baseUrl || getSelectedAuthInstanceUrlSync();
+  const res = await fetch(`${authBaseUrl}/api/auth/check-username/${encodeURIComponent(username)}`);
   if (!res.ok) return false;
   const data = await res.json();
   return data.available === true;
@@ -283,6 +303,7 @@ export async function registerWithPublicKey(
   transparencySig = null,
   transparencyTs = null,
 ) {
+  const authBaseUrl = resolveAuthBaseUrl(baseUrl);
   const body = {
     username,
     displayName,
@@ -295,7 +316,7 @@ export async function registerWithPublicKey(
     body.transparency_sig = transparencySig;
     body.transparency_ts = transparencyTs;
   }
-  const res = await fetch(`${baseUrl}/api/auth/register`, {
+  const res = await fetch(`${authBaseUrl}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -433,11 +454,12 @@ export async function certifyNewDevice(
  * @returns {Promise<{ requestId: string, secret: string, code: string, expiresAt: string }>}
  */
 export async function createDeviceLinkRequest(body, baseUrl = '') {
+  const authBaseUrl = resolveAuthBaseUrl(baseUrl);
   const requestBody = {
     ...body,
     label: body?.label || getReadableDeviceLabel(),
   };
-  const res = await fetch(`${baseUrl}/api/auth/link-request`, {
+  const res = await fetch(`${authBaseUrl}/api/auth/link-request`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(requestBody),
@@ -495,7 +517,8 @@ export async function verifyDeviceLinkRequest(token, body, baseUrl = '') {
  * @returns {Promise<{ status: 'pending' }|{ relayCiphertext: string, relayIv: string, relayPublicKey: string, deviceId: string, instanceUrl?: string }>}
  */
 export async function consumeDeviceLinkResult(body, baseUrl = '') {
-  const res = await fetch(`${baseUrl}/api/auth/link-result`, {
+  const authBaseUrl = resolveAuthBaseUrl(baseUrl);
+  const res = await fetch(`${authBaseUrl}/api/auth/link-result`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

@@ -5,9 +5,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   createDeviceLinkRequest,
+  fetchWithAuth,
   leaveGuild,
   getHandshake,
   registerWithPublicKey,
+  requestChallenge,
   uploadMLSCredential,
   uploadMLSKeyPackages,
   getKeyPackageCount,
@@ -336,5 +338,46 @@ describe('createDeviceLinkRequest', () => {
       deviceId: 'device-1',
       label: 'Safari on iPhone',
     });
+  });
+});
+
+describe('auth instance routing', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('uses the selected auth instance for challenge requests when no baseUrl is passed', async () => {
+    localStorage.setItem('hush_auth_instance_selected', 'https://chat.example.com');
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ nonce: 'abc123' }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await requestChallenge('public-key');
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://chat.example.com/api/auth/challenge',
+      expect.any(Object),
+    );
+  });
+
+  it('routes auth-only fetches to the active auth instance', async () => {
+    sessionStorage.setItem('hush_auth_instance_active', 'https://alpha.example.com');
+
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await fetchWithAuth('jwt-token', '/api/auth/devices');
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://alpha.example.com/api/auth/devices',
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
   });
 });
