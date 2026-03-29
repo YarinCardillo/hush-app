@@ -4,8 +4,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  createDeviceLinkRequest,
   leaveGuild,
   getHandshake,
+  registerWithPublicKey,
   uploadMLSCredential,
   uploadMLSKeyPackages,
   getKeyPackageCount,
@@ -274,5 +276,65 @@ describe('uploadKeyPackagesAfterAuth (api.js wrapper)', () => {
 
     expect(mockMlsStore.openStore).toHaveBeenCalledWith(userId, deviceId);
     expect(mockCrypto.generateCredential).toHaveBeenCalled();
+  });
+});
+
+describe('registerWithPublicKey', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('adds a human-readable device label to the registration body', async () => {
+    Object.defineProperty(window.navigator, 'userAgent', {
+      configurable: true,
+      value:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ token: 'jwt', user: { id: 'u1' } }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await registerWithPublicKey('alice', 'Alice', 'pub-key', 'device-1');
+
+    const [, opts] = mockFetch.mock.calls[0];
+    expect(JSON.parse(opts.body)).toMatchObject({
+      deviceId: 'device-1',
+      label: 'Chrome on macOS',
+    });
+  });
+});
+
+describe('createDeviceLinkRequest', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('adds a human-readable device label when the caller does not provide one', async () => {
+    Object.defineProperty(window.navigator, 'userAgent', {
+      configurable: true,
+      value:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1',
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ requestId: 'req-1', secret: 'sec-1', code: 'ABCD1234', expiresAt: '2026-03-29T00:05:00Z' }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await createDeviceLinkRequest({
+      devicePublicKey: 'pub',
+      sessionPublicKey: 'session',
+      deviceId: 'device-1',
+    });
+
+    const [, opts] = mockFetch.mock.calls[0];
+    expect(JSON.parse(opts.body)).toMatchObject({
+      deviceId: 'device-1',
+      label: 'Safari on iPhone',
+    });
   });
 });

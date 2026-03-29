@@ -5,6 +5,7 @@
 
 import * as mlsStore from './mlsStore';
 import * as hushCrypto from './hushCrypto';
+import { getReadableDeviceLabel } from './deviceLabel';
 import { uploadKeyPackagesAfterAuth as uploadKeyPackagesAfterAuthImpl } from './uploadKeyPackages';
 
 /**
@@ -282,7 +283,13 @@ export async function registerWithPublicKey(
   transparencySig = null,
   transparencyTs = null,
 ) {
-  const body = { username, displayName, publicKey: publicKeyBase64, deviceId };
+  const body = {
+    username,
+    displayName,
+    publicKey: publicKeyBase64,
+    deviceId,
+    label: getReadableDeviceLabel(),
+  };
   if (inviteCode) body.inviteCode = inviteCode;
   if (transparencySig != null) {
     body.transparency_sig = transparencySig;
@@ -426,10 +433,14 @@ export async function certifyNewDevice(
  * @returns {Promise<{ requestId: string, secret: string, code: string, expiresAt: string }>}
  */
 export async function createDeviceLinkRequest(body, baseUrl = '') {
+  const requestBody = {
+    ...body,
+    label: body?.label || getReadableDeviceLabel(),
+  };
   const res = await fetch(`${baseUrl}/api/auth/link-request`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(requestBody),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `createDeviceLinkRequest ${res.status}`);

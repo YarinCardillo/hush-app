@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listDeviceKeys, revokeDeviceKey } from '../lib/api.js';
+import { getReadableDeviceLabel } from '../lib/deviceLabel.js';
 import { TransparencyVerifier } from '../lib/transparencyVerifier.js';
 import { bytesToHex } from '../lib/identityVault.js';
 
@@ -47,6 +48,12 @@ function RevokeConfirm({ deviceLabel, onConfirm, onCancel, loading }) {
       </div>
     </div>
   );
+}
+
+function getDeviceDisplayLabel(device, currentDeviceId) {
+  if (device?.label) return device.label;
+  if (device?.deviceId === currentDeviceId) return getReadableDeviceLabel();
+  return device?.deviceId || 'Unknown device';
 }
 
 export default function DeviceManagement({ token, currentDeviceId, identityKeyRef, handshakeData, setTransparencyError }) {
@@ -135,7 +142,7 @@ export default function DeviceManagement({ token, currentDeviceId, identityKeyRe
           <tbody>
             {devices.map((device) => {
               const isCurrent = device.deviceId === currentDeviceId;
-              const displayLabel = device.label || device.deviceId || 'Unknown device';
+              const displayLabel = getDeviceDisplayLabel(device, currentDeviceId);
               return (
                 <tr key={device.deviceId}>
                   <td className="dm-td">
