@@ -6,7 +6,7 @@
  *   2. "Browse public servers" primary button
  *   3. Invite link explanation paragraph
  *   4. "Create a server" secondary button (conditional — visible only when at least one
- *      connected instance has server_creation_policy in ['open', 'any_member'])
+ *      connected instance has server_creation_policy = 'open')
  *   5. Footer links: "Get a server" and "Self-host" (external)
  *
  * @param {{
@@ -84,8 +84,8 @@ export default function EmptyState({ instanceStates, onCreateServer, onBrowseSer
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Policies that permit regular members to create servers. */
-const CREATION_ALLOWED_POLICIES = new Set(['open', 'any_member']);
+/** Policies that permit the welcome empty-state to expose server creation. */
+const CREATION_ALLOWED_POLICIES = new Set(['open']);
 
 /**
  * Returns true if at least one connected instance allows server creation
@@ -96,6 +96,7 @@ const CREATION_ALLOWED_POLICIES = new Set(['open', 'any_member']);
  */
 function _canCreateServer(instanceStates) {
   for (const state of instanceStates.values()) {
+    if (state?.connectionState !== 'connected') continue;
     const policy = state?.handshakeData?.server_creation_policy;
     if (CREATION_ALLOWED_POLICIES.has(policy)) return true;
   }

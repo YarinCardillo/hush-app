@@ -24,6 +24,7 @@ import { slugify } from '../lib/slugify';
 import ConfirmModal from '../components/ConfirmModal';
 import DmListView from '../components/DmListView';
 import EmptyState from '../components/EmptyState';
+import GuildCreateModal from '../components/GuildCreateModal';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
 import { VoiceConnectedPanel } from '../components/Controls';
@@ -211,6 +212,7 @@ export default function ServerLayout() {
   const [mobileStack, setMobileStack] = useState(1);
   const [memberDrawerOpen, setMemberDrawerOpen] = useState(false);
   const [dmMode, setDmMode] = useState(false);
+  const [showGuildCreateModal, setShowGuildCreateModal] = useState(false);
   const closeMemberDrawer = useCallback(() => setMemberDrawerOpen(false), []);
   const toggleMemberDrawer = useCallback(() => setMemberDrawerOpen((p) => !p), []);
 
@@ -1041,6 +1043,19 @@ export default function ServerLayout() {
     }
   }, [instanceUrl, refreshGuilds, navigateToGuild]);
 
+  const handleOpenGuildCreateModal = useCallback(() => {
+    setShowGuildCreateModal(true);
+  }, []);
+
+  const handleCloseGuildCreateModal = useCallback(() => {
+    setShowGuildCreateModal(false);
+  }, []);
+
+  const handleEmptyStateGuildCreated = useCallback(async (newGuild) => {
+    setShowGuildCreateModal(false);
+    await handleGuildCreated(newGuild);
+  }, [handleGuildCreated]);
+
   /**
    * Handles "Send Message" from MemberProfileCard — creates or finds a DM guild
    * with the clicked member, then navigates to it.
@@ -1243,10 +1258,18 @@ export default function ServerLayout() {
         <div style={{ flex: 1, background: 'var(--hush-black)' }}>
           <EmptyState
             instanceStates={instanceStates}
-            onCreateServer={handleGuildCreated}
+            onCreateServer={handleOpenGuildCreateModal}
             onBrowseServers={() => navigate('/explore')}
           />
         </div>
+        {showGuildCreateModal && (
+          <GuildCreateModal
+            getToken={getToken}
+            onClose={handleCloseGuildCreateModal}
+            onCreated={handleEmptyStateGuildCreated}
+            activeInstanceUrl={null}
+          />
+        )}
         {hasNoTransparencyLog && authToken && (
           <div
             title="Transparency log not configured — key operations cannot be independently verified"

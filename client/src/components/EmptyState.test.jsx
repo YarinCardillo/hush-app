@@ -114,7 +114,7 @@ describe('EmptyState', () => {
     expect(screen.getByRole('button', { name: /create a server/i })).toBeInTheDocument();
   });
 
-  it('shows Create a server button when at least one instance has any_member policy', () => {
+  it('hides Create a server button when the instance policy is any_member', () => {
     const instanceStates = new Map([
       ['https://a.example.com', {
         connectionState: 'connected',
@@ -128,7 +128,7 @@ describe('EmptyState', () => {
         onBrowseServers={() => {}}
       />,
     );
-    expect(screen.getByRole('button', { name: /create a server/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /create a server/i })).not.toBeInTheDocument();
   });
 
   it('hides Create a server button when all instances have disabled policy', () => {
@@ -190,6 +190,23 @@ describe('EmptyState', () => {
     render(
       <EmptyState
         instanceStates={new Map()}
+        onCreateServer={() => {}}
+        onBrowseServers={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /create a server/i })).not.toBeInTheDocument();
+  });
+
+  it('hides Create button when the open-policy instance is offline', () => {
+    const instanceStates = new Map([
+      ['https://a.example.com', {
+        connectionState: 'offline',
+        handshakeData: { server_creation_policy: 'open' },
+      }],
+    ]);
+    render(
+      <EmptyState
+        instanceStates={instanceStates}
         onCreateServer={() => {}}
         onBrowseServers={() => {}}
       />,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ServerLayout from './ServerLayout';
 
@@ -144,6 +144,21 @@ vi.mock('../components/ServerList', () => ({
   },
 }));
 
+vi.mock('../components/GuildCreateModal', () => ({
+  default: function MockGuildCreateModal({ onClose, onCreated }) {
+    return (
+      <div data-testid="guild-create-modal">
+        <button type="button" onClick={() => onCreated({ id: 'g-new', instanceUrl: 'https://a.example.com' })}>
+          Create
+        </button>
+        <button type="button" onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+    );
+  },
+}));
+
 // ChannelList also imports ServerSettingsModal — mock the whole component
 vi.mock('../components/ChannelList', () => ({
   default: function MockChannelList() {
@@ -196,6 +211,7 @@ vi.mock('../hooks/useToast', () => ({
 
 import { getGuildChannels, getGuildMembers } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useInstanceContext } from '../contexts/InstanceContext';
 
 function renderAtRoute(path) {
   return render(
@@ -223,6 +239,32 @@ describe('ServerLayout', () => {
     await waitFor(() => {
       expect(screen.getByTestId('empty-state')).toBeInTheDocument();
     });
+  });
+
+  it('opens the guild creation modal from the welcome empty-state when the instance policy is open', async () => {
+    vi.mocked(useInstanceContext).mockReturnValueOnce({
+      instanceStates: new Map([
+        ['https://a.example.com', {
+          connectionState: 'connected',
+          handshakeData: { server_creation_policy: 'open' },
+        }],
+      ]),
+      mergedGuilds: [],
+      getWsClient: vi.fn(() => null),
+      getTokenForInstance: vi.fn(() => null),
+      refreshGuilds: vi.fn().mockResolvedValue(undefined),
+      bootInstance: vi.fn().mockResolvedValue(undefined),
+      disconnectInstance: vi.fn().mockResolvedValue(undefined),
+      guildOrder: [],
+      setGuildOrder: vi.fn().mockResolvedValue(undefined),
+    });
+
+    renderAtRoute('/guilds');
+
+    const createButton = await screen.findByRole('button', { name: /create a server/i });
+    fireEvent.click(createButton);
+
+    expect(screen.getByTestId('guild-create-modal')).toBeInTheDocument();
   });
 
   it('shows "select a channel" orb when serverId is set but no channelId', async () => {
