@@ -49,6 +49,7 @@ import {
   registerWithPublicKey,
   requestGuestSession,
 } from '../lib/api';
+import { getActiveAuthInstanceUrlSync } from '../lib/authInstanceStore';
 
 // ── JWT utilities ─────────────────────────────────────────────────────────────
 
@@ -79,6 +80,68 @@ const GUEST_EXPIRY_WARNING_MS = 5 * 60 * 1000;
 // ── Module-level constants ───────────────────────────────────────────────────
 
 export const JWT_KEY = 'hush_jwt';
+
+// ── Per-instance JWT storage ─────────────────────────────────────────────────
+
+/**
+ * Derives the sessionStorage key for a given instance URL.
+ * Falls back to the legacy global key for malformed or empty URLs.
+ *
+ * @param {string} instanceUrl
+ * @returns {string}
+ */
+function jwtKeyForInstance(instanceUrl) {
+  try {
+    return `${JWT_KEY}_${new URL(instanceUrl).host}`;
+  } catch {
+    return JWT_KEY;
+  }
+}
+
+/**
+ * Stores a JWT token keyed by the instance host.
+ *
+ * @param {string} instanceUrl - The instance origin (e.g. "https://chat.example.com")
+ * @param {string} token - The JWT string to store
+ */
+export function setInstanceToken(instanceUrl, token) {
+  sessionStorage.setItem(jwtKeyForInstance(instanceUrl), token);
+}
+
+/**
+ * Retrieves the JWT token for a given instance.
+ *
+ * @param {string} instanceUrl - The instance origin
+ * @returns {string|null}
+ */
+export function getInstanceToken(instanceUrl) {
+  return sessionStorage.getItem(jwtKeyForInstance(instanceUrl));
+}
+
+/**
+ * Reads the JWT for the currently active auth instance.
+ * If a legacy global key (`hush_jwt`) exists and no namespaced key does,
+ * migrates it to the namespaced key transparently.
+ *
+ * @returns {string|null}
+ */
+export function getLocalToken() {
+  const activeUrl = getActiveAuthInstanceUrlSync();
+  if (activeUrl) {
+    const namespaced = sessionStorage.getItem(jwtKeyForInstance(activeUrl));
+    if (namespaced) return namespaced;
+  }
+
+  // Legacy migration: if the old global key exists, move it to the namespaced key.
+  const legacy = sessionStorage.getItem(JWT_KEY);
+  if (legacy && activeUrl) {
+    setInstanceToken(activeUrl, legacy);
+    sessionStorage.removeItem(JWT_KEY);
+    return legacy;
+  }
+
+  return legacy;
+}
 
 const DEVICE_ID_KEY = 'hush_device_id';
 const VAULT_USER_KEY_PREFIX = 'hush_vault_user_';
@@ -116,11 +179,18 @@ export function getDeviceId() {
 }
 
 /**
- * Clears the JWT from sessionStorage and the vault session flag.
+ * Clears all JWT keys (namespaced and legacy) from sessionStorage along with
+ * the vault session flag.
  * Does NOT wipe vault IDB or localStorage — use performLogout for full wipe.
  */
 export function clearSession() {
-  sessionStorage.removeItem(JWT_KEY);
+  // Remove all per-instance JWT keys (hush_jwt and hush_jwt_*).
+  for (let i = sessionStorage.length - 1; i >= 0; i--) {
+    const key = sessionStorage.key(i);
+    if (key && key.startsWith(JWT_KEY)) {
+      sessionStorage.removeItem(key);
+    }
+  }
   sessionStorage.removeItem(VAULT_SESSION_FLAG);
   sessionStorage.removeItem(VAULT_DERIVED_KEY);
   sessionStorage.removeItem(PIN_SETUP_PENDING_KEY);
@@ -357,8 +427,7 @@ export function useAuth() {
       window.dispatchEvent(new CustomEvent('hush_guest_session_expired'));
 
       // 3. Clear auth state (silent — no BroadcastChannel; guest has no other tabs).
-      sessionStorage.removeItem(JWT_KEY);
-      sessionStorage.removeItem(VAULT_SESSION_FLAG);
+      clearSession();
       setToken(null);
       setUser(null);
       setVaultState('none');
@@ -620,7 +689,7 @@ export function useAuth() {
     // Guest auth path: no persisted user, no KeyPackage upload.
     const claims = parseJwtClaims(jwt);
     if (claims?.is_guest) {
-      sessionStorage.setItem(JWT_KEY, jwt);
+      sessionStorage.setItem(baseUrl ? jwtKeyForInstance(baseUrl) : JWT_KEY, jwt);
       setToken(jwt);
       // Build a synthetic guest user object so isAuthenticated returns true.
       const guestUser = {
@@ -645,7 +714,7 @@ export function useAuth() {
     const deviceId = getDeviceId();
     await uploadKeyPackagesAfterAuth(jwt, u.id, deviceId, {}, baseUrl);
 
-    sessionStorage.setItem(JWT_KEY, jwt);
+    sessionStorage.setItem(baseUrl ? jwtKeyForInstance(baseUrl) : JWT_KEY, jwt);
     setToken(jwt);
     setUser(u);
     return { token: jwt, user: u };
@@ -774,7 +843,7 @@ export function useAuth() {
       const authResult = await performChallengeResponse(privateKey, publicKey, baseUrl);
 
       if (revokeOtherDevices) {
-        const jwt = sessionStorage.getItem(JWT_KEY);
+        const jwt = getLocalToken();
         const deviceId = getDeviceId();
         const { listDeviceKeys, revokeDeviceKey } = await import('../lib/api');
         const devices = await listDeviceKeys(jwt);
@@ -929,7 +998,7 @@ export function useAuth() {
 
       // If no JWT (tab was closed, sessionStorage wiped), re-authenticate
       // with challenge-response to get a fresh session.
-      const existingJwt = sessionStorage.getItem(JWT_KEY);
+      const existingJwt = getLocalToken();
       if (!existingJwt && publicKey && privateKey) {
         const authResult = await performChallengeResponse(privateKey, publicKey);
         // performChallengeResponse sets token, user, vaultState='unlocked', applyVaultTimeout.
@@ -1052,7 +1121,7 @@ export function useAuth() {
   const performLogout = useCallback(async () => {
     setLoading(true);
 
-    const jwt = sessionStorage.getItem(JWT_KEY);
+    const jwt = getLocalToken();
     const userId = user?.id;
 
     // 1. Best-effort server logout.
@@ -1130,7 +1199,7 @@ export function useAuth() {
   // ── Startup: session rehydration ──────────────────────────────────────────
 
   useEffect(() => {
-    const stored = sessionStorage.getItem(JWT_KEY);
+    const stored = getLocalToken();
     const sessionAlive = sessionStorage.getItem(VAULT_SESSION_FLAG) === '1';
 
     if (!stored) {
@@ -1342,7 +1411,7 @@ export function useAuth() {
   useEffect(() => {
     const onVisible = async () => {
       if (document.visibilityState !== 'visible') return;
-      const stored = sessionStorage.getItem(JWT_KEY);
+      const stored = getLocalToken();
       if (!stored) return;
 
       try {

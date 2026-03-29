@@ -14,6 +14,16 @@ import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { JWT_KEY } from './useAuth';
 
+// ── authInstanceStore mock (must be declared before module imports) ─────────────
+let _mockActiveInstanceUrl = '';
+vi.mock('../lib/authInstanceStore', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getActiveAuthInstanceUrlSync: () => _mockActiveInstanceUrl,
+  };
+});
+
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
 vi.mock('../lib/api', () => ({
@@ -94,6 +104,12 @@ vi.mock('../lib/identityVault', () => ({
 
 import * as apiMod from '../lib/api';
 import * as vaultMod from '../lib/identityVault';
+import {
+  setInstanceToken,
+  getInstanceToken,
+  getLocalToken,
+  clearSession,
+} from './useAuth';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -120,6 +136,7 @@ beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();
   _vaultBlobs.clear();
+  _mockActiveInstanceUrl = '';
 
   vi.mocked(apiMod.fetchWithAuth).mockReset();
   vi.mocked(apiMod.fetchWithAuth).mockResolvedValue({ ok: false, status: 401 });
@@ -905,5 +922,55 @@ describe('useAuth — guest session', () => {
     expect(result.current.isGuest).toBe(false);
     expect(result.current.token).toBeNull();
     expect(result.current.vaultState).toBe('none');
+  });
+});
+
+// ── Per-instance JWT storage ───────────────────────────────────────────────────
+
+describe('useAuth — per-instance JWT storage', () => {
+  it('setInstanceToken stores at the host-namespaced key', () => {
+    setInstanceToken('https://chat.example.com', 'token-a');
+    expect(sessionStorage.getItem('hush_jwt_chat.example.com')).toBe('token-a');
+    expect(sessionStorage.getItem(JWT_KEY)).toBeNull();
+  });
+
+  it('getInstanceToken reads from the host-namespaced key', () => {
+    sessionStorage.setItem('hush_jwt_chat.example.com', 'token-b');
+    expect(getInstanceToken('https://chat.example.com')).toBe('token-b');
+  });
+
+  it('getLocalToken reads from the active instance namespaced key', () => {
+    _mockActiveInstanceUrl = 'https://chat.example.com';
+    sessionStorage.setItem('hush_jwt_chat.example.com', 'token-active');
+    expect(getLocalToken()).toBe('token-active');
+  });
+
+  it('clearSession removes all hush_jwt_* keys', () => {
+    sessionStorage.setItem('hush_jwt_chat.example.com', 'token-a');
+    sessionStorage.setItem('hush_jwt_other.host.net', 'token-b');
+    sessionStorage.setItem(JWT_KEY, 'token-legacy');
+    sessionStorage.setItem('hush_vault_session_alive', '1');
+    clearSession();
+    expect(sessionStorage.getItem('hush_jwt_chat.example.com')).toBeNull();
+    expect(sessionStorage.getItem('hush_jwt_other.host.net')).toBeNull();
+    expect(sessionStorage.getItem(JWT_KEY)).toBeNull();
+    // Non-JWT keys should not be touched by clearSession (vault session flag cleared separately).
+  });
+
+  it('legacy migration: hush_jwt migrated to namespaced key on first getLocalToken read', () => {
+    _mockActiveInstanceUrl = 'https://chat.example.com';
+    sessionStorage.setItem(JWT_KEY, 'legacy-token');
+    const token = getLocalToken();
+    expect(token).toBe('legacy-token');
+    expect(sessionStorage.getItem('hush_jwt_chat.example.com')).toBe('legacy-token');
+    expect(sessionStorage.getItem(JWT_KEY)).toBeNull();
+  });
+
+  it('two instances can store and retrieve different tokens simultaneously', () => {
+    setInstanceToken('https://instance-a.com', 'jwt-a');
+    setInstanceToken('https://instance-b.com', 'jwt-b');
+    expect(getInstanceToken('https://instance-a.com')).toBe('jwt-a');
+    expect(getInstanceToken('https://instance-b.com')).toBe('jwt-b');
+    expect(getInstanceToken('https://instance-a.com')).not.toBe(getInstanceToken('https://instance-b.com'));
   });
 });
