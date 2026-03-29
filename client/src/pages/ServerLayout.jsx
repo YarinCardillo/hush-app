@@ -28,6 +28,8 @@ import GuildCreateModal from '../components/GuildCreateModal';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
 import { VoiceConnectedPanel } from '../components/Controls';
+import UserPanel from '../components/UserPanel';
+import { useConnectionQuality } from '../hooks/useConnectionQuality';
 import { BODY_SCROLL_MODE, useBodyScrollMode } from '../hooks/useBodyScrollMode';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -163,6 +165,9 @@ export default function ServerLayout() {
   /** Per-instance WS client, or null if not connected / no instance. */
   const wsClient = instanceUrl ? getWsClient(instanceUrl) : null;
 
+  /** Real-time connection quality from WS ping/pong. */
+  const connQuality = useConnectionQuality(wsClient);
+
   /** Whether the active instance is offline. */
   const isInstanceOffline = instanceUrl
     ? instanceStates.get(instanceUrl)?.connectionState === 'offline'
@@ -190,9 +195,13 @@ export default function ServerLayout() {
   const voiceControlsRef = useRef(null);
   const [voiceMicOn, setVoiceMicOn] = useState(false);
   const [voiceDeafened, setVoiceDeafened] = useState(false);
-  const handleVoiceStateChange = useCallback(({ isMicOn: mic, isDeafened: deaf }) => {
+  const [voiceScreenSharing, setVoiceScreenSharing] = useState(false);
+  const [voiceWebcamOn, setVoiceWebcamOn] = useState(false);
+  const handleVoiceStateChange = useCallback(({ isMicOn: mic, isDeafened: deaf, isScreenSharing: screen, isWebcamOn: cam }) => {
     setVoiceMicOn(mic);
     setVoiceDeafened(deaf);
+    if (screen !== undefined) setVoiceScreenSharing(screen);
+    if (cam !== undefined) setVoiceWebcamOn(cam);
   }, []);
   const leavingVoiceRef = useRef(false);
 
@@ -200,6 +209,9 @@ export default function ServerLayout() {
 
   // Voice participants per channel (server-authoritative via LiveKit webhooks).
   const [voiceParticipants, setVoiceParticipants] = useState(() => new Map());
+
+  // Remote participants' mute/deafen state: Map<userId, { isMuted, isDeafened }>
+  const [voiceMuteStates, setVoiceMuteStates] = useState(() => new Map());
 
   const { width: sidebarWidth, handleMouseDown: handleSidebarResize } = useSidebarResize();
 
@@ -379,6 +391,21 @@ export default function ServerLayout() {
     return () => wsClient.off('voice_state_update', handler);
   }, [wsClient]);
 
+  // voice.mute_state: track remote participants' mute/deafen overlays
+  useEffect(() => {
+    if (!wsClient) return;
+    const handler = (data) => {
+      if (!data.user_id) return;
+      setVoiceMuteStates((prev) => {
+        const next = new Map(prev);
+        next.set(data.user_id, { isMuted: !!data.is_muted, isDeafened: !!data.is_deafened });
+        return next;
+      });
+    };
+    wsClient.on('voice.mute_state', handler);
+    return () => wsClient.off('voice.mute_state', handler);
+  }, [wsClient]);
+
   // channel_created: append to local channel list (guild-scoped)
   useEffect(() => {
     if (!wsClient) return;
@@ -494,6 +521,9 @@ export default function ServerLayout() {
     setOrbPhase('idle');
     setActiveVoiceChannel(null);
     activeVoiceMemberIdsRef.current = [];
+    setVoiceScreenSharing(false);
+    setVoiceWebcamOn(false);
+    setVoiceMuteStates(new Map());
     setMobileStack(1);
     setMemberDrawerOpen(false);
     navigateToGuild(serverId);
@@ -1349,21 +1379,35 @@ export default function ServerLayout() {
     />
   );
 
-  /** Channel list column with optional voice-connected panel at the bottom. */
+  /** Channel list column with voice panel + persistent user panel at bottom. */
   const channelSidebarEl = (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       <div style={{ flex: 1, overflow: 'hidden' }}>{isDmView ? dmListEl : channelListEl}</div>
       {activeVoiceChannel && (
         <VoiceConnectedPanel
           channelName={activeVoiceChannel._displayName ?? activeVoiceChannel.name}
-          isMuted={voiceMicOn === false}
-          isDeafened={voiceDeafened}
-          onMute={() => voiceControlsRef.current?.toggleMic()}
-          onDeafen={() => voiceControlsRef.current?.toggleDeafen()}
-          onSettings={undefined}
+          isLowLatency={voiceControlsRef.current?.isLowLatency ?? false}
+          isScreenSharing={voiceScreenSharing}
+          isWebcamOn={voiceWebcamOn}
+          signalBars={connQuality.bars}
+          signalColor={connQuality.color}
+          signalReconnecting={connQuality.isReconnecting}
+          rtt={connQuality.rtt}
+          onScreenShare={() => voiceControlsRef.current?.toggleScreenShare()}
+          onSwitchScreen={() => voiceControlsRef.current?.switchScreenSource()}
+          onWebcam={() => voiceControlsRef.current?.toggleWebcam()}
           onDisconnect={handleVoiceLeave}
         />
       )}
+      <UserPanel
+        user={user}
+        isMuted={!!activeVoiceChannel && !voiceMicOn}
+        isDeafened={!!activeVoiceChannel && voiceDeafened}
+        isInVoice={!!activeVoiceChannel}
+        onMute={() => voiceControlsRef.current?.toggleMic()}
+        onDeafen={() => voiceControlsRef.current?.toggleDeafen()}
+        onMicFilterSettingsChange={(settings) => voiceControlsRef.current?.updateMicFilterSettings?.(settings)}
+      />
     </div>
   );
 
@@ -1442,6 +1486,7 @@ export default function ServerLayout() {
                     onLeave={handleVoiceLeave}
                     onOrbPhaseChange={handleOrbPhaseChange}
                     serverParticipants={voiceParticipants.get(activeVoiceChannel.id) ?? []}
+                    voiceMuteStates={voiceMuteStates}
                     onMobileBack={handleMobileBack}
                     voiceControlsRef={voiceControlsRef}
                     onVoiceStateChange={handleVoiceStateChange}
@@ -1534,6 +1579,7 @@ export default function ServerLayout() {
                   onLeave={handleVoiceLeave}
                   onOrbPhaseChange={handleOrbPhaseChange}
                   serverParticipants={voiceParticipants.get(activeVoiceChannel.id) ?? []}
+                  voiceMuteStates={voiceMuteStates}
                   voiceControlsRef={voiceControlsRef}
                   onVoiceStateChange={handleVoiceStateChange}
                 />
@@ -1629,7 +1675,10 @@ export default function ServerLayout() {
               )
             )}
 
-            {!loading && (!currentChannel || currentChannel.type === 'voice') && (
+            {!loading && (
+              // Show "select a channel" when no channel selected, or "connecting..." only during voice connect phase
+              (!currentChannel && !isViewingVoice) || (isViewingVoice && orbPhase === 'idle')
+            ) && (
               <div style={{
                 position: 'absolute',
                 inset: 0,
@@ -1638,34 +1687,26 @@ export default function ServerLayout() {
                 justifyContent: 'center',
                 paddingTop: hasOrbTopHeader ? 48 : 0,
                 paddingBottom: 69,
-                paddingRight: (!isMobile && (
-                  isViewingVoice
-                    ? (showMembers || showChatPanel || showParticipantsPanel)
-                    : showMembers
-                )) ? 260 : 0,
+                paddingRight: (!isMobile && showMembers) ? 260 : 0,
                 transition: 'padding-right var(--duration-fast) var(--ease-out)',
                 pointerEvents: 'none',
               }}>
                 <div style={{ pointerEvents: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
                   <span style={{
-                    color: orbPhase === 'activating' ? 'var(--hush-amber)' : 'var(--hush-text-muted)',
+                    color: 'var(--hush-text-muted)',
                     fontSize: 11,
                     letterSpacing: '0.18em',
-                    marginRight: '-0.18em',
+                    paddingLeft: '0.18em',
                     textTransform: 'uppercase',
                     fontFamily: 'var(--font-mono, monospace)',
-                    transition: 'color 0.6s ease',
                   }}>
-                    {isViewingVoice
-                      ? (orbPhase === 'idle' ? 'connecting...' : orbPhase === 'waiting' ? 'waiting for others to join' : 'someone just joined')
-                      : 'select a channel'}
+                    {isViewingVoice ? 'connecting...' : 'select channel'}
                   </span>
-                  <div style={{
+                  <div className={isViewingVoice ? '' : 'empty-state-dot'} style={{
                     width: 5,
                     height: 5,
                     borderRadius: '50%',
-                    background: orbPhase !== 'idle' ? 'var(--hush-amber)' : 'var(--hush-elevated)',
-                    transition: 'background 0.4s ease',
+                    background: isViewingVoice ? 'var(--hush-text-muted)' : undefined,
                   }} />
                 </div>
               </div>

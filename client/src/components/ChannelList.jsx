@@ -578,6 +578,13 @@ function ChannelRowContent({ channel, isActive, onSelect, participantCount, voic
         <span className="cl-channel-name">
           {channel._displayName ?? (channel.name || (channel.type === 'voice' ? 'General' : 'general'))}
         </span>
+        {isVoice && channel.voiceMode === 'low-latency' && (
+          <span className="cl-voice-mode-badge" title="Low latency">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+            </svg>
+          </span>
+        )}
         {isVoice && participantCount != null && (
           <span className="cl-voice-count">{participantCount}</span>
         )}
