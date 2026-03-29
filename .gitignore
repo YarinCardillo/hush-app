@@ -20,6 +20,7 @@ hush-mascot.jsx
 # Claude Code / agent instructions (local workflow)
 .claude/
 CLAUDE.md
+AGENTS.md
 design-system.md
 ARCHITECTURE.md
 FEEDBACK.md
@@ -57,3 +58,6 @@ client/src/wasm/
 .planning/
 # Production env (secrets)
 .env.prod
+GEMINI.md
+resume.md
+report.md

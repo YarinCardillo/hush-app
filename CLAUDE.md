@@ -68,3 +68,11 @@ Before modifying any file in `hush-crypto/`, `client/src/lib/signalStore.js`, `c
 
 ## MLS Protocol (OpenMLS)
 Before writing any MLS-related code or working on the Signal-to-MLS migration, ALWAYS read `~/openmls-book/openmls-index.md` first. It contains the task routing table — load only the files relevant to your current task. The reference covers OpenMLS v0.8.1 (RFC 9420): groups, key packages, credentials, message processing, persistence, security invariants, and credential validation. Total ~7,225 tokens for complete coverage.
+
+## No Competitor References (MANDATORY)
+Never mention competitor products (Discord, Slack, Zoom, Teams, etc.) in commit messages, code comments, or documentation. Describe what the change does, not what it imitates.
+
+- Bad: "Discord-style voice panel layout"
+- Good: "Reorganize voice panel into sidebar bottom stack"
+- Bad: "Match Discord's participant card sizing"
+- Good: "Increase voice participant card size for desktop"
