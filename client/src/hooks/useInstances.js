@@ -396,7 +396,9 @@ export function useInstances() {
         authUser = result.user;
       } catch (err) {
         // 404 means the key is unknown on this instance — auto-register.
-        const isNotFound = err?.status === 404 || err?.message?.includes('404');
+        const isNotFound = err?.status === 404
+          || err?.response?.status === 404
+          || (typeof err?.message === 'string' && err.message.includes('unknown public key'));
         if (!isNotFound) throw err;
 
         const result = await registerWithPublicKey(
@@ -544,12 +546,10 @@ export function useInstances() {
   const registerLocalInstance = useCallback(async (jwt, authUser, expectedGeneration = runtimeGenerationRef.current) => {
     const isActiveGeneration = () => expectedGeneration === runtimeGenerationRef.current;
     if (!isActiveGeneration()) {
-      console.log('[useInstances] registerLocalInstance: stale generation, skipping');
       return;
     }
 
     const instanceUrl = getActiveAuthInstanceUrlSync();
-    console.log('[useInstances] registerLocalInstance: url=%s, jwt=%s, user=%s', instanceUrl, jwt ? 'present' : 'NULL', authUser?.id);
 
     // Save to IDB.
     try {
@@ -666,18 +666,15 @@ export function useInstances() {
     const generation = runtimeGenerationRef.current;
 
     if (authLoading) {
-      console.log('[useInstances] boot skipped: authLoading=true');
       resetRuntimeState();
       return () => {};
     }
 
     if (vaultState !== 'unlocked' || !localUser?.id) {
-      console.log('[useInstances] boot skipped: vaultState=%s, userId=%s', vaultState, localUser?.id);
       resetRuntimeState();
       return () => {};
     }
 
-    console.log('[useInstances] boot starting: vaultState=%s, user=%s', vaultState, localUser?.id);
     resetRuntimeState();
 
     (async () => {
@@ -703,17 +700,11 @@ export function useInstances() {
         const storedUrls = new Set(storedInstances.map(({ instanceUrl }) => instanceUrl));
         const bootTargets = storedInstances.map(({ instanceUrl }) => ({ type: 'stored', instanceUrl }));
 
-        console.log('[useInstances] boot context: localUrl=%s, localJwt=%s, storedInstances=%d, storedUrls=%o',
-          localUrl, localJwt ? 'present' : 'NULL', storedInstances.length, [...storedUrls]);
-
         if (localJwt && !storedUrls.has(localUrl)) {
           bootTargets.push({ type: 'local', instanceUrl: localUrl });
         }
 
-        console.log('[useInstances] bootTargets=%o', bootTargets);
-
         if (bootTargets.length === 0) {
-          console.log('[useInstances] no boot targets — flushing empty state');
           flushState();
           return;
         }
