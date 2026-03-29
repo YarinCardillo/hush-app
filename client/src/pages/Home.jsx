@@ -9,6 +9,7 @@ import { RegistrationWizard, hasInterruptedRegistration } from '../components/au
 import { RecoveryPhraseInput } from '../components/auth/RecoveryPhraseInput';
 import { PinUnlockScreen } from '../components/auth/PinUnlockScreen';
 import { PinSetupModal } from '../components/auth/PinSetupModal';
+import { BODY_SCROLL_MODE, useBodyScrollMode } from '../hooks/useBodyScrollMode';
 
 const SUBTITLE_WORDS = ['share', 'your', 'screen.', 'keep', 'your'];
 
@@ -43,6 +44,14 @@ const TYPEWRITER_WORDS = _buildShuffledSequence();
 
 /** Width of slot is fixed to first word "privacy." so centering is based on that; longer words overflow to the right */
 const FIRST_TYPEWRITER_WORD = 'privacy.';
+
+const HOME_PAGE_SCROLL_STYLE = {
+  height: '100%',
+  minHeight: '100dvh',
+  overflowY: 'auto',
+  overflowX: 'hidden',
+  WebkitOverflowScrolling: 'touch',
+};
 
 const TYPE_SPEED_MS   = 65;
 const DELETE_SPEED_MS = 40;
@@ -189,6 +198,8 @@ function getFriendlyError(err) {
 }
 
 export default function Home() {
+  useBodyScrollMode(BODY_SCROLL_MODE.SCROLL);
+
   const navigate = useNavigate();
   const {
     vaultState,
@@ -559,7 +570,7 @@ export default function Home() {
   };
 
   return (
-    <div className="home-page" onMouseMove={handleMouseMove}>
+    <div className="home-page" onMouseMove={handleMouseMove} style={HOME_PAGE_SCROLL_STYLE}>
       {/* Cursor spotlight */}
       {spotlightEnabled && (
         <div ref={spotlightRef} className="home-spotlight-wrapper">

@@ -846,6 +846,7 @@ a[href]:active {
   background-position: center;
   transition: border-radius 150ms var(--ease-out), transform 150ms var(--ease-out);
   overflow: visible;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .sl-guild-btn:hover {
@@ -929,6 +930,7 @@ a[href]:active {
   text-align: center;
   padding: 2px 0;
   max-width: 48px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1211,6 +1213,8 @@ a[href]:active {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .cl-channel-item {
@@ -1231,6 +1235,8 @@ a[href]:active {
   margin: 0 8px;
   width: calc(100% - 16px);
   transition: background 150ms var(--ease-out), color 150ms var(--ease-out);
+  min-width: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .cl-channel-item:hover {
@@ -4183,6 +4189,7 @@ a[href]:active {
 }
 
 .home-form-card {
+  width: 100%;
   padding: 24px;
 }
 
@@ -5798,6 +5805,34 @@ a[href]:active {
 @media (max-width: 639px) {
   /* Stack container — clips overflow so stacks slide without scrollbars */
   .lay-container { position: relative; overflow: hidden; }
+  .home-page {
+    align-items: stretch;
+    justify-content: flex-start;
+    padding-top: max(24px, env(safe-area-inset-top));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-bottom: max(32px, calc(env(safe-area-inset-bottom) + 16px));
+    padding-left: max(16px, env(safe-area-inset-left));
+  }
+
+  .home-container {
+    width: min(100%, 420px);
+    margin: 0 auto;
+  }
+
+  .home-form-card {
+    padding: 20px;
+  }
+
+  .rw-actions,
+  .pin-setup-actions {
+    flex-direction: column;
+  }
+
+  .rw-actions > *,
+  .pin-setup-actions > * {
+    width: 100%;
+  }
+
 
   /* Stack 1: Servers + Channels (full screen, always rendered) */
   .mobile-stack-1 {
@@ -5894,6 +5929,21 @@ a[href]:active {
 
   /* Touch targets: channel items 44px on mobile */
   .cl-channel-item { height: 44px; }
+
+  .cl-channel-item,
+  .cl-category-label,
+  .sl-guild-btn,
+  .sl-instance-label {
+    -webkit-touch-callout: none;
+  }
+
+  .cl-channel-item,
+  .cl-category-label,
+  .sl-guild-btn,
+  .sl-instance-label {
+    -webkit-user-select: none;
+    user-select: none;
+  }
 
   /* Server guild buttons: 44px touch target on mobile */
   .sl-guild-btn { width: 44px; height: 44px; }

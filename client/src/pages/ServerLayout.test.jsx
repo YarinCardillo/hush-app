@@ -158,6 +158,12 @@ vi.mock('../components/MemberList', () => ({
   },
 }));
 
+vi.mock('../components/UserPanel', () => ({
+  default: function MockUserPanel() {
+    return <div data-testid="user-panel" />;
+  },
+}));
+
 vi.mock('./TextChannel', () => ({
   default: function MockTextChannel({ channel, sidebarSlot }) {
     return (
@@ -222,8 +228,20 @@ describe('ServerLayout', () => {
   it('shows "select a channel" orb when serverId is set but no channelId', async () => {
     renderAtRoute('/servers/s1/channels');
     await waitFor(() => {
-      expect(screen.getByText('select a channel')).toBeInTheDocument();
+      expect(screen.getByText(/select(?: a)? channel/i)).toBeInTheDocument();
     });
+  });
+
+  it('locks overflow on the main authenticated layout', async () => {
+    const { container } = renderAtRoute('/servers/s1/channels');
+
+    await waitFor(() => {
+      expect(screen.getByText(/select(?: a)? channel/i)).toBeInTheDocument();
+    });
+
+    expect(container.querySelector('.lay-container')).toHaveStyle({ overflow: 'hidden' });
+    expect(document.body.dataset.hushScrollMode).toBe('locked');
+    expect(document.body.style.overflowY).toBe('hidden');
   });
 
   it('fetches channels and members when serverId is in the URL', async () => {
@@ -244,6 +262,20 @@ describe('ServerLayout', () => {
       expect(screen.getByTestId('text-channel')).toBeInTheDocument();
     });
     expect(screen.getByTestId('text-channel')).toHaveTextContent('general');
+  });
+
+  it('locks overflow while viewing a voice channel', async () => {
+    vi.mocked(getGuildChannels).mockResolvedValue([
+      { id: 'ch2', name: 'standup', type: 'voice', position: 0, parentId: null },
+    ]);
+
+    const { container } = renderAtRoute('/servers/s1/channels/ch2');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('voice-channel')).toBeInTheDocument();
+    });
+
+    expect(container.querySelector('.lay-container')).toHaveStyle({ overflow: 'hidden' });
   });
 
   it('does not fetch guild data when no auth token in context', () => {

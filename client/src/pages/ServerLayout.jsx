@@ -27,6 +27,7 @@ import EmptyState from '../components/EmptyState';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
 import { VoiceConnectedPanel } from '../components/Controls';
+import { BODY_SCROLL_MODE, useBodyScrollMode } from '../hooks/useBodyScrollMode';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,10 @@ function getLocalToken() {
     : null;
 }
 
+const LAYOUT_SCROLL_LOCK_STYLE = {
+  overflow: 'hidden',
+};
+
 // ── Layout styles removed — see lay-* classes in global.css ──────────────────
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -70,6 +75,8 @@ function getLocalToken() {
  * switches to that instance's WS client automatically.
  */
 export default function ServerLayout() {
+  useBodyScrollMode(BODY_SCROLL_MODE.LOCKED);
+
   const params = useParams();
   const navigate = useNavigate();
   // Stable ref for navigate — useNavigate() returns a new identity on every
@@ -1221,7 +1228,7 @@ export default function ServerLayout() {
   // No guild selected — show empty state with guild strip and welcome message.
   if (!serverId) {
     return (
-      <div className="lay-container">
+      <div className="lay-container" style={LAYOUT_SCROLL_LOCK_STYLE}>
         <ServerList
           getToken={getToken}
           guilds={mergedGuilds}
@@ -1337,7 +1344,7 @@ export default function ServerLayout() {
   );
 
   return (
-    <div className="lay-container">
+    <div className="lay-container" style={LAYOUT_SCROLL_LOCK_STYLE}>
       {/* ── Offline banner ── */}
       {isInstanceOffline && (
         <div className="lay-offline-banner" style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20 }}>
