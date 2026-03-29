@@ -41,8 +41,8 @@ That's it. The script generates secrets, configures TLS, starts all services, an
 **What `setup.sh` does:**
 1. Checks for Docker and docker-compose — fails fast with a clear message if missing
 2. Generates all secrets: JWT signing key, admin API key, PostgreSQL password, LiveKit credentials, key transparency seed
-3. Writes `.env` and Caddy config from the `--domain` argument
-4. Pulls Docker images
+3. Writes `.env` and Caddy config from `--domain` or `--ip`
+4. Builds the Go API and client images locally, pulls third-party images (Postgres, Redis, LiveKit)
 5. Runs database migrations
 6. Starts the stack (Go API, PostgreSQL, Redis, LiveKit, Caddy)
 7. Health-checks the running instance (3 attempts with exponential backoff)
