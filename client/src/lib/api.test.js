@@ -104,6 +104,29 @@ describe('getHandshake', () => {
     expect(result.key_package_low_threshold).toBe(10);
   });
 
+  it('normalizes camelCase registrationMode for existing consumers', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        registrationMode: 'closed',
+        capabilities: {
+          'e2ee.chat': true,
+          'e2ee.media': true,
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await getHandshake('https://chat.example.com');
+
+    expect(result.registrationMode).toBe('closed');
+    expect(result.registration_mode).toBe('closed');
+    expect(result.capabilities).toEqual({
+      'e2ee.chat': true,
+      'e2ee.media': true,
+    });
+  });
+
   it('throws when handshake endpoint returns non-ok status', async () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 503 });
     vi.stubGlobal('fetch', mockFetch);
@@ -378,6 +401,24 @@ describe('auth instance routing', () => {
       expect.objectContaining({
         headers: expect.any(Headers),
       }),
+    );
+  });
+
+  it('routes pre-auth requests to the selected auth instance even when another instance is active', async () => {
+    localStorage.setItem('hush_auth_instance_selected', 'https://chat.example.com');
+    sessionStorage.setItem('hush_auth_instance_active', 'https://alpha.example.com');
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ nonce: 'abc123' }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await requestChallenge('public-key');
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://chat.example.com/api/auth/challenge',
+      expect.any(Object),
     );
   });
 });

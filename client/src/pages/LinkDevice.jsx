@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { useAuth } from '../contexts/AuthContext';
 import { BODY_SCROLL_MODE, useBodyScrollMode } from '../hooks/useBodyScrollMode';
 import { getDeviceId } from '../hooks/useAuth';
+import { getSelectedAuthInstanceUrlSync } from '../lib/authInstanceStore';
 import * as mlsStore from '../lib/mlsStore';
 import {
   consumeDeviceLinkResult,
@@ -56,28 +57,32 @@ function NewDeviceLinkView({ onLinked }) {
       setRequestState(null);
 
       try {
+        const instanceUrl = getSelectedAuthInstanceUrlSync();
         const deviceIdentity = await createDeviceIdentity();
         const session = await createSessionKeyPair();
         const response = await createDeviceLinkRequest({
           devicePublicKey: deviceIdentity.publicKeyBase64,
           sessionPublicKey: session.publicKeyBase64,
           deviceId: getDeviceId(),
-          instanceUrl: window.location.origin,
-        });
-        const qrUrl = buildLinkApprovalUrl(window.location.origin, {
-          requestId: response.requestId,
-          secret: response.secret,
-          expiresAt: response.expiresAt,
-        });
-        const qrDataUrl = await QRCode.toDataURL(qrUrl, {
-          width: 240,
-          margin: 2,
-          errorCorrectionLevel: 'M',
-        });
+          instanceUrl,
+        }, instanceUrl);
+        let qrDataUrl = '';
+        try {
+          qrDataUrl = await QRCode.toDataURL(buildLinkApprovalUrl(window.location.origin, {
+            requestId: response.requestId,
+            secret: response.secret,
+            expiresAt: response.expiresAt,
+          }), {
+            width: 240,
+            margin: 2,
+            errorCorrectionLevel: 'M',
+          });
+        } catch {}
 
         if (cancelled) return;
         setRequestState({
           ...response,
+          instanceUrl,
           qrDataUrl,
           sessionPrivateKey: session.privateKey,
         });
@@ -106,7 +111,7 @@ function NewDeviceLinkView({ onLinked }) {
         const result = await consumeDeviceLinkResult({
           requestId: requestState.requestId,
           secret: requestState.secret,
-        });
+        }, requestState.instanceUrl);
         if (cancelled || result?.status === 'pending') return;
 
         setStatus('Finalizing linked device…');
@@ -140,9 +145,13 @@ function NewDeviceLinkView({ onLinked }) {
         Scan this QR code from a device that is already signed in to the same account.
       </p>
 
-      {requestState?.qrDataUrl && !isExpired ? (
+      {requestState && !isExpired ? (
         <>
-          <img className="ld-qr-image" src={requestState.qrDataUrl} alt="Device link QR code" />
+          {requestState.qrDataUrl ? (
+            <img className="ld-qr-image" src={requestState.qrDataUrl} alt="Device link QR code" />
+          ) : (
+            <div className="ld-empty-box">QR unavailable. Use the fallback code below.</div>
+          )}
           <div className="ld-code-label">Desktop fallback code</div>
           <div className="ld-code-value">{requestState.code}</div>
           <div className="ld-timer">Expires in {formatCountdown(requestState.expiresAt, now)}</div>

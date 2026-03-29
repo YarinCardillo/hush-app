@@ -10,7 +10,7 @@ import { getReadableDeviceLabel } from './deviceLabel';
 import { uploadKeyPackagesAfterAuth as uploadKeyPackagesAfterAuthImpl } from './uploadKeyPackages';
 
 function resolveAuthBaseUrl(baseUrl = '') {
-  return baseUrl || getActiveAuthInstanceUrlSync();
+  return baseUrl || getSelectedAuthInstanceUrlSync();
 }
 
 function resolveFetchBaseUrl(path, baseUrl = '') {
@@ -541,7 +541,11 @@ export async function consumeDeviceLinkResult(body, baseUrl = '') {
 export async function getHandshake(baseUrl = '') {
   const res = await fetch(`${baseUrl}/api/handshake`);
   if (!res.ok) throw new Error(`handshake failed: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  if (data?.registrationMode !== undefined && data.registration_mode === undefined) {
+    data.registration_mode = data.registrationMode;
+  }
+  return data;
 }
 
 // ── Guild API ─────────────────────────────────────────────────────────────────

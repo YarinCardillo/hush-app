@@ -14,6 +14,7 @@ const {
   mockCreateDeviceIdentity,
   mockCreateSessionKeyPair,
   mockBuildLinkApprovalUrl,
+  mockGetSelectedAuthInstanceUrlSync,
   mockOpenStore,
   mockExportHistorySnapshot,
   mockBytesToBase64,
@@ -31,6 +32,7 @@ const {
   mockCreateDeviceIdentity: vi.fn(),
   mockCreateSessionKeyPair: vi.fn(),
   mockBuildLinkApprovalUrl: vi.fn(),
+  mockGetSelectedAuthInstanceUrlSync: vi.fn(),
   mockOpenStore: vi.fn(),
   mockExportHistorySnapshot: vi.fn(),
   mockBytesToBase64: vi.fn(),
@@ -51,6 +53,10 @@ vi.mock('../hooks/useBodyScrollMode', () => ({
 
 vi.mock('../hooks/useAuth', () => ({
   getDeviceId: () => 'device-1',
+}));
+
+vi.mock('../lib/authInstanceStore', () => ({
+  getSelectedAuthInstanceUrlSync: () => mockGetSelectedAuthInstanceUrlSync(),
 }));
 
 vi.mock('../lib/api', () => ({
@@ -113,6 +119,7 @@ describe('LinkDevice', () => {
       user: null,
       identityKeyRef: { current: null },
     };
+    mockGetSelectedAuthInstanceUrlSync.mockReturnValue('https://chat.example.com');
   });
 
   afterEach(() => {
@@ -146,14 +153,41 @@ describe('LinkDevice', () => {
         deviceId: 'device-1',
         devicePublicKey: 'device-public-key',
         sessionPublicKey: 'session-public-key',
+        instanceUrl: 'https://chat.example.com',
       }),
+      'https://chat.example.com',
     );
     await waitFor(() => {
       expect(mockConsumeDeviceLinkResult).toHaveBeenCalledWith({
         requestId: 'req-1',
         secret: 'secret-1',
-      });
+      }, 'https://chat.example.com');
     });
+  });
+
+  it('keeps the fallback code available when QR generation fails', async () => {
+    mockCreateDeviceIdentity.mockResolvedValue({
+      publicKeyBase64: 'device-public-key',
+    });
+    mockCreateSessionKeyPair.mockResolvedValue({
+      privateKey: { type: 'private-key' },
+      publicKeyBase64: 'session-public-key',
+    });
+    mockCreateDeviceLinkRequest.mockResolvedValue({
+      requestId: 'req-1',
+      secret: 'secret-1',
+      code: 'ABCD1234',
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    });
+    mockBuildLinkApprovalUrl.mockReturnValue('https://app.gethush.live/link-device?payload=abc');
+    mockQrToDataUrl.mockRejectedValue(new Error('canvas unavailable'));
+    mockConsumeDeviceLinkResult.mockResolvedValue({ status: 'pending' });
+
+    renderLinkDevice('/link-device?mode=new');
+
+    expect(await screen.findByText('ABCD1234')).toBeInTheDocument();
+    expect(screen.queryByAltText(/device link qr code/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/qr unavailable\. use the fallback code below\./i)).toBeInTheDocument();
   });
 
   it('resolves a fallback code and approves the requested device', async () => {
