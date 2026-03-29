@@ -551,6 +551,9 @@ export default function Home() {
           >
             Sign in
           </button>
+          <Link className="home-auth-choice-btn" to="/link-device?mode=new">
+            Link to existing device
+          </Link>
         </div>
 
         {registrationMode !== 'closed' && (

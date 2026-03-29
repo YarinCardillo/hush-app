@@ -135,6 +135,7 @@ export default function Chat({
   currentUserId,
   getToken,
   getStore,
+  getHistoryStore,
   wsClient: wsClientProp,
   members = [],
   onNewMessage,
@@ -166,6 +167,7 @@ export default function Chat({
 
   const { encryptForChannel, decryptFromChannel, getCachedMessage, setCachedMessage } = useMLS({
     getStore: getStore ?? (() => Promise.resolve(null)),
+    getHistoryStore: getHistoryStore ?? (() => Promise.resolve(null)),
     getToken: getToken ?? (() => null),
     channelId,
   });
@@ -545,7 +547,7 @@ export default function Chat({
               setInputByteLength(new TextEncoder().encode(text).byteLength);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="send a message..."
+            placeholder="Message..."
             rows={1}
             disabled={isSending}
             autoComplete="off"

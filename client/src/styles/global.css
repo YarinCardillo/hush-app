@@ -367,6 +367,7 @@ a[href]:active {
    Base and hover in CSS so hover is not overridden by inline styles. */
 .home-auth-choice-btn {
   flex: 1;
+  display: block;
   padding: 10px;
   border: none;
   border-radius: var(--radius-sm);
@@ -376,6 +377,8 @@ a[href]:active {
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
+  text-align: center;
+  text-decoration: none;
   transition: all var(--duration-fast) var(--ease-out);
 }
 .home-auth-choice-btn:hover {
@@ -5566,6 +5569,173 @@ a[href]:active {
   font-size: 0.9rem;
 }
 
+
+/* ── LinkDevice ──────────────────────────── */
+.ld-page {
+  min-height: 100dvh;
+}
+
+.ld-container {
+  min-height: 100dvh;
+  padding-top: clamp(48px, 10vh, 96px);
+  padding-bottom: 48px;
+}
+
+.ld-card {
+  max-width: 440px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ld-subtitle {
+  margin: 0;
+  color: var(--hush-text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.ld-qr-image,
+.ld-empty-box {
+  width: min(100%, 240px);
+  align-self: center;
+}
+
+.ld-qr-image {
+  display: block;
+  padding: 12px;
+  background: #fff;
+  border-radius: var(--radius-md);
+}
+
+.ld-empty-box {
+  min-height: 240px;
+  padding: 24px;
+  border: 1px solid var(--hush-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--hush-text-muted);
+  background: var(--hush-elevated);
+}
+
+.ld-code-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--hush-text-muted);
+}
+
+.ld-code-value {
+  font-family: var(--font-mono);
+  font-size: clamp(1.35rem, 4vw, 1.8rem);
+  letter-spacing: 0.16em;
+  color: var(--hush-amber);
+  text-align: center;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(213, 79, 18, 0.08);
+  border: 1px solid rgba(213, 79, 18, 0.16);
+}
+
+.ld-timer,
+.ld-status,
+.ld-footer-link {
+  font-size: 0.82rem;
+}
+
+.ld-timer,
+.ld-footer-link {
+  color: var(--hush-text-muted);
+  text-align: center;
+}
+
+.ld-status {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(213, 79, 18, 0.08);
+  color: var(--hush-amber);
+}
+
+.ld-error {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--hush-danger-ghost);
+  color: var(--hush-danger);
+  font-size: 0.82rem;
+}
+
+.ld-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.ld-code-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ld-code-input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hush-border);
+  background: var(--hush-surface);
+  color: var(--hush-text);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ld-claim-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--hush-elevated);
+  border: 1px solid var(--hush-border);
+}
+
+.ld-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--hush-text-secondary);
+  font-size: 0.85rem;
+}
+
+.ld-summary-row strong {
+  color: var(--hush-text);
+  font-weight: 500;
+  text-align: right;
+  word-break: break-word;
+}
+
+.ld-footer-link a {
+  color: inherit;
+}
+
+@media (max-width: 640px) {
+  .ld-container {
+    padding-top: 24px;
+  }
+
+  .ld-card {
+    max-width: none;
+  }
+
+  .ld-actions > * {
+    flex: 1 1 160px;
+  }
+}
 /* ── RecoveryPhraseInput ──────────────────── */
 .rpi-container {
   display: flex;

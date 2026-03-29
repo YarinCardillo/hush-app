@@ -22,6 +22,7 @@ import * as apiLib from '../lib/api';
  * @param {() => Promise<IDBDatabase|null>} opts.getStore - Opens IndexedDB for the current user
  * @param {() => string|null} opts.getToken - Returns the JWT for API calls
  * @param {string} [opts.channelId] - Required for encryptForChannel/decryptFromChannel
+ * @param {() => Promise<IDBDatabase|null>} [opts.getHistoryStore] - Optional read-only history fallback store
  * @param {object} [opts._deps] - Optional dep injection for testing
  * @returns {{
  *   encryptForChannel: Function,
@@ -30,7 +31,7 @@ import * as apiLib from '../lib/api';
  *   setCachedMessage: Function,
  * }}
  */
-export function useMLS({ getStore, getToken, channelId, _deps }) {
+export function useMLS({ getStore, getHistoryStore, getToken, channelId, _deps }) {
   const mlsGroup = _deps?.mlsGroup ?? mlsGroupLib;
   const mlsStore = _deps?.mlsStore ?? mlsStoreLib;
   const hushCrypto = _deps?.hushCrypto ?? hushCryptoLib;
@@ -51,6 +52,22 @@ export function useMLS({ getStore, getToken, channelId, _deps }) {
     if (!db) throw new Error('[useMLS] No IDB store available');
     if (!token) throw new Error('[useMLS] No auth token available');
     const credential = await mlsStore.getCredential(db);
+    return { db, token, credential, mlsStore, hushCrypto, api };
+  }
+
+  /**
+   * Builds deps for the imported history fallback store.
+   * Returns null when no history snapshot exists.
+   *
+   * @returns {Promise<object|null>}
+   */
+  async function buildHistoryDeps() {
+    if (typeof getHistoryStore !== 'function') return null;
+    const db = await getHistoryStore();
+    const token = getToken();
+    if (!db || !token) return null;
+    const credential = await mlsStore.getCredential(db);
+    if (!credential) return null;
     return { db, token, credential, mlsStore, hushCrypto, api };
   }
 
@@ -80,12 +97,22 @@ export function useMLS({ getStore, getToken, channelId, _deps }) {
    */
   async function decryptFromChannel(messageBytes) {
     if (!channelId) throw new Error('[useMLS] channelId is required for decryptFromChannel');
-    const deps = await buildDeps();
-    const result = await mlsGroup.decryptMessage(deps, channelId, messageBytes);
-    if (result.plaintext == null) {
-      throw new Error(`[useMLS] decryptFromChannel: non-application message (type=${result.type})`);
+    try {
+      const deps = await buildDeps();
+      const result = await mlsGroup.decryptMessage(deps, channelId, messageBytes);
+      if (result.plaintext == null) {
+        throw new Error(`[useMLS] decryptFromChannel: non-application message (type=${result.type})`);
+      }
+      return result.plaintext;
+    } catch (primaryErr) {
+      const historyDeps = await buildHistoryDeps();
+      if (!historyDeps) throw primaryErr;
+      const fallbackResult = await mlsGroup.decryptMessage(historyDeps, channelId, messageBytes);
+      if (fallbackResult.plaintext == null) {
+        throw primaryErr;
+      }
+      return fallbackResult.plaintext;
     }
-    return result.plaintext;
   }
 
   /**
@@ -96,10 +123,21 @@ export function useMLS({ getStore, getToken, channelId, _deps }) {
   async function getCachedMessage(messageId) {
     try {
       const db = await getStore();
-      if (!db) return null;
-      const row = await mlsStore.getLocalPlaintext(db, messageId);
-      if (!row) return null;
-      return { content: row.plaintext, timestamp: row.timestamp };
+      if (db) {
+        const row = await mlsStore.getLocalPlaintext(db, messageId);
+        if (row) {
+          return { content: row.plaintext, timestamp: row.timestamp };
+        }
+      }
+      if (typeof getHistoryStore === 'function') {
+        const historyDb = await getHistoryStore();
+        if (!historyDb) return null;
+        const historyRow = await mlsStore.getLocalPlaintext(historyDb, messageId);
+        if (historyRow) {
+          return { content: historyRow.plaintext, timestamp: historyRow.timestamp };
+        }
+      }
+      return null;
     } catch {
       return null;
     }

@@ -25,6 +25,13 @@ vi.mock('../contexts/AuthContext', () => ({
   })),
 }));
 
+vi.mock('../contexts/InstanceContext', () => ({
+  useInstanceContext: vi.fn(() => ({
+    mergedGuilds: [],
+    registerLocalInstance: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 vi.mock('../components/auth/RegistrationWizard', () => ({
   RegistrationWizard: function MockRegistrationWizard() {
     return <div>Registration Wizard</div>;
@@ -168,5 +175,12 @@ describe('Home', () => {
     });
     expect(document.body.dataset.hushScrollMode).toBe('scroll');
     expect(document.body.style.overflowY).toBe('auto');
+  });
+
+  it('offers device linking from the unauthenticated home screen', () => {
+    renderHome();
+
+    const link = screen.getByRole('link', { name: /link to existing device/i });
+    expect(link).toHaveAttribute('href', '/link-device?mode=new');
   });
 });

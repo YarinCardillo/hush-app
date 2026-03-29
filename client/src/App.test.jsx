@@ -56,6 +56,7 @@ if (!window.matchMedia) {
 // Mock all lazy-loaded pages so Suspense doesn't need to resolve them
 vi.mock('./pages/Home', () => ({ default: () => <div>Home</div> }));
 vi.mock('./pages/Invite', () => ({ default: () => <div>Invite</div> }));
+vi.mock('./pages/LinkDevice.jsx', () => ({ default: () => <div>LinkDevice</div> }));
 vi.mock('./pages/Room', () => ({ default: () => <div>Room</div> }));
 vi.mock('./pages/Roadmap', () => ({ default: () => <div>Roadmap</div> }));
 vi.mock('./pages/ServerLayout', () => ({ default: () => <div>ServerLayout</div> }));
@@ -215,6 +216,15 @@ describe('App — blocked-tab overlay', () => {
     render(<MemoryRouter><App /></MemoryRouter>);
 
     expect(screen.queryByText(/already open in another tab/i)).not.toBeInTheDocument();
+  });
+
+  it('renders the public device-link route while logged out', async () => {
+    useSingleTab.mockReturnValue({ isBlockedTab: false, takeOver: vi.fn() });
+
+    render(<MemoryRouter initialEntries={['/link-device?mode=new']}><App /></MemoryRouter>);
+
+    expect(screen.queryByText(/already open in another tab/i)).not.toBeInTheDocument();
+    expect(await screen.findByText('LinkDevice')).toBeInTheDocument();
   });
 
   it('calls takeOver when "Use this one instead" button is clicked', async () => {

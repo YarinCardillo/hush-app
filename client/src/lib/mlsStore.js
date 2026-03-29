@@ -10,6 +10,7 @@
  */
 
 const DB_NAME_PREFIX = 'hush-mls-';
+const HISTORY_DB_NAME_PREFIX = 'hush-mls-history-';
 const STORE_CREDENTIAL = 'credential';
 const STORE_KEY_PACKAGES = 'keyPackages';
 const STORE_LAST_RESORT = 'lastResort';
@@ -47,6 +48,13 @@ const STORAGE_PROVIDER_STORES = [
   'mls_resumption_psk',
   'mls_signature_key_pairs',
   'mls_tree_sync',
+];
+
+const HISTORY_SNAPSHOT_STORES = [
+  STORE_CREDENTIAL,
+  ...STORAGE_PROVIDER_STORES,
+  'localPlaintext',
+  'groupEpoch',
 ];
 
 // Synchronous Map cache backed by IndexedDB. WASM reads/writes happen synchronously
@@ -211,8 +219,8 @@ function initStorageBridge(db) {
  * @param {string} deviceId - Local device ID
  * @returns {Promise<IDBDatabase>}
  */
-export function openStore(userId, deviceId) {
-  const dbName = `${DB_NAME_PREFIX}${userId}-${deviceId}`;
+function openStoreWithPrefix(dbNamePrefix, userId, deviceId) {
+  const dbName = `${dbNamePrefix}${userId}-${deviceId}`;
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(dbName, DB_VERSION);
     req.onerror = () => reject(req.error);
@@ -251,6 +259,25 @@ export function openStore(userId, deviceId) {
       }
     };
   });
+}
+
+export function openStore(userId, deviceId) {
+  return openStoreWithPrefix(DB_NAME_PREFIX, userId, deviceId);
+}
+
+/**
+ * Opens the read-only history fallback MLS store imported from another device.
+ *
+ * This store is never used for active group operations; it only exists so the
+ * new device can decrypt pre-link history while its own MLS identity handles
+ * future traffic.
+ *
+ * @param {string} userId
+ * @param {string} deviceId
+ * @returns {Promise<IDBDatabase>}
+ */
+export function openHistoryStore(userId, deviceId) {
+  return openStoreWithPrefix(HISTORY_DB_NAME_PREFIX, userId, deviceId);
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +375,41 @@ function getAll(db, storeName) {
   });
 }
 
+/**
+ * Clears an object store.
+ *
+ * @param {IDBDatabase} db
+ * @param {string} storeName
+ * @returns {Promise<void>}
+ */
+function clearStore(db, storeName) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    const req = store.clear();
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Writes a raw row into an object store. The row must include its `key`.
+ *
+ * @param {IDBDatabase} db
+ * @param {string} storeName
+ * @param {object} row
+ * @returns {Promise<void>}
+ */
+function putRawRow(db, storeName, row) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    const req = store.put(row);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // StorageProvider cache management
 // ---------------------------------------------------------------------------
@@ -371,6 +433,50 @@ export async function preloadGroupState(db) {
       if (!storageCache.has(cacheKey)) {
         storageCache.set(cacheKey, new Uint8Array(row.value));
       }
+    }
+  }
+}
+
+/**
+ * Exports the subset of MLS state needed to decrypt pre-link history on a new
+ * device. KeyPackages and last-resort material are intentionally excluded
+ * because the imported store is read-only history fallback, not an active
+ * sending identity.
+ *
+ * @param {IDBDatabase} db
+ * @returns {Promise<{ version: number, stores: Record<string, Array<object>> }>}
+ */
+export async function exportHistorySnapshot(db) {
+  const stores = {};
+  for (const storeName of HISTORY_SNAPSHOT_STORES) {
+    stores[storeName] = await getAll(db, storeName);
+  }
+  return {
+    version: 1,
+    stores,
+  };
+}
+
+/**
+ * Imports a history snapshot into a read-only fallback store.
+ *
+ * Existing contents are replaced store-by-store so a regenerated device link
+ * does not accumulate stale group state.
+ *
+ * @param {IDBDatabase} db
+ * @param {{ stores?: Record<string, Array<object>> }|null} snapshot
+ * @returns {Promise<void>}
+ */
+export async function importHistorySnapshot(db, snapshot) {
+  if (!snapshot?.stores) return;
+
+  for (const storeName of HISTORY_SNAPSHOT_STORES) {
+    await clearStore(db, storeName);
+    const rows = Array.isArray(snapshot.stores[storeName])
+      ? snapshot.stores[storeName]
+      : [];
+    for (const row of rows) {
+      await putRawRow(db, storeName, row);
     }
   }
 }

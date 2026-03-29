@@ -11,6 +11,7 @@ applyThemeMode(getStoredThemeMode());
 
 const Home = lazy(() => import('./pages/Home'));
 const Invite = lazy(() => import('./pages/Invite'));
+const LinkDevice = lazy(() => import('./pages/LinkDevice.jsx'));
 const Room = lazy(() => import('./pages/Room'));
 const Roadmap = lazy(() => import('./pages/Roadmap'));
 const ServerLayout = lazy(() => import('./pages/ServerLayout'));
@@ -143,6 +144,8 @@ export default function App() {
             {/* Same-instance invite (legacy path kept) */}
             <Route path="/invite/:code" element={<Invite />} />
 
+            {/* Device-link approval/new-device handoff */}
+            <Route path="/link-device" element={<LinkDevice />} />
             {/* Instance-aware guild route: /:instance/:guildSlug/:channelSlug? */}
             <Route path="/:instance/:guildSlug/:channelSlug?" element={<AuthGuard><ServerLayout /></AuthGuard>} />
 

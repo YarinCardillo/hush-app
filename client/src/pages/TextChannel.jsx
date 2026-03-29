@@ -25,6 +25,9 @@ export default function TextChannel({
   const getStore = useCallback(() => {
     return mlsStore.openStore(user?.id ?? '', getDeviceId());
   }, [user?.id]);
+  const getHistoryStore = useCallback(() => {
+    return mlsStore.openHistoryStore(user?.id ?? '', getDeviceId());
+  }, [user?.id]);
 
   return (
     <div className="tc-root">
@@ -74,6 +77,7 @@ export default function TextChannel({
             currentUserId={currentUserId}
             getToken={getToken}
             getStore={getStore}
+            getHistoryStore={getHistoryStore}
             wsClient={wsClient}
             members={members}
           />

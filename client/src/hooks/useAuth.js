@@ -36,6 +36,10 @@ import {
   loadVaultMarkerFromIDB,
 } from '../lib/identityVault';
 import {
+  openHistoryStore,
+  importHistorySnapshot,
+} from '../lib/mlsStore';
+import {
   fetchWithAuth,
   uploadKeyPackagesAfterAuth,
   requestChallenge,
@@ -187,6 +191,7 @@ function clearPinAttempts(userId) {
  *   performChallengeResponse: (privateKey: Uint8Array, publicKey: Uint8Array) => Promise<void>,
  *   performRegister: (username: string, displayName: string, mnemonic: string, inviteCode?: string) => Promise<void>,
  *   performRecovery: (mnemonic: string, revokeOtherDevices?: boolean) => Promise<void>,
+ *   completeDeviceLink: (bundle: { rootPrivateKey: Uint8Array, rootPublicKey: Uint8Array, historySnapshot?: object|null }) => Promise<void>,
  *   performGuestAuth: () => Promise<{ user: object }>,
  *   unlockVault: (pin: string) => Promise<void>,
  *   lockVault: () => void,
@@ -564,6 +569,53 @@ export function useAuth() {
       setVaultState('none');
       throw err;
     } finally {
+      setLoading(false);
+    }
+  }, [performChallengeResponse]);
+
+  // ── Device linking ────────────────────────────────────────────────────────
+
+  /**
+   * Completes a device-link handoff using the transferred root key material.
+   *
+   * The new device authenticates with the transferred root key, uploads its own
+   * MLS credential/key packages, and imports the read-only history snapshot.
+   *
+   * @param {{ rootPrivateKey: Uint8Array, rootPublicKey: Uint8Array, historySnapshot?: object|null }} bundle
+   * @returns {Promise<{ user: object }>}
+   */
+  const completeDeviceLink = useCallback(async (bundle) => {
+    setLoading(true);
+    setError(null);
+
+    let historyDb = null;
+    try {
+      if (!bundle?.rootPrivateKey || !bundle?.rootPublicKey) {
+        throw new Error('invalid device link bundle');
+      }
+
+      const authResult = await performChallengeResponse(bundle.rootPrivateKey, bundle.rootPublicKey);
+
+      if (bundle.historySnapshot && authResult?.user?.id) {
+        historyDb = await openHistoryStore(authResult.user.id, getDeviceId());
+        await importHistorySnapshot(historyDb, bundle.historySnapshot);
+      }
+
+      return authResult;
+    } catch (err) {
+      setError(err);
+      clearSession();
+      setToken(null);
+      setUser(null);
+      setVaultState('none');
+      identityKeyRef.current = null;
+      throw err;
+    } finally {
+      try {
+        historyDb?.close();
+      } catch {
+        // Ignore close failures during best-effort cleanup.
+      }
       setLoading(false);
     }
   }, [performChallengeResponse]);
@@ -1033,6 +1085,7 @@ export function useAuth() {
     performChallengeResponse,
     performRegister,
     performRecovery,
+    completeDeviceLink,
     performGuestAuth,
     unlockVault,
     lockVault,

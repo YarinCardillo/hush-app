@@ -9,8 +9,8 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { listDeviceKeys, revokeDeviceKey } from '../lib/api.js';
-import DeviceLinkModal from './auth/DeviceLinkModal.jsx';
 import { TransparencyVerifier } from '../lib/transparencyVerifier.js';
 import { bytesToHex } from '../lib/identityVault.js';
 
@@ -50,10 +50,10 @@ function RevokeConfirm({ deviceLabel, onConfirm, onCancel, loading }) {
 }
 
 export default function DeviceManagement({ token, currentDeviceId, identityKeyRef, handshakeData, setTransparencyError }) {
+  const navigate = useNavigate();
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showLinkModal, setShowLinkModal] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState(null); // { deviceId, label }
   const [revoking, setRevoking] = useState(false);
 
@@ -109,12 +109,6 @@ export default function DeviceManagement({ token, currentDeviceId, identityKeyRe
       setRevoking(false);
     }
   }, [confirmRevoke, token, fetchDevices, verifyTransparencyAfterOp]);
-
-  const handleLinked = useCallback(() => {
-    setShowLinkModal(false);
-    verifyTransparencyAfterOp('device_certify');
-    fetchDevices();
-  }, [fetchDevices, verifyTransparencyAfterOp]);
 
   return (
     <>
@@ -181,20 +175,11 @@ export default function DeviceManagement({ token, currentDeviceId, identityKeyRe
         <button
           type="button"
           className="btn btn-secondary"
-          onClick={() => setShowLinkModal(true)}
+          onClick={() => navigate('/link-device')}
         >
-          Link a new device
+          Approve a new device
         </button>
       </div>
-
-      {showLinkModal && (
-        <DeviceLinkModal
-          onClose={() => setShowLinkModal(false)}
-          onLinked={handleLinked}
-          token={token}
-          currentDeviceId={currentDeviceId}
-        />
-      )}
 
       {confirmRevoke && (
         <RevokeConfirm

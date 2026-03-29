@@ -418,6 +418,85 @@ export async function certifyNewDevice(
   }
 }
 
+/**
+ * Create a new device-link request from an unauthenticated device.
+ *
+ * @param {{ devicePublicKey: string, sessionPublicKey: string, deviceId: string, label?: string, instanceUrl?: string }} body
+ * @param {string} [baseUrl='']
+ * @returns {Promise<{ requestId: string, secret: string, code: string, expiresAt: string }>}
+ */
+export async function createDeviceLinkRequest(body, baseUrl = '') {
+  const res = await fetch(`${baseUrl}/api/auth/link-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `createDeviceLinkRequest ${res.status}`);
+  return data;
+}
+
+/**
+ * Resolve a pending device-link request on an authenticated existing device.
+ *
+ * @param {string} token
+ * @param {{ requestId?: string, secret?: string, code?: string }} body
+ * @param {string} [baseUrl='']
+ * @returns {Promise<{ claimToken: string, requestId: string, deviceId: string, devicePublicKey: string, sessionPublicKey: string, label?: string, instanceUrl?: string, expiresAt: string }>}
+ */
+export async function resolveDeviceLinkRequest(token, body, baseUrl = '') {
+  const res = await fetchWithAuth(token, '/api/auth/link-resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }, baseUrl);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `resolveDeviceLinkRequest ${res.status}`);
+  return data;
+}
+
+/**
+ * Verify a claimed device-link request and store the blind relay payload.
+ *
+ * @param {string} token
+ * @param {{ claimToken: string, certificate: string, signingDeviceId: string, relayCiphertext: string, relayIv: string, relayPublicKey: string }} body
+ * @param {string} [baseUrl='']
+ * @returns {Promise<void>}
+ */
+export async function verifyDeviceLinkRequest(token, body, baseUrl = '') {
+  const res = await fetchWithAuth(token, '/api/auth/link-verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }, baseUrl);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `verifyDeviceLinkRequest ${res.status}`);
+}
+
+/**
+ * Consume the blind relay payload for a new device-link request.
+ *
+ * Returns `{ status: 'pending' }` while the existing device has not yet
+ * approved the request.
+ *
+ * @param {{ requestId: string, secret: string }} body
+ * @param {string} [baseUrl='']
+ * @returns {Promise<{ status: 'pending' }|{ relayCiphertext: string, relayIv: string, relayPublicKey: string, deviceId: string, instanceUrl?: string }>}
+ */
+export async function consumeDeviceLinkResult(body, baseUrl = '') {
+  const res = await fetch(`${baseUrl}/api/auth/link-result`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 202) {
+    return { status: 'pending' };
+  }
+  if (!res.ok) throw new Error(data.error || `consumeDeviceLinkResult ${res.status}`);
+  return data;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
