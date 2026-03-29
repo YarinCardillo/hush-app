@@ -37,9 +37,9 @@ cd hush-app
 
 **3. Open `https://chat.example.com`.** No warnings, no extra steps. Register and you're live.
 
-### With just an IP (self-signed TLS)
+### With just an IP (development / LAN only)
 
-If you can't use a domain, you can deploy with an IP address. This works, but browsers will show a certificate warning because the TLS certificate is self-signed.
+IP mode uses a self-signed certificate. It works for local testing and single-instance use, but **cross-instance features are disabled** — other Hush instances cannot connect to yours because browsers block cross-origin WebSocket connections to self-signed certificates. This is a browser security constraint, not a Hush limitation.
 
 ```bash
 git clone https://github.com/YarinCardillo/hush-app
@@ -47,15 +47,9 @@ cd hush-app
 ./scripts/setup.sh --ip 203.0.113.42
 ```
 
-**After setup, accept the certificate in your browser:**
+After setup, visit `https://YOUR_SERVER_IP`, accept the browser certificate warning, and register.
 
-1. Visit `https://YOUR_SERVER_IP` — the browser shows a warning
-2. Click **Advanced** (or **Show Details** in Safari)
-3. Click **Proceed** / **Accept the Risk and Continue** / **visit this website**
-
-This is safe. The warning means the certificate wasn't issued by a public authority, not that the connection is insecure. Your messages are still end-to-end encrypted regardless.
-
-> **Important:** Users connecting to your instance from the Hush web client on a different machine must also accept this certificate by visiting your IP directly first. For a seamless experience, use a domain instead.
+> **For production use, get a domain.** Free subdomains from [DuckDNS](https://www.duckdns.org), [FreeDNS](https://freedns.afraid.org), or [No-IP](https://www.noip.com) work perfectly. Point it at your server and re-run with `--domain` — Caddy gets a real Let's Encrypt certificate automatically. Every self-hosted project (Matrix, Nextcloud, Gitea, Vaultwarden) requires this for the same reason.
 
 ### Flags
 
