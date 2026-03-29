@@ -139,6 +139,7 @@ export default function Chat({
   wsClient: wsClientProp,
   members = [],
   onNewMessage,
+  baseUrl = '',
 }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -199,7 +200,7 @@ export default function Chat({
 
     const loadHistory = async () => {
       try {
-        const list = await api.getChannelMessages(token, serverId, channelId, { limit: 50 });
+        const list = await api.getChannelMessages(token, serverId, channelId, { limit: 50 }, baseUrl);
         const decrypted = [];
         for (let i = list.length - 1; i >= 0; i--) {
           const m = list[i];
@@ -237,7 +238,7 @@ export default function Chat({
     setLoadMoreLoading(true);
     try {
       const before = new Date(oldestTs).toISOString();
-      const list = await api.getChannelMessages(token, serverId, channelId, { before, limit: 50 });
+      const list = await api.getChannelMessages(token, serverId, channelId, { before, limit: 50 }, baseUrl);
       if (list.length === 0) {
         setHasMoreOlder(false);
         return;

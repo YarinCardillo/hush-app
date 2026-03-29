@@ -19,6 +19,7 @@ export default function TextChannel({
   onToggleDrawer,
   onMobileBack,
   sidebarSlot = null,
+  baseUrl = '',
 }) {
   const { user } = useAuth();
   const currentUserId = user?.id ?? '';
@@ -80,6 +81,7 @@ export default function TextChannel({
             getHistoryStore={getHistoryStore}
             wsClient={wsClient}
             members={members}
+            baseUrl={baseUrl}
           />
         </div>
         {sidebarSlot}

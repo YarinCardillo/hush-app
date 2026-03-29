@@ -44,7 +44,7 @@ function getFriendlyRoomError(errorMessage) {
  * Voice channel view: LiveKit room (server-{serverId}-channel-{channel.id}), video grid, controls, chat sidebar.
  * Used by ServerLayout when currentChannel.type === 'voice'.
  */
-export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], members = [], onlineUserIds, myRole = 'member', showToast, onMemberUpdate, showMembers = false, showChatPanel = false, showParticipantsPanel = false, onTogglePanel, onLeave, onOrbPhaseChange, serverParticipants = [], voiceMuteStates, onMobileBack, voiceControlsRef, onVoiceStateChange }) {
+export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], members = [], onlineUserIds, myRole = 'member', showToast, onMemberUpdate, showMembers = false, showChatPanel = false, showParticipantsPanel = false, onTogglePanel, onLeave, onOrbPhaseChange, serverParticipants = [], voiceMuteStates, onMobileBack, voiceControlsRef, onVoiceStateChange, baseUrl = '' }) {
   const navigate = useNavigate();
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile';
@@ -656,6 +656,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
                   recipientUserIds={recipientUserIds}
                   members={members}
                   onNewMessage={handleNewChatMessage}
+                  baseUrl={baseUrl}
                 />
               </div>
             </div>
@@ -720,6 +721,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
                     recipientUserIds={recipientUserIds}
                     members={members}
                     onNewMessage={handleNewChatMessage}
+                    baseUrl={baseUrl}
                   />
                 </div>
               </div>
