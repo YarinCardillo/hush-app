@@ -14,6 +14,7 @@ import { useInstanceContext } from '../contexts/InstanceContext';
 import { JWT_KEY, getDeviceId } from '../hooks/useAuth';
 import { bytesToHex } from '../lib/identityVault';
 import { TransparencyVerifier } from '../lib/transparencyVerifier';
+import { createInstanceApi } from '../lib/instanceApi';
 import { useKeyPackageMaintenance } from '../hooks/useKeyPackageMaintenance';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useSidebarResize } from '../hooks/useSidebarResize';
@@ -165,6 +166,15 @@ export default function ServerLayout() {
   /** Per-instance WS client, or null if not connected / no instance. */
   const wsClient = instanceUrl ? getWsClient(instanceUrl) : null;
 
+  /**
+   * Bound API client for the active guild's instance.
+   * Re-created when instanceUrl changes. Pass to MLS deps instead of raw api module.
+   */
+  const instanceApi = useMemo(() => {
+    if (!instanceUrl) return null;
+    return createInstanceApi(instanceUrl, () => getTokenForInstance(instanceUrl));
+  }, [instanceUrl, getTokenForInstance]);
+
   /** Real-time connection quality from WS ping/pong. */
   const connQuality = useConnectionQuality(wsClient);
 
@@ -291,7 +301,8 @@ export default function ServerLayout() {
       if (!db) return null;
       const credential = await mlsStoreLib.getCredential(db);
       if (!credential) return null;
-      const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+      if (!instanceApi) return null;
+      const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api: instanceApi };
       const { metadataKeyBytes } = await mlsGroup.exportGuildMetadataKey(deps, guildId);
       return metadataKeyBytes;
     } catch {
@@ -342,6 +353,7 @@ export default function ServerLayout() {
     deviceId: getDeviceId(),
     threshold: handshakeData?.key_package_low_threshold ?? null,
     wsClient,
+    baseUrl: instanceUrl ?? '',
   });
 
   // ── WS event handlers ─────────────────────────────────────────────────
@@ -646,11 +658,12 @@ export default function ServerLayout() {
 
       if (joinedId === currentUserId && data.server_id) {
         if (!token || !currentUserId) return;
+        if (!instanceApi) return;
         try {
           const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
           const credential = await mlsStoreLib.getCredential(db);
           if (!credential) return;
-          const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+          const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api: instanceApi };
           await mlsGroup.joinGuildMetadataGroup(deps, data.server_id);
         } catch (err) {
           console.warn('[mls] Failed to join guild metadata group on member_joined:', err);
@@ -705,11 +718,12 @@ export default function ServerLayout() {
       if (!data.channel_id || !data.commit_bytes) return;
 
       if (!token) return;
+      if (!instanceApi) return;
 
       try {
         const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
         const credential = await mlsStoreLib.getCredential(db);
-        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api: instanceApi };
         const commitBytes = base64ToUint8ArraySL(data.commit_bytes);
         await mlsGroup.processCommit(deps, data.channel_id, commitBytes);
       } catch (err) {
@@ -717,7 +731,7 @@ export default function ServerLayout() {
         try {
           const db2 = await mlsStoreLib.openStore(currentUserId, getDeviceId());
           const credential2 = await mlsStoreLib.getCredential(db2);
-          const deps2 = { db: db2, token, credential: credential2, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+          const deps2 = { db: db2, token, credential: credential2, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api: instanceApi };
           await mlsGroup.catchupCommits(deps2, data.channel_id);
         } catch (catchupErr) {
           console.warn('[mls] Catchup also failed for channel', data.channel_id, catchupErr);
@@ -738,11 +752,12 @@ export default function ServerLayout() {
       if (!data.channel_id || !data.requester_id) return;
 
       if (!token) return;
+      if (!instanceApi) return;
 
       try {
         const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
         const credential = await mlsStoreLib.getCredential(db);
-        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api: instanceApi };
         await mlsGroup.removeMemberFromChannel(deps, data.channel_id, data.requester_id);
       } catch (err) {
         console.warn('[mls] Failed to commit remove for', data.requester_id, 'in channel', data.channel_id, err);
@@ -778,12 +793,13 @@ export default function ServerLayout() {
       .filter((c) => c.type === 'text' || c.type === 'voice')
       .map((c) => c.id);
 
+    if (!instanceApi) return;
     const joinMissingGroups = async () => {
       mlsJoinRunningRef.current = true;
       try {
         const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
         const credential = await mlsStoreLib.getCredential(db);
-        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api: instanceApi };
         const failures = mlsJoinFailuresRef.current;
 
         // Guild metadata group
@@ -837,13 +853,14 @@ export default function ServerLayout() {
 
   useEffect(() => {
     if (!currentUserId || !authToken || !token) return;
+    if (!instanceApi) return;
 
     const runSelfUpdates = async () => {
       try {
         const db = await mlsStoreLib.openStore(currentUserId, getDeviceId());
         const credential = await mlsStoreLib.getCredential(db);
         if (!credential) return;
-        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api };
+        const deps = { db, token, credential, mlsStore: mlsStoreLib, hushCrypto: hushCryptoLib, api: instanceApi };
         const allEpochs = await mlsStoreLib.listAllGroupEpochs(db);
         for (const { key: channelId } of allEpochs) {
           try {
@@ -910,10 +927,11 @@ export default function ServerLayout() {
   useEffect(() => {
     if (!handshakeData?.transparency_url || !handshakeData?.log_public_key) return;
     if (!token || !identityKeyRef?.current?.publicKey) return;
+    if (!instanceUrl) return;
 
     const pubKeyHex = bytesToHex(identityKeyRef.current.publicKey);
     const verifier = new TransparencyVerifier(
-      handshakeData.transparency_url,
+      instanceUrl,
       handshakeData.log_public_key,
     );
 
@@ -935,12 +953,13 @@ export default function ServerLayout() {
   useEffect(() => {
     if (!handshakeData?.transparency_url || !handshakeData?.log_public_key) return;
     if (!token || !identityKeyRef?.current?.publicKey) return;
+    if (!instanceUrl) return;
 
     const check = async () => {
       try {
         const pubKeyHex = bytesToHex(identityKeyRef.current.publicKey);
         const verifier = new TransparencyVerifier(
-          handshakeData.transparency_url,
+          instanceUrl,
           handshakeData.log_public_key,
         );
         const result = await verifier.verifyOwnKey(pubKeyHex, token);
@@ -968,10 +987,11 @@ export default function ServerLayout() {
 
       if (!handshakeData?.transparency_url || !handshakeData?.log_public_key) return;
       if (!token || !identityKeyRef?.current?.publicKey) return;
+      if (!instanceUrl) return;
 
       const pubKeyHex = bytesToHex(identityKeyRef.current.publicKey);
       const verifier = new TransparencyVerifier(
-        handshakeData.transparency_url,
+        instanceUrl,
         handshakeData.log_public_key,
       );
       verifier.verifyOwnKey(pubKeyHex, token)
@@ -1490,6 +1510,7 @@ export default function ServerLayout() {
                     onMobileBack={handleMobileBack}
                     voiceControlsRef={voiceControlsRef}
                     onVoiceStateChange={handleVoiceStateChange}
+                    baseUrl={instanceUrl ?? ''}
                   />
                 </div>
               )}
@@ -1519,6 +1540,7 @@ export default function ServerLayout() {
                     onToggleDrawer={undefined}
                     onMobileBack={handleMobileBack}
                     sidebarSlot={null}
+                    baseUrl={instanceUrl ?? ''}
                   />
                 ) : currentChannel && currentChannel.type !== 'voice' ? (
                   <div className="lay-placeholder" style={{ position: 'relative', zIndex: 1 }}>Unknown channel type</div>
@@ -1582,6 +1604,7 @@ export default function ServerLayout() {
                   voiceMuteStates={voiceMuteStates}
                   voiceControlsRef={voiceControlsRef}
                   onVoiceStateChange={handleVoiceStateChange}
+                  baseUrl={instanceUrl ?? ''}
                 />
               </div>
             )}
@@ -1608,6 +1631,7 @@ export default function ServerLayout() {
                   showMembers={showMembers}
                   onToggleMembers={() => togglePanel('members')}
                   onToggleDrawer={isMobile ? toggleDrawer : undefined}
+                  baseUrl={instanceUrl ?? ''}
                   sidebarSlot={!isMobile ? (
                     <div className={`sidebar-desktop ${showMembers ? 'sidebar-desktop-open' : ''}`}>
                       <div className="sidebar-desktop-inner">
