@@ -109,6 +109,7 @@ import {
   getInstanceToken,
   getLocalToken,
   clearSession,
+  HOME_INSTANCE_KEY,
 } from './useAuth';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -305,6 +306,35 @@ describe('useAuth — performRegister', () => {
     expect(result.current.token).toBeNull();
     expect(result.current.user).toBeNull();
     expect(result.current.needsPinSetup).toBe(false);
+  });
+
+  it('stores home instance URL in localStorage on registration', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.performRegister(
+        'newuser',
+        'New User',
+        'word '.repeat(12).trim(),
+        undefined,
+        'https://chat.example.com',
+      );
+    });
+
+    expect(localStorage.getItem(HOME_INSTANCE_KEY)).toBe('https://chat.example.com');
+  });
+
+  it('stores window.location.origin when no baseUrl is provided on registration', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.performRegister('newuser', 'New User', 'word '.repeat(12).trim());
+    });
+
+    // jsdom sets window.location.origin to 'http://localhost' by default.
+    expect(localStorage.getItem(HOME_INSTANCE_KEY)).toBe(window.location.origin);
   });
 });
 

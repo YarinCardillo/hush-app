@@ -80,6 +80,7 @@ const GUEST_EXPIRY_WARNING_MS = 5 * 60 * 1000;
 // ── Module-level constants ───────────────────────────────────────────────────
 
 export const JWT_KEY = 'hush_jwt';
+export const HOME_INSTANCE_KEY = 'hush_home_instance';
 
 // ── Per-instance JWT storage ─────────────────────────────────────────────────
 
@@ -810,6 +811,7 @@ export function useAuth() {
       localStorage.setItem(`${VAULT_USER_KEY_PREFIX}${u.id}`, bytesToHex(publicKey));
       requirePinSetup();
       setVaultState('unlocked');
+      localStorage.setItem(HOME_INSTANCE_KEY, baseUrl || window.location.origin);
       applyVaultTimeout(u.id);
       return { user: u };
     } catch (err) {
@@ -854,6 +856,7 @@ export function useAuth() {
         );
       }
       requirePinSetup();
+      localStorage.setItem(HOME_INSTANCE_KEY, baseUrl || window.location.origin);
       return authResult;
     } catch (err) {
       setError(err);
@@ -1000,7 +1003,8 @@ export function useAuth() {
       // with challenge-response to get a fresh session.
       const existingJwt = getLocalToken();
       if (!existingJwt && publicKey && privateKey) {
-        const authResult = await performChallengeResponse(privateKey, publicKey);
+        const homeInstance = localStorage.getItem(HOME_INSTANCE_KEY) || '';
+        const authResult = await performChallengeResponse(privateKey, publicKey, homeInstance);
         // performChallengeResponse sets token, user, vaultState='unlocked', applyVaultTimeout.
         return authResult;
       }
