@@ -4,8 +4,58 @@ const STORE_INSTANCES = 'instances';
 const FALLBACK_INSTANCES_KEY = 'hush_auth_instances_fallback';
 const SELECTED_INSTANCE_KEY = 'hush_auth_instance_selected';
 const ACTIVE_INSTANCE_KEY = 'hush_auth_instance_active';
+const DEFAULT_MIGRATION_KEY = 'hush_auth_instance_default_origin_migrated_v1';
 
-export const DEFAULT_AUTH_INSTANCE_URL = 'https://app.gethush.live';
+export const HOSTED_AUTH_INSTANCE_URL = 'https://app.gethush.live';
+
+function resolveDefaultAuthInstanceUrl() {
+  if (typeof window === 'undefined') {
+    return HOSTED_AUTH_INSTANCE_URL;
+  }
+
+  const currentOrigin = normalizeInstanceUrl(window.location?.origin);
+  if (!currentOrigin) {
+    return HOSTED_AUTH_INSTANCE_URL;
+  }
+
+  try {
+    const currentHost = new URL(currentOrigin).host;
+    if (currentHost === 'gethush.live') {
+      return HOSTED_AUTH_INSTANCE_URL;
+    }
+  } catch {
+    return HOSTED_AUTH_INSTANCE_URL;
+  }
+
+  return currentOrigin;
+}
+
+export const DEFAULT_AUTH_INSTANCE_URL = resolveDefaultAuthInstanceUrl();
+
+function maybeMigrateLegacyHostedSelection() {
+  if (typeof window === 'undefined') return;
+  if (DEFAULT_AUTH_INSTANCE_URL === HOSTED_AUTH_INSTANCE_URL) return;
+
+  try {
+    if (localStorage.getItem(DEFAULT_MIGRATION_KEY) === '1') {
+      return;
+    }
+
+    const selected = normalizeInstanceUrl(localStorage.getItem(SELECTED_INSTANCE_KEY));
+    const active = normalizeInstanceUrl(sessionStorage.getItem(ACTIVE_INSTANCE_KEY));
+
+    if (!selected || selected === HOSTED_AUTH_INSTANCE_URL) {
+      localStorage.setItem(SELECTED_INSTANCE_KEY, DEFAULT_AUTH_INSTANCE_URL);
+    }
+    if (!active || active === HOSTED_AUTH_INSTANCE_URL) {
+      sessionStorage.setItem(ACTIVE_INSTANCE_KEY, DEFAULT_AUTH_INSTANCE_URL);
+    }
+
+    localStorage.setItem(DEFAULT_MIGRATION_KEY, '1');
+  } catch {
+    // Best-effort only.
+  }
+}
 
 function createDefaultRecord() {
   return {
@@ -181,11 +231,13 @@ export function getInstanceDisplayName(value) {
 }
 
 export function getSelectedAuthInstanceUrlSync() {
+  maybeMigrateLegacyHostedSelection();
   if (typeof localStorage === 'undefined') return DEFAULT_AUTH_INSTANCE_URL;
   return normalizeInstanceUrl(localStorage.getItem(SELECTED_INSTANCE_KEY)) || DEFAULT_AUTH_INSTANCE_URL;
 }
 
 export function getActiveAuthInstanceUrlSync() {
+  maybeMigrateLegacyHostedSelection();
   if (typeof sessionStorage !== 'undefined') {
     const active = normalizeInstanceUrl(sessionStorage.getItem(ACTIVE_INSTANCE_KEY));
     if (active) return active;

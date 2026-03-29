@@ -93,6 +93,7 @@ function toWsUrl(url) {
  * @returns {{
  *   instanceStates: Map<string, InstanceState>,
  *   mergedGuilds: Array<object>,
+ *   guildsLoaded: boolean,
  *   bootInstance: (instanceUrl: string) => Promise<void>,
  *   disconnectInstance: (instanceUrl: string) => Promise<void>,
  *   getWsClient: (instanceUrl: string) => object|null,
@@ -103,7 +104,7 @@ function toWsUrl(url) {
  * }}
  */
 export function useInstances() {
-  const { identityKeyRef, user: localUser } = useAuth();
+  const { identityKeyRef, user: localUser, vaultState, loading: authLoading } = useAuth();
 
   /**
    * Per-instance runtime state stored in a ref (avoids stale closure issues
@@ -130,6 +131,12 @@ export function useInstances() {
   const [instanceStates, setInstanceStates] = useState(new Map());
 
   /**
+   * True once the initial boot sequence (IDB read + instance boot) has finished.
+   * Consumers should wait for this before treating mergedGuilds as authoritative.
+   */
+  const [guildsLoaded, setGuildsLoaded] = useState(false);
+
+  /**
    * Persisted guild order from IDB (array of guild IDs).
    * @type {[string[], Function]}
    */
@@ -137,6 +144,9 @@ export function useInstances() {
 
   /** IDB handle, opened once on mount. */
   const dbRef = useRef(null);
+
+  /** Monotonic generation used to discard stale async boot completions. */
+  const runtimeGenerationRef = useRef(0);
 
   // ── Metadata extraction helper ──────────────────────────────────────────
 
@@ -341,7 +351,10 @@ export function useInstances() {
    * @param {string} instanceUrl - Canonical base URL (e.g. https://a.example.com)
    * @returns {Promise<void>}
    */
-  const bootInstance = useCallback(async (instanceUrl) => {
+  const bootInstance = useCallback(async (instanceUrl, expectedGeneration = runtimeGenerationRef.current) => {
+    const isActiveGeneration = () => expectedGeneration === runtimeGenerationRef.current;
+    if (!isActiveGeneration()) return;
+
     const identityKey = identityKeyRef?.current;
     if (!identityKey) {
       throw new Error('bootInstance: no identity key available — vault must be unlocked');
@@ -361,6 +374,7 @@ export function useInstances() {
     try {
       // Step 1: Handshake (public, no auth).
       const handshakeData = await getHandshake(instanceUrl);
+      if (!isActiveGeneration()) return;
 
       // Step 2: Auth.
       const { privateKey, publicKey } = identityKey;
@@ -377,6 +391,7 @@ export function useInstances() {
         const signature = await signChallenge(nonceBytes, privateKey);
         const signatureBase64 = toBase64(signature);
         const result = await verifyChallenge(publicKeyBase64, nonce, signatureBase64, deviceId, instanceUrl);
+        if (!isActiveGeneration()) return;
         jwt = result.token;
         authUser = result.user;
       } catch (err) {
@@ -392,6 +407,7 @@ export function useInstances() {
           null,
           instanceUrl,
         );
+        if (!isActiveGeneration()) return;
         jwt = result.token;
         authUser = result.user;
       }
@@ -408,6 +424,7 @@ export function useInstances() {
           lastSeen: Date.now(),
         });
       }
+      if (!isActiveGeneration()) return;
 
       // Step 4: Create and connect WS client. Close any existing WS first.
       const entry = instancesRef.current.get(instanceUrl);
@@ -425,6 +442,10 @@ export function useInstances() {
 
       // Step 5: Fetch guilds, extract names from metadata, and stamp with instanceUrl.
       const guilds = await getMyGuilds(jwt, instanceUrl);
+      if (!isActiveGeneration()) {
+        try { wsClient.disconnect(); } catch { /* noop */ }
+        return;
+      }
       const stampedGuilds = stampGuilds(guilds, instanceUrl);
 
       // Step 6: Update entry.
@@ -441,6 +462,7 @@ export function useInstances() {
 
       flushState();
     } catch (err) {
+      if (!isActiveGeneration()) return;
       // Mark as offline but keep entry so reconnect can retry.
       const entry = instancesRef.current.get(instanceUrl);
       if (entry) {
@@ -511,7 +533,7 @@ export function useInstances() {
   // ── registerLocalInstance (post-auth shortcut) ──────────────────────────
 
   /**
-   * Registers the active auth instance as a connected instance using an existing JWT.
+   * Registers the current origin as a connected instance using an existing JWT.
    * Skips challenge-response auth — used after registration/recovery when
    * the caller already has a valid session.
    *
@@ -519,7 +541,10 @@ export function useInstances() {
    * @param {{ id: string, username: string }} authUser - Authenticated user
    * @returns {Promise<void>}
    */
-  const registerLocalInstance = useCallback(async (jwt, authUser) => {
+  const registerLocalInstance = useCallback(async (jwt, authUser, expectedGeneration = runtimeGenerationRef.current) => {
+    const isActiveGeneration = () => expectedGeneration === runtimeGenerationRef.current;
+    if (!isActiveGeneration()) return;
+
     const instanceUrl = getActiveAuthInstanceUrlSync();
 
     // Save to IDB.
@@ -537,6 +562,7 @@ export function useInstances() {
     } catch (err) {
       console.warn('[useInstances] registerLocalInstance IDB save failed:', err);
     }
+    if (!isActiveGeneration()) return;
 
     // Create WS connection.
     const existing = instancesRef.current.get(instanceUrl);
@@ -555,8 +581,16 @@ export function useInstances() {
     let guilds = [];
     try {
       const raw = await getMyGuilds(jwt, instanceUrl);
+      if (!isActiveGeneration()) {
+        try { wsClient.disconnect(); } catch { /* noop */ }
+        return;
+      }
       guilds = stampGuilds(raw, instanceUrl);
     } catch { /* no guilds yet — that's fine after fresh registration */ }
+    if (!isActiveGeneration()) {
+      try { wsClient.disconnect(); } catch { /* noop */ }
+      return;
+    }
 
     instancesRef.current.set(instanceUrl, {
       wsClient,
@@ -593,14 +627,55 @@ export function useInstances() {
     return instancesRef.current.get(instanceUrl)?.jwt ?? null;
   }, []);
 
-  // ── Mount: load instances and boot in parallel ────────────────────────────
+  /**
+   * Closes every active WS connection and reconnect timer without mutating
+   * React state. Used by effect cleanup during auth-session transitions.
+   */
+  const disconnectRuntimeEntries = useCallback(() => {
+    for (const entry of instancesRef.current.values()) {
+      if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+      try { entry.wsClient?.disconnect(); } catch { /* noop */ }
+    }
+  }, []);
+
+  /**
+   * Clears all runtime instance state for the current session.
+   */
+  const resetRuntimeState = useCallback(() => {
+    disconnectRuntimeEntries();
+    instancesRef.current = new Map();
+    flushState();
+    setGuildsLoaded(false);
+  }, [disconnectRuntimeEntries, flushState]);
+
+  // ── Boot: load instances and connect when auth is ready ──────────────────
+  //
+  // This effect is keyed to the authenticated session, not to component
+  // lifetime. When auth is rehydrating, locked, logged out, or switched to a
+  // different user, all runtime connections are torn down. When the vault is
+  // unlocked for the current user, stored instances are booted and the current
+  // origin is ensured as a connected instance when a local JWT exists.
 
   useEffect(() => {
     let cancelled = false;
+    runtimeGenerationRef.current += 1;
+    const generation = runtimeGenerationRef.current;
+
+    if (authLoading) {
+      resetRuntimeState();
+      return () => {};
+    }
+
+    if (vaultState !== 'unlocked' || !localUser?.id) {
+      resetRuntimeState();
+      return () => {};
+    }
+
+    resetRuntimeState();
 
     (async () => {
       try {
-        const db = await openInstanceRegistry();
+        const db = dbRef.current ?? await openInstanceRegistry();
         if (cancelled) return;
 
         dbRef.current = db;
@@ -612,33 +687,37 @@ export function useInstances() {
 
         if (cancelled) return;
 
-        if (storedOrder.length > 0) {
-          _setGuildOrderState(storedOrder);
-        }
+        _setGuildOrderState(storedOrder);
 
+        const localUrl = getActiveAuthInstanceUrlSync();
         const localJwt = sessionStorage.getItem('hush_jwt');
-        if (storedInstances.length === 0) {
-          if (!localJwt) {
-            // No instances yet — nothing to boot.
-            flushState();
-            return;
-          }
-          if (localUser?.id) {
-            await registerLocalInstance(localJwt, { id: localUser.id, username: localUser.username });
-            return;
-          }
+        const storedUrls = new Set(storedInstances.map(({ instanceUrl }) => instanceUrl));
+        const bootTargets = storedInstances.map(({ instanceUrl }) => ({ type: 'stored', instanceUrl }));
+
+        if (localJwt && !storedUrls.has(localUrl)) {
+          bootTargets.push({ type: 'local', instanceUrl: localUrl });
         }
 
-        // Boot all stored instances in parallel.
-        const results = await Promise.allSettled(
-          storedInstances.map(({ instanceUrl }) => bootInstance(instanceUrl)),
+        if (bootTargets.length === 0) {
+          flushState();
+          return;
+        }
+
+        await Promise.allSettled(
+          bootTargets.map((target) => {
+            if (target.type === 'local') {
+              return registerLocalInstance(localJwt, {
+                id: localUser.id,
+                username: localUser.username,
+              }, generation);
+            }
+            return bootInstance(target.instanceUrl, generation);
+          }),
         );
 
-        // Fallback: if bootInstance failed (no identity key after page refresh)
-        // but a local JWT exists in sessionStorage, use it directly for the
-        // active auth instance.
+        // Fallback: if bootInstance failed but a local JWT still exists in
+        // sessionStorage, use it directly for the local instance.
         if (localJwt && !cancelled) {
-          const localUrl = getActiveAuthInstanceUrlSync();
           const localEntry = instancesRef.current.get(localUrl);
           if (!localEntry || localEntry.connectionState === 'offline') {
             try {
@@ -646,7 +725,7 @@ export function useInstances() {
               if (res.ok) {
                 const u = await res.json();
                 if (!cancelled) {
-                  await registerLocalInstance(localJwt, { id: u.id, username: u.username });
+                  await registerLocalInstance(localJwt, { id: u.id, username: u.username }, generation);
                 }
               }
             } catch {
@@ -655,24 +734,24 @@ export function useInstances() {
           }
         }
       } catch (err) {
-        console.error('[useInstances] mount failed:', err);
+        console.error('[useInstances] boot failed:', err);
+      } finally {
+        if (!cancelled) setGuildsLoaded(true);
       }
     })();
 
     return () => {
       cancelled = true;
-      // Disconnect all WS clients on unmount.
-      for (const entry of instancesRef.current.values()) {
-        if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
-        try { entry.wsClient?.disconnect(); } catch { /* noop */ }
-      }
+      runtimeGenerationRef.current += 1;
+      disconnectRuntimeEntries();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [vaultState, authLoading, localUser?.id, localUser?.username, bootInstance, registerLocalInstance, resetRuntimeState, disconnectRuntimeEntries]);
 
   return {
     instanceStates,
     mergedGuilds,
+    guildsLoaded,
     dmGuilds,
     bootInstance,
     registerLocalInstance,

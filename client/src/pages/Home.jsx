@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_VERSION } from '../utils/constants';
 import { useAuth } from '../contexts/AuthContext';
-import { useInstanceContext } from '../contexts/InstanceContext';
-import { slugify } from '../lib/slugify';
 import { getHandshake } from '../lib/api';
 import { AuthInstanceSelector } from '../components/auth/AuthInstanceSelector.jsx';
 import { RegistrationWizard, hasInterruptedRegistration } from '../components/auth/RegistrationWizard';
@@ -223,31 +221,28 @@ function getFriendlyError(err, instanceUrl = '') {
 export default function Home() {
   useBodyScrollMode(BODY_SCROLL_MODE.SCROLL);
 
-  const navigate = useNavigate();
   const {
     vaultState,
     user,
     performRegister,
     performRecovery,
     unlockVault,
-    lockVault,
     setPIN,
-    performLogout,
     isAuthenticated,
     loading: authLoading,
     error: authError,
     clearError,
+    needsPinSetup,
+    skipPinSetup,
   } = useAuth();
-  const [searchParams] = useSearchParams();
-  const joinParam = searchParams.get('join');
-
   const [authView, setAuthView] = useState(AUTH_VIEW.CHOOSE);
-  const [hasPinSetup, setHasPinSetup] = useState(false);
   const [isPinSetupLoading, setIsPinSetupLoading] = useState(false);
+  const [isRegistrationInstanceLocked, setIsRegistrationInstanceLocked] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
 
   const {
     selectedInstanceUrl,
+    selectedInstanceLabel,
     knownInstances,
     chooseInstance,
     rememberSelectedInstance,
@@ -280,6 +275,12 @@ export default function Home() {
     };
   }, [selectedInstanceUrl]);
 
+  useEffect(() => {
+    if (authView !== AUTH_VIEW.REGISTER_WIZARD) {
+      setIsRegistrationInstanceLocked(false);
+    }
+  }, [authView]);
+
   const registrationMode = handshakeData?.registration_mode ?? 'open';
   const instanceReachabilityMessage = handshakeError
     ? getInstanceUnreachableMessage(selectedInstanceUrl)
@@ -297,10 +298,6 @@ export default function Home() {
     () => (typeof window !== 'undefined' ? !window.matchMedia('(pointer: coarse)').matches : false),
   );
 
-  // ── Multi-instance state ──────────────────────────────────────────────────
-
-  const { mergedGuilds, registerLocalInstance } = useInstanceContext();
-
   // ── Resume interrupted registration (iOS page discard recovery) ────────────
   useEffect(() => {
     if (authLoading || vaultState === 'locked' || vaultState === 'unlocked') return;
@@ -309,50 +306,37 @@ export default function Home() {
     });
   }, [authLoading, vaultState]);
 
-  // ── Vault state -> view routing ─────────────────────────────────────────────
+  // ── Vault state -> authView sync ────────────────────────────────────────────
+  //
+  // Sets the correct UI view based on vault state. Routing decisions (navigate
+  // to guild, /home, invite) are handled by the BootController in App.jsx —
+  // Home.jsx only manages which form/screen to display.
 
   useEffect(() => {
     if (authLoading) return;
+
+    if (needsPinSetup && isAuthenticated) {
+      setAuthView(AUTH_VIEW.PIN_SETUP);
+      return;
+    }
 
     if (vaultState === 'locked') {
       setAuthView(AUTH_VIEW.PIN_UNLOCK);
       return;
     }
 
-    if (vaultState === 'unlocked') {
-      // Don't navigate away while PIN setup is in progress — let the user set a PIN first.
-      if (authView === AUTH_VIEW.PIN_SETUP) return;
-
-      // Navigate to invite if a joinParam is present.
-      if (joinParam) {
-        navigate(`/invite/${encodeURIComponent(joinParam)}`, { replace: true });
-        return;
+    // vaultState === 'none' — ensure we show login/register, not a stale PIN view.
+    if (vaultState === 'none') {
+      if (authView === AUTH_VIEW.PIN_UNLOCK || authView === AUTH_VIEW.PIN_SETUP) {
+        setAuthView(AUTH_VIEW.CHOOSE);
       }
-
-      // Navigate to first guild via instance-aware route, or /home for empty state.
-      if (mergedGuilds.length > 0) {
-        const first = mergedGuilds[0];
-        const instanceHost = first.instanceUrl
-          ? new URL(first.instanceUrl).host
-          : null;
-        const guildSlug = slugify(first._localName ?? first.name ?? first.id ?? 'guild');
-        if (instanceHost) {
-          navigate(`/${instanceHost}/${guildSlug}`, { replace: true });
-          return;
-        }
-      }
-
-      // No guilds or no instance host available — go to the empty state page.
-      navigate('/home', { replace: true });
-      return;
     }
 
-    // vaultState === 'none' — show login/register
-    if (authView === AUTH_VIEW.PIN_UNLOCK || authView === AUTH_VIEW.PIN_SETUP) {
-      setAuthView(AUTH_VIEW.CHOOSE);
-    }
+    // vaultState === 'unlocked' — no action. BootController transitions the app
+  // away from Home when auth is ready. If PIN_SETUP is in progress (post-register),
+  // we stay here until the user completes or skips it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vaultState, authLoading, mergedGuilds]);
+  }, [vaultState, authLoading, needsPinSetup, isAuthenticated]);
 
   // ── Error toast ─────────────────────────────────────────────────────────────
 
@@ -439,58 +423,19 @@ export default function Home() {
   // ── Auth action handlers ────────────────────────────────────────────────────
 
   const handleRegisterComplete = useCallback(async ({ username, displayName, mnemonic, inviteCode }) => {
-    const instanceUrl = await chooseInstance(selectedInstanceUrl);
-    try {
-      const result = await performRegister(username, displayName, mnemonic, inviteCode);
-      await rememberSelectedInstance(instanceUrl);
-      // Use the returned user — React state (setUser) hasn't flushed yet.
-      const jwt = sessionStorage.getItem('hush_jwt');
-      const authUser = result?.user;
-      if (jwt && authUser) {
-        registerLocalInstance(jwt, { id: authUser.id, username: authUser.username }).catch((err) => {
-          console.warn('[Home] registerLocalInstance after register failed:', err);
-        });
-      }
-      setAuthView(AUTH_VIEW.PIN_SETUP);
-    } catch {
-      // Error surfaces via authError toast.
-    }
-  }, [chooseInstance, performRegister, registerLocalInstance, rememberSelectedInstance, selectedInstanceUrl]);
+    const instanceUrl = await rememberSelectedInstance(selectedInstanceUrl);
+    await performRegister(username, displayName, mnemonic, inviteCode, instanceUrl);
+  }, [performRegister, rememberSelectedInstance, selectedInstanceUrl]);
 
   const handleRecoverySubmit = useCallback(async (mnemonic, revokeOtherDevices) => {
-    const instanceUrl = await chooseInstance(selectedInstanceUrl);
-    try {
-      const result = await performRecovery(mnemonic, revokeOtherDevices);
-      await rememberSelectedInstance(instanceUrl);
-      const jwt = sessionStorage.getItem('hush_jwt');
-      const authUser = result?.user;
-      if (jwt && authUser) {
-        registerLocalInstance(jwt, { id: authUser.id, username: authUser.username }).catch((err) => {
-          console.warn('[Home] registerLocalInstance after recovery failed:', err);
-        });
-      }
-      setAuthView(AUTH_VIEW.PIN_SETUP);
-    } catch {
-      // Error surfaces via authError toast.
-    }
-  }, [chooseInstance, performRecovery, registerLocalInstance, rememberSelectedInstance, selectedInstanceUrl]);
+    const instanceUrl = await rememberSelectedInstance(selectedInstanceUrl);
+    await performRecovery(mnemonic, revokeOtherDevices, instanceUrl);
+  }, [performRecovery, rememberSelectedInstance, selectedInstanceUrl]);
 
   const handlePinUnlock = useCallback(async (pin) => {
-    const instanceUrl = await chooseInstance(selectedInstanceUrl);
-    const result = await unlockVault(pin);
-    await rememberSelectedInstance(instanceUrl);
-    // If unlockVault re-authenticated (tab was closed), boot the local instance
-    // so guilds appear immediately.
-    const authUser = result?.user;
-    if (authUser) {
-      const jwt = sessionStorage.getItem('hush_jwt');
-      if (jwt) {
-        registerLocalInstance(jwt, { id: authUser.id, username: authUser.username }).catch((err) => {
-          console.warn('[Home] registerLocalInstance after PIN unlock failed:', err);
-        });
-      }
-    }
-  }, [chooseInstance, rememberSelectedInstance, selectedInstanceUrl, unlockVault, registerLocalInstance]);
+    await rememberSelectedInstance(selectedInstanceUrl);
+    await unlockVault(pin);
+  }, [rememberSelectedInstance, selectedInstanceUrl, unlockVault]);
 
   const handleSwitchAccount = useCallback(() => {
     // Don't wipe the vault yet — user might press Back.
@@ -503,26 +448,17 @@ export default function Home() {
     setIsPinSetupLoading(true);
     try {
       await setPIN(pin);
-      setHasPinSetup(true);
-      // Navigate to invite or /home; vault routing effect handles guild redirect.
-      const target = joinParam
-        ? `/invite/${encodeURIComponent(joinParam)}`
-        : '/home';
-      navigate(target, { replace: true });
     } catch (err) {
       // Error shown in PinSetupModal.
       throw err;
     } finally {
       setIsPinSetupLoading(false);
     }
-  }, [setPIN, joinParam, navigate]);
+  }, [setPIN]);
 
   const handlePinSetupSkip = useCallback(() => {
-    const target = joinParam
-      ? `/invite/${encodeURIComponent(joinParam)}`
-      : '/home';
-    navigate(target, { replace: true });
-  }, [joinParam, navigate]);
+    skipPinSetup();
+  }, [skipPinSetup]);
 
   // ── View content ─────────────────────────────────────────────────────────────
 
@@ -565,8 +501,15 @@ export default function Home() {
       return (
         <RegistrationWizard
           onComplete={handleRegisterComplete}
-          onCancel={() => { setAuthView(AUTH_VIEW.CHOOSE); clearError?.(); }}
+          onCancel={() => {
+            setIsRegistrationInstanceLocked(false);
+            setAuthView(AUTH_VIEW.CHOOSE);
+            clearError?.();
+          }}
           registrationMode={registrationMode}
+          instanceUrl={selectedInstanceUrl}
+          instanceName={selectedInstanceLabel}
+          onInstanceLockedChange={setIsRegistrationInstanceLocked}
           isLoading={authLoading}
           error={authError}
         />
@@ -766,7 +709,7 @@ export default function Home() {
                 value={selectedInstanceUrl}
                 instances={knownInstances}
                 onSelect={chooseInstance}
-                disabled={authLoading}
+                disabled={authLoading || (authView === AUTH_VIEW.REGISTER_WIZARD && isRegistrationInstanceLocked)}
                 compact
               />
               {handshakeError && (

@@ -15,11 +15,10 @@ import {
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import UserSettingsModal from './UserSettingsModal';
 import GuildCreateModal from './GuildCreateModal';
 import GuildContextMenu from './GuildContextMenu';
-import { buildGuildInviteLink } from '../lib/inviteLinks';
 import { decryptGuildMetadata, fromBase64, importMetadataKey } from '../lib/guildMetadata';
+import { buildGuildInviteLink } from '../lib/inviteLinks';
 import { InstanceContext } from '../contexts/InstanceContext.jsx';
 import { createGuildInvite, searchUsersForDM, createOrFindDM } from '../lib/api';
 
@@ -328,15 +327,14 @@ export default function ServerList({
   const instanceCtx = useContext(InstanceContext);
 
   const mergedGuildsFromCtx = instanceCtx?.mergedGuilds ?? null;
-  const getTokenForInstance = instanceCtx?.getTokenForInstance ?? null;
   const instanceStates = instanceCtx?.instanceStates ?? new Map();
+  const getTokenForInstance = instanceCtx?.getTokenForInstance ?? null;
   const guildOrderFromCtx = instanceCtx?.guildOrder ?? [];
   const setGuildOrder = instanceCtx?.setGuildOrder ?? null;
 
   // Multi-instance guilds take precedence over legacy prop.
   const guilds = mergedGuildsFromCtx ?? guildsProp;
 
-  const [showUserSettings, setShowUserSettings] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   /** Map<guildId, { name: string, icon: string|null }> — decrypted metadata cache */
@@ -610,22 +608,6 @@ export default function ServerList({
         >
           +
         </button>
-      )}
-
-      <button
-        type="button"
-        className="sl-settings-btn"
-        title="User settings"
-        onClick={() => setShowUserSettings(true)}
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      </button>
-
-      {showUserSettings && (
-        <UserSettingsModal onClose={() => setShowUserSettings(false)} />
       )}
 
       {showCreateModal && (

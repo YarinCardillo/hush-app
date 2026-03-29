@@ -9,6 +9,9 @@ import * as hushCrypto from './hushCrypto';
 import { getReadableDeviceLabel } from './deviceLabel';
 import { uploadKeyPackagesAfterAuth as uploadKeyPackagesAfterAuthImpl } from './uploadKeyPackages';
 
+const USERNAME_CHECK_TIMEOUT_MS = 8000;
+const HANDSHAKE_TIMEOUT_MS = 10000;
+
 function resolveAuthBaseUrl(baseUrl = '') {
   return baseUrl || getSelectedAuthInstanceUrlSync();
 }
@@ -46,6 +49,41 @@ function createNetworkError(operation, targetUrl, err) {
   }
   console.error(`[api] ${operation} failed`, { url: targetUrl, err });
   return nextError;
+}
+
+function createFetchSignal(timeoutMs, callerSignal) {
+  if (typeof AbortController === 'undefined') {
+    return {
+      signal: callerSignal,
+      cleanup() {},
+    };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  let removeCallerAbortListener = null;
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort();
+    } else {
+      const forwardAbort = () => controller.abort();
+      callerSignal.addEventListener('abort', forwardAbort, { once: true });
+      removeCallerAbortListener = () => {
+        callerSignal.removeEventListener('abort', forwardAbort);
+      };
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timeoutId);
+      removeCallerAbortListener?.();
+    },
+  };
 }
 
 /**
@@ -325,14 +363,17 @@ export async function requestGuestSession(baseUrl = '') {
  * @param {string} [baseUrl='']
  * @returns {Promise<boolean>} true if available
  */
-export async function checkUsernameAvailable(username, baseUrl = '') {
+export async function checkUsernameAvailable(username, baseUrl = '', signal) {
   const authBaseUrl = baseUrl || getSelectedAuthInstanceUrlSync();
   const targetUrl = `${authBaseUrl}/api/auth/check-username/${encodeURIComponent(username)}`;
+  const { signal: fetchSignal, cleanup } = createFetchSignal(USERNAME_CHECK_TIMEOUT_MS, signal);
   let res;
   try {
-    res = await fetch(targetUrl);
+    res = await fetch(targetUrl, { signal: fetchSignal });
   } catch (err) {
     throw createNetworkError('check username availability', targetUrl, err);
+  } finally {
+    cleanup();
   }
   if (!res.ok) return false;
   const data = await res.json();
@@ -627,13 +668,16 @@ export async function consumeDeviceLinkResult(body, baseUrl = '') {
  * Returns server version, API version, KeyPackage low threshold, and other instance metadata.
  * @returns {Promise<{ server_version: string, api_version: string, min_client_version: string, key_package_low_threshold: number }>}
  */
-export async function getHandshake(baseUrl = '') {
+export async function getHandshake(baseUrl = '', signal) {
   const targetUrl = `${baseUrl}/api/handshake`;
+  const { signal: fetchSignal, cleanup } = createFetchSignal(HANDSHAKE_TIMEOUT_MS, signal);
   let res;
   try {
-    res = await fetch(targetUrl);
+    res = await fetch(targetUrl, { signal: fetchSignal });
   } catch (err) {
     throw createNetworkError('handshake', targetUrl, err);
+  } finally {
+    cleanup();
   }
   if (!res.ok) throw new Error(`handshake failed: ${res.status}`);
   const data = await res.json();

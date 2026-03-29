@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import Home from './Home';
 
+const mockRegistrationWizardProps = vi.hoisted(() => ({ current: null }));
+
 vi.mock('../utils/constants', () => ({
   APP_VERSION: 'test-version',
 }));
@@ -25,16 +27,17 @@ vi.mock('../contexts/AuthContext', () => ({
   })),
 }));
 
-vi.mock('../contexts/InstanceContext', () => ({
-  useInstanceContext: vi.fn(() => ({
-    mergedGuilds: [],
-    registerLocalInstance: vi.fn().mockResolvedValue(undefined),
-  })),
-}));
-
 vi.mock('../components/auth/RegistrationWizard', () => ({
-  RegistrationWizard: function MockRegistrationWizard() {
-    return <div>Registration Wizard</div>;
+  RegistrationWizard: function MockRegistrationWizard(props) {
+    mockRegistrationWizardProps.current = props;
+    return (
+      <div>
+        <div>Registration Wizard</div>
+        <button type="button" onClick={() => props.onInstanceLockedChange?.(true)}>
+          Lock Instance
+        </button>
+      </div>
+    );
   },
   hasInterruptedRegistration: vi.fn().mockResolvedValue(false),
 }));
@@ -90,6 +93,7 @@ describe('Home', () => {
 
   beforeEach(() => {
     cleanup();
+    mockRegistrationWizardProps.current = null;
 
     originalFetch = global.fetch;
     originalMatchMedia = window.matchMedia;
@@ -175,6 +179,20 @@ describe('Home', () => {
     });
     expect(document.body.dataset.hushScrollMode).toBe('scroll');
     expect(document.body.style.overflowY).toBe('auto');
+  });
+
+  it('locks the instance selector once registration advances past the username step', async () => {
+    const user = userEvent.setup();
+    renderHome();
+
+    const instanceSelector = screen.getByRole('button', { name: /connection instance:/i });
+    expect(instanceSelector).not.toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: /create an account/i }));
+    expect(screen.getByText('Registration Wizard')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /lock instance/i }));
+    expect(screen.getByRole('button', { name: /connection instance:/i })).toBeDisabled();
   });
 
   it('offers device linking from the unauthenticated home screen', () => {

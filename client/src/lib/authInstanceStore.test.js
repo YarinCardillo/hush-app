@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_AUTH_INSTANCE_URL,
+  HOSTED_AUTH_INSTANCE_URL,
   getActiveAuthInstanceUrlSync,
   getInstanceDisplayName,
   getSelectedAuthInstanceUrlSync,
@@ -27,7 +28,7 @@ describe('authInstanceStore', () => {
   });
 
   it('normalizes bare hosts to https origins', () => {
-    expect(normalizeInstanceUrl('app.gethush.live')).toBe(DEFAULT_AUTH_INSTANCE_URL);
+    expect(normalizeInstanceUrl('app.gethush.live')).toBe(HOSTED_AUTH_INSTANCE_URL);
     expect(normalizeInstanceUrl('https://chat.example.com/path?q=1')).toBe('https://chat.example.com');
   });
 

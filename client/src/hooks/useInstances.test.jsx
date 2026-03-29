@@ -118,6 +118,8 @@ describe('useInstances', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
+    localStorage.clear();
 
     fakeDb = makeFakeDb();
     registryModule.openInstanceRegistry.mockResolvedValue(fakeDb);
@@ -128,15 +130,21 @@ describe('useInstances', () => {
     registryModule.saveGuildOrder.mockResolvedValue(undefined);
 
     // Provide a fake identity key via mocked useAuth.
+    // vaultState='unlocked' and loading=false so the boot effect proceeds
+    // (it gates on auth readiness before opening IDB/booting instances).
     useAuthMock.mockReturnValue({
       identityKeyRef: { current: FAKE_IDENTITY_KEY },
       user: { id: 'local-user', username: 'testuser' },
       token: 'local-jwt',
+      vaultState: 'unlocked',
+      loading: false,
     });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    sessionStorage.clear();
+    localStorage.clear();
   });
 
   // ── Initial state ──────────────────────────────────────────────────────────
@@ -150,6 +158,26 @@ describe('useInstances', () => {
     });
 
     expect(result.current.mergedGuilds).toEqual([]);
+  });
+
+  it('registers the active auth instance when a local JWT exists but no instances are stored', async () => {
+    const primaryInstanceUrl = 'https://chat.example.com';
+    localStorage.setItem('hush_auth_instance_selected', primaryInstanceUrl);
+    sessionStorage.setItem('hush_auth_instance_active', primaryInstanceUrl);
+    sessionStorage.setItem('hush_jwt', 'local-jwt');
+    apiModule.getMyGuilds.mockResolvedValueOnce([]);
+
+    const { useInstances } = await import('./useInstances.js');
+    const { result } = renderHook(() => useInstances());
+
+    await waitFor(() => {
+      expect(result.current.instanceStates.has(primaryInstanceUrl)).toBe(true);
+    });
+
+    expect(registryModule.saveInstance).toHaveBeenCalledWith(
+      fakeDb,
+      expect.objectContaining({ instanceUrl: primaryInstanceUrl, jwt: 'local-jwt' }),
+    );
   });
 
   // ── bootInstance ──────────────────────────────────────────────────────────
@@ -541,6 +569,8 @@ describe('InstanceContext', () => {
       identityKeyRef: { current: FAKE_IDENTITY_KEY },
       user: { id: 'local-user', username: 'testuser' },
       token: 'local-jwt',
+      vaultState: 'unlocked',
+      loading: false,
     });
   });
 

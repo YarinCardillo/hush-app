@@ -65,11 +65,12 @@ function writeWizardIdbState(state) {
   });
 }
 
-function renderWizard() {
+function renderWizard(props = {}) {
   return render(
     <RegistrationWizard
       onComplete={vi.fn().mockResolvedValue(undefined)}
       onCancel={vi.fn()}
+      {...props}
     />,
   );
 }
@@ -77,6 +78,7 @@ function renderWizard() {
 describe('RegistrationWizard hardening', () => {
   beforeEach(async () => {
     cleanup();
+    vi.useRealTimers();
     generateIdentityMnemonic.mockReset();
     generateIdentityMnemonic.mockReturnValue(ORIGINAL_MNEMONIC);
     checkUsernameAvailable.mockReset();
@@ -88,9 +90,71 @@ describe('RegistrationWizard hardening', () => {
 
   afterEach(async () => {
     cleanup();
+    vi.useRealTimers();
     sessionStorage.clear();
     localStorage.clear();
     await deleteRegistrationDb();
+  });
+
+  it('checks username availability on the selected instance and shows progress', async () => {
+    renderWizard({
+      instanceUrl: 'https://chat.example.com',
+      instanceName: 'chat.example.com',
+    });
+
+    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'alice' } });
+
+    expect(screen.getByText(/checking availability on chat\.example\.com/i)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(checkUsernameAvailable).toHaveBeenCalledWith(
+        'alice', 'https://chat.example.com', expect.any(AbortSignal),
+      );
+    }, { timeout: 2000 });
+    expect(await screen.findByText(/available on chat\.example\.com/i)).toBeInTheDocument();
+  });
+
+  it('blocks progress when username availability cannot be checked', async () => {
+    checkUsernameAvailable.mockRejectedValueOnce(new Error('Load failed'));
+
+    renderWizard({
+      instanceUrl: 'https://chat.example.com',
+      instanceName: 'chat.example.com',
+    });
+
+    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'alice' } });
+
+    await waitFor(() => {
+      expect(checkUsernameAvailable).toHaveBeenCalledWith(
+        'alice', 'https://chat.example.com', expect.any(AbortSignal),
+      );
+    }, { timeout: 2000 });
+    expect(await screen.findByText(/could not reach chat\.example\.com\. tap to retry\./i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled();
+  });
+
+  it('locks the target instance after the username step', async () => {
+    const onInstanceLockedChange = vi.fn();
+
+    renderWizard({
+      instanceUrl: 'https://chat.example.com',
+      instanceName: 'chat.example.com',
+      onInstanceLockedChange,
+    });
+
+    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'alice' } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/available on chat\.example\.com/i)).toBeInTheDocument();
+    }, { timeout: 2000 });
+
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText(/write these 12 words down and keep them safe/i)).toBeInTheDocument();
+    expect(onInstanceLockedChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(screen.getByRole('button', { name: /^← back$/i }));
+    expect(await screen.findByText(/choose a username/i)).toBeInTheDocument();
+    expect(onInstanceLockedChange).toHaveBeenLastCalledWith(true);
   });
 
   it('hides the in-app back button on the mnemonic confirmation step', () => {

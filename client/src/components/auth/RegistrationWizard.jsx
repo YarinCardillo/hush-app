@@ -53,6 +53,12 @@ function getVisibleSteps(registrationMode) {
   return steps;
 }
 
+function hasAdvancedPastUsername(step, visibleSteps) {
+  const usernameIndex = visibleSteps.indexOf(STEP.USERNAME);
+  const currentIndex = visibleSteps.indexOf(step);
+  return usernameIndex !== -1 && currentIndex > usernameIndex;
+}
+
 /**
  * Multi-step registration wizard.
  *
@@ -60,7 +66,9 @@ function getVisibleSteps(registrationMode) {
  *   onComplete: (data: { username: string, displayName: string, mnemonic: string, inviteCode?: string }) => Promise<void>,
  *   onCancel: () => void,
  *   registrationMode?: 'open' | 'invite_only' | 'closed',
+ *   instanceUrl?: string,
  *   instanceName?: string,
+ *   onInstanceLockedChange?: (locked: boolean) => void,
  *   isLoading?: boolean,
  *   error?: Error|null,
  * }} props
@@ -162,13 +170,25 @@ function clearWizardState() {
   clearWizardStateFromIDB(); // async, fire-and-forget
 }
 
-export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'open', instanceName, isLoading = false, error }) {
+export function RegistrationWizard({
+  onComplete,
+  onCancel,
+  registrationMode = 'open',
+  instanceUrl = '',
+  instanceName,
+  onInstanceLockedChange,
+  isLoading = false,
+  error,
+}) {
   const visibleSteps = getVisibleSteps(registrationMode);
   const initialStep = visibleSteps[0];
 
   // Try sessionStorage first (sync), then IDB fallback (async) for iOS page discards.
   const syncSaved = useRef(loadSavedWizardState()).current;
   const syncSavedPastDisplayStep = Boolean(syncSaved?.pastDisplayStep);
+  const syncSavedPastUsernameStep = Boolean(
+    syncSaved?.pastUsernameStep || hasAdvancedPastUsername(syncSaved?.step, visibleSteps),
+  );
   const initialMnemonicState = useRef(
     syncSaved?.mnemonic
       ? { mnemonic: syncSaved.mnemonic, mnemonicWords: syncSaved.mnemonic.split(' ') }
@@ -184,6 +204,7 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
   const [mnemonic, setMnemonic] = useState(initialMnemonicState.mnemonic);
   const [mnemonicWords, setMnemonicWords] = useState(initialMnemonicState.mnemonicWords);
   const [challengePositions, setChallengePositions] = useState(syncSaved?.challengePositions ?? null);
+  const [pastUsernameStep, setPastUsernameStep] = useState(syncSavedPastUsernameStep);
   const [pastDisplayStep, setPastDisplayStep] = useState(syncSavedPastDisplayStep);
   const [savedConfirmed, setSavedConfirmed] = useState(false);
   const [localError, setLocalError] = useState('');
@@ -198,9 +219,13 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
     loadWizardStateFromIDB().then((idbState) => {
       if (!idbState) return;
       const restoredPastDisplayStep = Boolean(idbState.pastDisplayStep);
+      const restoredPastUsernameStep = Boolean(
+        idbState.pastUsernameStep || hasAdvancedPastUsername(idbState.step, visibleSteps),
+      );
       setStep(
         normalizeRestoredStep(idbState.step, visibleSteps, initialStep, restoredPastDisplayStep),
       );
+      setPastUsernameStep(restoredPastUsernameStep);
       setPastDisplayStep(restoredPastDisplayStep);
       setInviteCode(idbState.inviteCode ?? '');
       setUsername(idbState.username ?? '');
@@ -222,16 +247,37 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
       displayName,
       mnemonic,
       challengePositions,
+      pastUsernameStep,
       pastDisplayStep,
     });
-  }, [step, inviteCode, username, displayName, mnemonic, challengePositions, pastDisplayStep]);
+  }, [
+    step,
+    inviteCode,
+    username,
+    displayName,
+    mnemonic,
+    challengePositions,
+    pastUsernameStep,
+    pastDisplayStep,
+  ]);
 
   useEffect(() => {
     setIgnoreExternalError(false);
   }, [error]);
 
-  // Username availability state: 'idle' | 'checking' | 'ok' | 'taken' | 'invalid'
+  useEffect(() => {
+    onInstanceLockedChange?.(pastUsernameStep);
+  }, [onInstanceLockedChange, pastUsernameStep]);
+
+  useEffect(() => {
+    return () => {
+      onInstanceLockedChange?.(false);
+    };
+  }, [onInstanceLockedChange]);
+
+  // Username availability state: 'idle' | 'checking' | 'ok' | 'taken' | 'invalid' | 'error'
   const [usernameState, setUsernameState] = useState('idle');
+  const [usernameRetryKey, setUsernameRetryKey] = useState(0);
   const debounceRef = useRef(null);
 
   const currentStepIndex = visibleSteps.indexOf(step);
@@ -246,6 +292,7 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
     setMnemonic(nextMnemonicState.mnemonic);
     setMnemonicWords(nextMnemonicState.mnemonicWords);
     setChallengePositions(null);
+    setPastUsernameStep(false);
     setPastDisplayStep(false);
     setSavedConfirmed(false);
     setIgnoreExternalError(true);
@@ -265,20 +312,33 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
     }
     setUsernameState('checking');
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    const controller = new AbortController();
     debounceRef.current = setTimeout(async () => {
       try {
-        const available = await checkUsernameAvailable(username);
-        setUsernameState(available ? 'ok' : 'taken');
+        const available = await checkUsernameAvailable(
+          username.trim(), instanceUrl, controller.signal,
+        );
+        if (!controller.signal.aborted) {
+          setUsernameState(available ? 'ok' : 'taken');
+        }
       } catch {
-        // Network error — allow submission, server will reject if taken.
-        setUsernameState('ok');
+        if (!controller.signal.aborted) {
+          setUsernameState('error');
+        }
       }
     }, USERNAME_CHECK_DEBOUNCE_MS);
 
     return () => {
+      controller.abort();
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [username]);
+  }, [instanceUrl, username, usernameRetryKey]);
+
+  const retryUsernameCheck = useCallback(() => {
+    if (usernameState === 'error') {
+      setUsernameRetryKey((k) => k + 1);
+    }
+  }, [usernameState]);
 
   const goBack = useCallback(() => {
     const prevIndex = currentStepIndex - 1;
@@ -309,17 +369,37 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
   }, [inviteCode, goNext]);
 
   const handleUsernameNext = useCallback(() => {
-    if (!username.trim()) {
+    const trimmedUsername = username.trim();
+    const targetInstance = instanceName || 'this instance';
+
+    if (!trimmedUsername) {
       setLocalError('Please enter a username.');
       return;
     }
-    if (!USERNAME_PATTERN.test(username)) {
+    if (!USERNAME_PATTERN.test(trimmedUsername)) {
       setLocalError('Username must be 3-20 characters: letters, numbers, and underscores only.');
       return;
     }
+    if (usernameState === 'checking') {
+      setLocalError(`Checking username availability on ${targetInstance}.`);
+      return;
+    }
+    if (usernameState === 'taken') {
+      setLocalError(`Username already taken on ${targetInstance}.`);
+      return;
+    }
+    if (usernameState === 'error') {
+      setLocalError(`Could not check username availability on ${targetInstance}. Verify the instance and try again.`);
+      return;
+    }
+    if (usernameState !== 'ok') {
+      setLocalError('Choose a valid username to continue.');
+      return;
+    }
+    setPastUsernameStep(true);
     setLocalError('');
     goNext();
-  }, [username, goNext]);
+  }, [goNext, instanceName, username, usernameState]);
 
   const handleMnemonicDisplayNext = useCallback(() => {
     if (!savedConfirmed) return;
@@ -399,9 +479,11 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
         <UsernameStep
           username={username}
           displayName={displayName}
+          instanceName={instanceName}
           usernameState={usernameState}
           onUsernameChange={setUsername}
           onDisplayNameChange={setDisplayName}
+          onRetry={retryUsernameCheck}
           onNext={handleUsernameNext}
           onBack={goBack}
         />
@@ -486,18 +568,34 @@ function InviteCodeStep({ value, onChange, onNext, onCancel }) {
   );
 }
 
-function UsernameStep({ username, displayName, usernameState, onUsernameChange, onDisplayNameChange, onNext, onBack }) {
+function UsernameStep({
+  username,
+  displayName,
+  instanceName,
+  usernameState,
+  onUsernameChange,
+  onDisplayNameChange,
+  onRetry,
+  onNext,
+  onBack,
+}) {
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') onNext();
   };
 
+  const targetInstance = instanceName || 'this instance';
+  const isError = usernameState === 'error';
   const usernameHint =
     usernameState === 'invalid'
       ? '3–20 characters: letters, numbers, underscores only'
+      : usernameState === 'checking'
+      ? `Checking availability on ${targetInstance}...`
       : usernameState === 'taken'
-      ? 'Username already taken'
+      ? `Username already taken on ${targetInstance}`
       : usernameState === 'ok'
-      ? 'Available'
+      ? `Available on ${targetInstance}`
+      : isError
+      ? `Could not reach ${targetInstance}. Tap to retry.`
       : null;
 
   return (
@@ -520,7 +618,17 @@ function UsernameStep({ username, displayName, usernameState, onUsernameChange, 
           autoFocus
         />
         {usernameHint && (
-          <div style={usernameHintStyle(usernameState)} aria-live="polite">
+          <div
+            role={isError ? 'button' : undefined}
+            tabIndex={isError ? 0 : undefined}
+            onClick={isError ? onRetry : undefined}
+            onKeyDown={isError ? (e) => { if (e.key === 'Enter') onRetry(); } : undefined}
+            style={{
+              ...usernameHintStyle(usernameState),
+              ...(isError ? { cursor: 'pointer', textDecoration: 'underline' } : {}),
+            }}
+            aria-live="polite"
+          >
             {usernameHint}
           </div>
         )}
@@ -549,7 +657,7 @@ function UsernameStep({ username, displayName, usernameState, onUsernameChange, 
         <button
           type="button"
           className="btn btn-primary"
-          disabled={!username.trim() || usernameState === 'invalid' || usernameState === 'taken'}
+          disabled={!username.trim() || usernameState !== 'ok'}
           onClick={onNext}
           style={{ flex: 1, padding: '10px' }}
         >

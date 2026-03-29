@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  checkUsernameAvailable,
   createDeviceLinkRequest,
   fetchWithAuth,
   leaveGuild,
@@ -81,8 +82,8 @@ describe('getHandshake', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe('/api/handshake');
-    // getHandshake uses raw fetch with no opts — no Authorization header
-    expect(opts).toBeUndefined();
+    // getHandshake passes a timeout signal but no Authorization header
+    expect(opts).toEqual({ signal: expect.any(AbortSignal) });
   });
 
   it('returns parsed JSON from the handshake endpoint', async () => {
@@ -148,6 +149,48 @@ describe('getHandshake', () => {
         url: 'https://chat.example.com/api/handshake',
       }),
     );
+  });
+});
+
+// ── checkUsernameAvailable ───────────────────────────────────────────────────
+
+describe('checkUsernameAvailable', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns true when the username is available', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ available: true }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await expect(
+      checkUsernameAvailable('alice', 'https://chat.example.com'),
+    ).resolves.toBe(true);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://chat.example.com/api/auth/check-username/alice',
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it('aborts when the caller signal is cancelled', async () => {
+    const controller = new AbortController();
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const mockFetch = vi.fn().mockImplementation((_url, opts) => new Promise((resolve, reject) => {
+      opts.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+    }));
+    vi.stubGlobal('fetch', mockFetch);
+
+    const pending = checkUsernameAvailable('alice', 'https://chat.example.com', controller.signal);
+    controller.abort();
+
+    await expect(pending).rejects.toThrow(
+      'check username availability failed for https://chat.example.com/api/auth/check-username/alice',
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledOnce();
   });
 });
 
