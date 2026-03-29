@@ -114,6 +114,7 @@ export function createWsClient(opts) {
         ws.send(JSON.stringify({ type: 'auth', token: getToken() }));
       }
 
+      startPing();
       emit('open', { isReconnect });
 
       if (isReconnect) {
@@ -136,6 +137,14 @@ export function createWsClient(opts) {
       try {
         const data = JSON.parse(event.data);
         const type = data.type;
+        if (type === 'pong') {
+          if (pingStart > 0) {
+            lastRtt = Math.round(performance.now() - pingStart);
+            pingStart = 0;
+            emit('rtt', { rtt: lastRtt });
+          }
+          return;
+        }
         if (type) emit(type, data);
       } catch (_) {
         // ignore non-JSON
@@ -145,6 +154,7 @@ export function createWsClient(opts) {
     ws.onclose = () => {
       socket = null;
       authSent = false;
+      stopPing();
       emit('close', {});
       scheduleReconnect();
     };
@@ -155,6 +165,7 @@ export function createWsClient(opts) {
   }
 
   function disconnect() {
+    stopPing();
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -190,6 +201,30 @@ export function createWsClient(opts) {
     return reconnecting;
   }
 
+  /** Latest measured round-trip time in milliseconds, or null if unknown. */
+  let lastRtt = null;
+  let pingTimer = null;
+  let pingStart = 0;
+  const PING_INTERVAL_MS = 10_000;
+
+  function startPing() {
+    stopPing();
+    pingTimer = setInterval(() => {
+      if (!isConnected()) return;
+      pingStart = performance.now();
+      socket.send(JSON.stringify({ type: 'ping' }));
+    }, PING_INTERVAL_MS);
+  }
+
+  function stopPing() {
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    lastRtt = null;
+  }
+
+  function getRtt() {
+    return lastRtt;
+  }
+
   function send(type, payload = {}) {
     if (!isConnected()) return;
     socket.send(JSON.stringify({ type, ...payload }));
@@ -205,5 +240,5 @@ export function createWsClient(opts) {
     if (cbs) cbs.delete(callback);
   }
 
-  return { connect, disconnect, send, isConnected, isReconnecting, on, off };
+  return { connect, disconnect, send, isConnected, isReconnecting, getRtt, on, off };
 }

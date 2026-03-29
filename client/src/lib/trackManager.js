@@ -4,25 +4,8 @@
  */
 
 import { RoomEvent, Track, LocalVideoTrack, LocalAudioTrack } from 'livekit-client';
-
-const NOISE_GATE_WORKLET_URL = new URL('./noiseGateWorklet.js', import.meta.url);
-
-/**
- * Preload the noise-gate AudioWorklet so the first publishMic() doesn't wait on addModule.
- * Safe to call multiple times; module is cached per origin.
- */
-export function preloadNoiseGateWorklet() {
-  try {
-    if (typeof AudioContext === 'undefined' || !('audioWorklet' in AudioContext.prototype)) return;
-    const ctx = new AudioContext();
-    ctx.audioWorklet
-      .addModule(NOISE_GATE_WORKLET_URL)
-      .then(() => ctx.close())
-      .catch(() => ctx.close());
-  } catch {
-    // Best-effort preload; actual loading happens in publishMic
-  }
-}
+import { createMicProcessingPipeline } from './micProcessing';
+export { preloadNoiseGateWorklet } from './micProcessing';
 import {
   QUALITY_PRESETS,
   DEFAULT_QUALITY,
@@ -316,38 +299,12 @@ export async function publishMic(room, refs, deviceId = null) {
   };
   if (deviceId) audioConstraints.deviceId = { exact: deviceId };
   const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-  refs.rawMicStreamRef.current = stream;
-  const audioContext = new AudioContext({ sampleRate: 48000 });
-  refs.audioContextRef.current = audioContext;
-  const source = audioContext.createMediaStreamSource(stream);
-  const hasWorklet = typeof audioContext.audioWorklet !== 'undefined';
-  let destination;
-  if (hasWorklet) {
-    try {
-      await audioContext.audioWorklet.addModule(NOISE_GATE_WORKLET_URL);
-      const workletNode = new AudioWorkletNode(audioContext, 'noise-gate-processor');
-      refs.noiseGateNodeRef.current = workletNode;
-      destination = audioContext.createMediaStreamDestination();
-      destination.channelCount = 1;
-      source.connect(workletNode);
-      workletNode.connect(destination);
-      workletNode.port.postMessage({ type: 'updateParams', enabled: true, threshold: -50 });
-    } catch (err) {
-      console.warn('[livekit] AudioWorklet failed, publishing raw audio:', err);
-      destination = audioContext.createMediaStreamDestination();
-      destination.channelCount = 1;
-      source.connect(destination);
-    }
-  } else {
-    destination = audioContext.createMediaStreamDestination();
-    destination.channelCount = 1;
-    source.connect(destination);
-  }
-  // Resume so audio flows immediately; browsers often start AudioContext suspended.
-  if (audioContext.state === 'suspended') {
-    await audioContext.resume();
-  }
-  const processedTrack = destination.stream.getAudioTracks()[0];
+  const pipeline = await createMicProcessingPipeline(stream);
+  refs.rawMicStreamRef.current = pipeline.rawStream;
+  refs.audioContextRef.current = pipeline.audioContext;
+  refs.noiseGateNodeRef.current = pipeline.noiseGateNode;
+
+  const processedTrack = pipeline.processedStream.getAudioTracks()[0];
   const localAudioTrack = new LocalAudioTrack(processedTrack);
   await room.localParticipant.publishTrack(localAudioTrack, {
     source: Track.Source.Microphone,

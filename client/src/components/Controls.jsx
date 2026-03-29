@@ -1,100 +1,140 @@
 import { QUALITY_PRESETS, IS_SCREEN_SHARE_SUPPORTED } from '../utils/constants';
 
 /**
- * VoiceConnectedPanel — mini voice status panel shown at the bottom of the
- * channel list sidebar when the user is connected to a voice channel.
+ * Signal strength icon with dynamic bar count and color based on RTT.
+ * @param {{ bars: number, color: string, isReconnecting: boolean, rtt: number|null }} props
+ */
+function SignalIcon({ bars = 0, color = 'var(--hush-text-muted)', isReconnecting = false, rtt }) {
+  const barDefs = [
+    { x: 1, y: 16, h: 6 },
+    { x: 7, y: 11, h: 11 },
+    { x: 13, y: 6, h: 16 },
+    { x: 19, y: 1, h: 21 },
+  ];
+  return (
+    <svg
+      className={`voice-panel-signal${isReconnecting ? ' voice-panel-signal--pulse' : ''}`}
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      title={rtt != null ? `${rtt}ms` : 'Measuring...'}
+    >
+      {barDefs.map((bar, i) => (
+        <rect
+          key={i}
+          x={bar.x}
+          y={bar.y}
+          width="4"
+          height={bar.h}
+          rx="1"
+          fill={i < bars ? color : 'var(--hush-text-ghost)'}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * VoiceConnectedPanel — voice status panel shown above the user panel
+ * when the user is connected to a voice channel.
+ *
+ * Shows connection status, channel name, and voice-specific controls
+ * (screenshare, webcam for quality channels; disconnect always).
+ * Mic/deafen live in UserPanel — never duplicated here.
  *
  * @param {object} props
  * @param {string} props.channelName - Name of the connected voice channel.
- * @param {boolean} props.isMuted - Whether the microphone is muted.
- * @param {boolean} props.isDeafened - Whether audio output is muted (deafened).
- * @param {function} props.onMute - Toggle microphone mute.
- * @param {function} props.onDeafen - Toggle deafen.
- * @param {function} props.onSettings - Open voice/audio settings.
+ * @param {boolean} props.isLowLatency - Whether this is a low-latency channel.
+ * @param {boolean} props.isScreenSharing - Whether screen is being shared.
+ * @param {boolean} props.isWebcamOn - Whether webcam is on.
+ * @param {number|null} props.signalBars - Number of signal bars to show (0-4).
+ * @param {string} props.signalColor - CSS color for active signal bars.
+ * @param {boolean} props.signalReconnecting - Whether WS is reconnecting.
+ * @param {number|null} props.rtt - Round-trip time in ms.
+ * @param {function} props.onScreenShare - Toggle screen share (quality only).
+ * @param {function} props.onSwitchScreen - Switch shared window/screen without stopping.
+ * @param {function} props.onWebcam - Toggle webcam (quality only).
  * @param {function} props.onDisconnect - Disconnect from voice.
  */
-export function VoiceConnectedPanel({ channelName, isMuted, isDeafened, onMute, onDeafen, onSettings, onDisconnect }) {
+export function VoiceConnectedPanel({ channelName, isLowLatency, isScreenSharing, isWebcamOn, signalBars, signalColor, signalReconnecting, rtt, onScreenShare, onSwitchScreen, onWebcam, onDisconnect }) {
+  const isQuality = !isLowLatency;
   return (
     <div className="voice-panel">
-      <div className="voice-panel-info">
-        <span className="voice-panel-channel">{channelName}</span>
-        <span className="voice-panel-status">Voice Connected</span>
-      </div>
-      <div className="voice-panel-controls">
-        {/* Mute */}
-        <button
-          type="button"
-          className={`voice-panel-btn${isMuted ? ' muted' : ''}`}
-          onClick={onMute}
-          title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
-        >
-          {isMuted ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="1" y1="1" x2="23" y2="23" />
-              <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
-              <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .51-.06 1-.16 1.47" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
-          )}
-        </button>
-
-        {/* Deafen */}
-        <button
-          type="button"
-          className={`voice-panel-btn${isDeafened ? ' muted' : ''}`}
-          onClick={onDeafen}
-          title={isDeafened ? 'Undeafen' : 'Deafen'}
-        >
-          {isDeafened ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
-              <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
-              <line x1="1" y1="1" x2="23" y2="23" />
-            </svg>
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
-              <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
-            </svg>
-          )}
-        </button>
-
-        {/* Settings */}
-        {onSettings && (
-          <button
-            type="button"
-            className="voice-panel-btn"
-            onClick={onSettings}
-            title="Voice settings"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
-        )}
-
-        {/* Disconnect */}
+      <div className="voice-panel-header">
+        <div className="voice-panel-info">
+          <span className="voice-panel-status">
+            <SignalIcon bars={signalBars} color={signalColor} isReconnecting={signalReconnecting} rtt={rtt} />
+            Voice Connected{rtt != null ? ` \u00b7 ${rtt}ms` : ''}
+          </span>
+          <span className="voice-panel-channel">{channelName}</span>
+        </div>
         <button
           type="button"
           className="voice-panel-btn disconnect"
           onClick={onDisconnect}
           title="Disconnect from voice"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07C9.44 17.29 7.76 15.19 6.7 12.77A19.79 19.79 0 0 1 3.63 4.14 2 2 0 0 1 5.6 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L9.58 9.91" />
             <line x1="23" y1="1" x2="1" y2="23" />
           </svg>
         </button>
       </div>
+      {isQuality && (
+        <div className="voice-panel-controls">
+          {/* Webcam */}
+          <button
+            type="button"
+            className={`voice-panel-btn${isWebcamOn ? ' active' : ''}`}
+            onClick={onWebcam}
+            title={isWebcamOn ? 'Turn off camera' : 'Turn on camera'}
+          >
+            {isWebcamOn ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M23 7l-7 5 7 5V7z" />
+                <rect x="1" y="5" width="15" height="14" rx="2" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            )}
+          </button>
+
+          {/* Screen Share */}
+          <button
+            type="button"
+            className={`voice-panel-btn${isScreenSharing ? ' active' : ''}`}
+            onClick={onScreenShare}
+            title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+          </button>
+
+          {/* Switch window (only when sharing) */}
+          {isScreenSharing && onSwitchScreen && (
+            <button
+              type="button"
+              className="voice-panel-btn"
+              onClick={onSwitchScreen}
+              title="Switch window"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="16 3 21 3 21 8" />
+                <line x1="4" y1="20" x2="21" y2="3" />
+                <polyline points="21 16 21 21 16 21" />
+                <line x1="15" y1="15" x2="21" y2="21" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

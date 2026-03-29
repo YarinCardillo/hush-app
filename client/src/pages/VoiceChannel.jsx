@@ -44,7 +44,7 @@ function getFriendlyRoomError(errorMessage) {
  * Voice channel view: LiveKit room (server-{serverId}-channel-{channel.id}), video grid, controls, chat sidebar.
  * Used by ServerLayout when currentChannel.type === 'voice'.
  */
-export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], members = [], onlineUserIds, myRole = 'member', showToast, onMemberUpdate, showMembers = false, showChatPanel = false, showParticipantsPanel = false, onTogglePanel, onLeave, onOrbPhaseChange, serverParticipants = [], onMobileBack, voiceControlsRef, onVoiceStateChange }) {
+export default function VoiceChannel({ channel, serverId, getToken, wsClient, recipientUserIds = [], members = [], onlineUserIds, myRole = 'member', showToast, onMemberUpdate, showMembers = false, showChatPanel = false, showParticipantsPanel = false, onTogglePanel, onLeave, onOrbPhaseChange, serverParticipants = [], voiceMuteStates, onMobileBack, voiceControlsRef, onVoiceStateChange }) {
   const navigate = useNavigate();
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile';
@@ -96,6 +96,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     disconnectRoom,
     publishScreen,
     unpublishScreen,
+    switchScreenSource,
     changeQuality,
     publishWebcam,
     unpublishWebcam,
@@ -103,6 +104,7 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     unpublishMic,
     muteMic,
     unmuteMic,
+    updateMicFilterSettings,
     availableScreens,
     watchedScreens,
     loadingScreens,
@@ -274,6 +276,18 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     }
   };
 
+  const handleSwitchScreen = async () => {
+    if (!isScreenSharing || isLowLatency) return;
+    try {
+      const result = await switchScreenSource(quality);
+      if (result) {
+        result.getVideoTracks()[0]?.addEventListener('ended', () => setIsScreenSharing(false));
+      }
+    } catch (err) {
+      console.error('[VoiceChannel] Switch screen source failed:', err);
+    }
+  };
+
   const handleScreenShareQualitySelect = async (qualityKey) => {
     if (isScreenSharing) {
       try {
@@ -346,6 +360,9 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
     setShowMicPicker(true);
   };
 
+  /** Tracks whether mic was on before deafen, so undeafen can restore it. */
+  const micBeforeDeafenRef = useRef(false);
+
   const handleDeafen = useCallback(() => {
     setIsDeafened((prev) => {
       const next = !prev;
@@ -353,22 +370,60 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
       document.querySelectorAll('audio[autoplay]').forEach((el) => {
         el.muted = next;
       });
+      if (next) {
+        // Deafening: save mic state and mute if on
+        micBeforeDeafenRef.current = isMicOn;
+        if (isMicOn) {
+          muteMic().then(() => setIsMicOn(false));
+        }
+      } else {
+        // Undeafening: restore mic if it was on before
+        if (micBeforeDeafenRef.current && micPublishedRef.current) {
+          unmuteMic().then(() => setIsMicOn(true));
+        }
+      }
       return next;
     });
-  }, []);
+  }, [isMicOn, muteMic, unmuteMic]);
 
-  // Expose controls to parent via ref (for VoiceConnectedPanel)
+  // Expose controls to parent via ref (for VoiceConnectedPanel + UserPanel)
   const handleMicRef = useRef(handleMic);
   handleMicRef.current = handleMic;
+  const handleScreenShareRef = useRef(handleScreenShare);
+  handleScreenShareRef.current = handleScreenShare;
+  const handleSwitchScreenRef = useRef(handleSwitchScreen);
+  handleSwitchScreenRef.current = handleSwitchScreen;
+  const handleWebcamRef = useRef(handleWebcam);
+  handleWebcamRef.current = handleWebcam;
+  const updateMicFilterSettingsRef = useRef(updateMicFilterSettings);
+  updateMicFilterSettingsRef.current = updateMicFilterSettings;
   useEffect(() => {
     if (voiceControlsRef) {
       voiceControlsRef.current = {
         toggleMic: () => handleMicRef.current(),
         toggleDeafen: handleDeafen,
+        toggleScreenShare: () => handleScreenShareRef.current(),
+        switchScreenSource: () => handleSwitchScreenRef.current(),
+        toggleWebcam: () => handleWebcamRef.current(),
+        updateMicFilterSettings: (settings) => updateMicFilterSettingsRef.current(settings),
+        isScreenSharing,
+        isWebcamOn,
+        isLowLatency,
       };
     }
-    onVoiceStateChange?.({ isMicOn, isDeafened });
-  }, [voiceControlsRef, isMicOn, isDeafened, handleDeafen, onVoiceStateChange]);
+    onVoiceStateChange?.({ isMicOn, isDeafened, isScreenSharing, isWebcamOn });
+
+    // Broadcast mute/deafen state to other participants via WS
+    if (typeof wsClient?.send === 'function' && serverId) {
+      wsClient.send('voice.mute_state', {
+        server_id: serverId,
+        channel_id: channel.id,
+        user_id: currentUserId,
+        is_muted: !isMicOn,
+        is_deafened: isDeafened,
+      });
+    }
+  }, [voiceControlsRef, isMicOn, isDeafened, isScreenSharing, isWebcamOn, isLowLatency, handleDeafen, onVoiceStateChange, wsClient, serverId, channel?.id, currentUserId, updateMicFilterSettings]);
 
   const handleWebcamDeviceSwitch = async () => {
     await requestPermission('video');
@@ -459,6 +514,14 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
               Live
             </span>
           )}
+          {isLowLatency && (
+            <span className="vc-mode-badge" title="Audio processing bypassed for lowest latency">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+              Performance
+            </span>
+          )}
         </div>
         <div className="vc-header-right">
           <button
@@ -526,27 +589,31 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
             currentDisplayName={displayName}
             activeSpeakerIds={activeSpeakerIds}
             isMicOn={isMicOn}
-          />
-          <Controls
-            isReady={isReady}
-            isScreenSharing={isScreenSharing}
-            isMicOn={isMicOn}
             isDeafened={isDeafened}
-            isWebcamOn={isWebcamOn}
-            quality={quality}
-            isMobile={isMobile}
-            showScreenShare={!isLowLatency}
-            showWebcam={!isLowLatency}
-            showQualityPicker={!isLowLatency}
-            onScreenShare={handleScreenShare}
-            onOpenQualityOrWindow={() => setShowQualityPicker(true)}
-            onMic={handleMic}
-            onDeafen={handleDeafen}
-            onWebcam={handleWebcam}
-            onMicDeviceSwitch={handleMicDeviceSwitch}
-            onWebcamDeviceSwitch={handleWebcamDeviceSwitch}
-            onLeave={handleLeave}
+            voiceMuteStates={voiceMuteStates}
           />
+          {isMobile && (
+            <Controls
+              isReady={isReady}
+              isScreenSharing={isScreenSharing}
+              isMicOn={isMicOn}
+              isDeafened={isDeafened}
+              isWebcamOn={isWebcamOn}
+              quality={quality}
+              isMobile={isMobile}
+              showScreenShare={!isLowLatency}
+              showWebcam={!isLowLatency}
+              showQualityPicker={!isLowLatency}
+              onScreenShare={handleScreenShare}
+              onOpenQualityOrWindow={() => setShowQualityPicker(true)}
+              onMic={handleMic}
+              onDeafen={handleDeafen}
+              onWebcam={handleWebcam}
+              onMicDeviceSwitch={handleMicDeviceSwitch}
+              onWebcamDeviceSwitch={handleWebcamDeviceSwitch}
+              onLeave={handleLeave}
+            />
+          )}
         </div>
 
         {isMobile ? (
@@ -612,8 +679,8 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
           <>
             <div className={`sidebar-desktop ${showParticipantsPanel ? 'sidebar-desktop-open' : ''}`}>
               <div className="sidebar-desktop-inner vc-sidebar-inner">
-                <div className="vc-sidebar-section">
-                  <div className="vc-sidebar-label">Participants ({totalParticipantCount || 1})</div>
+                <div className="vc-sidebar-section--participants">
+                  <div className="vc-sidebar-label" style={{ padding: '0 0 8px' }}>Participants ({totalParticipantCount || 1})</div>
                   <div className="vc-peer-item">
                     <div style={peerDotStyle(isScreenSharing)} />
                     <span>You</span>
@@ -629,8 +696,20 @@ export default function VoiceChannel({ channel, serverId, getToken, wsClient, re
             </div>
             <div className={`sidebar-desktop ${showChatPanel ? 'sidebar-desktop-open' : ''}`}>
               <div className="sidebar-desktop-inner vc-sidebar-inner">
+                <div className="vc-sidebar-header">
+                  <span className="vc-sidebar-header-title">Chat</span>
+                  <button
+                    type="button"
+                    className="vc-sidebar-close-btn"
+                    onClick={() => onTogglePanel('chat')}
+                    title="Close chat"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
                 <div className="vc-sidebar-section">
-                  <div className="vc-sidebar-label">Chat</div>
                   <Chat
                     channelId={channel.id}
                     serverId={serverId}

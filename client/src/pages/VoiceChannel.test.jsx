@@ -55,6 +55,7 @@ vi.mock('../components/Controls', () => ({
 
 import { useAuth } from '../contexts/AuthContext';
 import { useRoom } from '../hooks/useRoom';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 
 function renderVoiceChannel(channel, serverId = 's1') {
   return render(
@@ -71,6 +72,7 @@ function renderVoiceChannel(channel, serverId = 's1') {
 
 describe('VoiceChannel', () => {
   beforeEach(() => {
+    vi.mocked(useBreakpoint).mockReturnValue('desktop');
     vi.mocked(useAuth).mockReturnValue({
       user: { id: 'user-1', displayName: 'Test User' },
     });
@@ -122,6 +124,7 @@ describe('VoiceChannel', () => {
   });
 
   it('hides video controls in low-latency mode', () => {
+    vi.mocked(useBreakpoint).mockReturnValue('mobile');
     const channel = {
       id: 'ch1',
       name: 'voice-1',
@@ -137,6 +140,7 @@ describe('VoiceChannel', () => {
   });
 
   it('shows video controls in quality mode', () => {
+    vi.mocked(useBreakpoint).mockReturnValue('mobile');
     const channel = {
       id: 'ch1',
       name: 'voice-1',

@@ -9,6 +9,7 @@ import * as mlsGroupLib from '../lib/mlsGroup';
 import * as mlsStoreLib from '../lib/mlsStore';
 import * as hushCryptoLib from '../lib/hushCrypto';
 import * as apiLib from '../lib/api';
+import { applyMicFilterSettingsToNode } from '../lib/micProcessing';
 
 import {
   attachRemoteTrackListeners,
@@ -795,6 +796,16 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
     }
   }, []);
 
+  /**
+   * Applies updated mic filter settings to the active published microphone
+   * without forcing the user to leave and rejoin the room.
+   *
+   * @param {Partial<{ noiseGateEnabled: boolean, noiseGateThresholdDb: number }>} settings
+   */
+  const updateMicFilterSettings = useCallback((settings) => {
+    applyMicFilterSettingsToNode(noiseGateNodeRef.current, settings);
+  }, []);
+
   // ─── Watch Screen Share ───────────────────────────────
   const watchScreen = useCallback(
     async (trackSid) => {
@@ -906,6 +917,7 @@ export function useRoom({ wsClient, getToken, currentUserId, getStore, voiceKeyR
     unpublishMic,
     muteMic,
     unmuteMic,
+    updateMicFilterSettings,
     // Click-to-watch
     availableScreens,
     watchedScreens,

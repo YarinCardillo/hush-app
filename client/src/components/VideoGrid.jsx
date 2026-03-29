@@ -173,6 +173,17 @@ function MuteIcon() {
   );
 }
 
+/** Deafen icon SVG for overlay on deafened participant tiles. */
+function DeafenIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+      <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  );
+}
+
 export default function VideoGrid({
   localTracks,
   remoteTracks,
@@ -192,6 +203,8 @@ export default function VideoGrid({
   currentDisplayName,
   activeSpeakerIds = [],
   isMicOn = true,
+  isDeafened = false,
+  voiceMuteStates,
 }) {
   const { allStreams, orphanAudioConsumers, unwatchedScreens } = buildStreams(
     localTracks, remoteTracks, availableScreens, watchedScreens, localScreenWatched,
@@ -278,16 +291,21 @@ export default function VideoGrid({
             {audioOnlyParticipants.map((p) => {
               const isSelf = p.userId === currentUserId;
               const name = isSelf ? 'You' : (p.displayName || 'Anonymous');
-              const isMuted = isSelf ? !isMicOn : false;
-              const isSpeaking = isMuted ? false : speakerSet.has(p.userId);
+              const remoteState = !isSelf && voiceMuteStates?.get(p.userId);
+              const pMuted = isSelf ? !isMicOn : (remoteState?.isMuted ?? false);
+              const pDeafened = isSelf ? isDeafened : (remoteState?.isDeafened ?? false);
+              const isSpeaking = pMuted ? false : speakerSet.has(p.userId);
               const tileClass = `vg-placeholder-tile${isSpeaking ? ' vg-speaking' : ''}`;
               return (
                 <div key={`placeholder-${p.userId}`} style={normalTileStyle}>
                   <div className={tileClass}>
                     <div className="vg-placeholder-avatar">{getInitials(name)}</div>
                     <span className="vg-placeholder-name">{name}</span>
-                    {isMuted && (
-                      <div className="vg-mute-overlay"><MuteIcon /></div>
+                    {(pMuted || pDeafened) && (
+                      <div className="vg-status-overlays">
+                        {pMuted && <div className="vg-mute-overlay"><MuteIcon /></div>}
+                        {pDeafened && <div className="vg-mute-overlay"><DeafenIcon /></div>}
+                      </div>
                     )}
                   </div>
                 </div>
