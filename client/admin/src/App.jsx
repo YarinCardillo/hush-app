@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
+import { useState, useCallback } from 'react';
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import GuildListPage from './pages/GuildListPage.jsx';
 import UserListPage from './pages/UserListPage.jsx';
 import ConfigPage from './pages/ConfigPage.jsx';
@@ -44,22 +44,6 @@ const styles = {
     textDecoration: 'none',
     transition: 'color 0.12s ease, background 0.12s ease',
   },
-  keyBox: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  keyInput: {
-    padding: '5px 10px',
-    background: 'var(--bg)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--text)',
-    fontSize: '0.8rem',
-    width: '220px',
-    fontFamily: 'var(--font-mono)',
-    outline: 'none',
-  },
   body: {
     flex: 1,
     overflow: 'hidden',
@@ -98,6 +82,16 @@ const styles = {
     width: '340px',
     fontFamily: 'var(--font-mono)',
     outline: 'none',
+  },
+  logoutBtn: {
+    background: 'none',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
+    padding: '4px 12px',
+    fontSize: '0.78rem',
+    transition: 'color 0.12s ease, border-color 0.12s ease',
   },
 };
 
@@ -159,8 +153,7 @@ function ApiKeyGate({ onKeySet }) {
   );
 }
 
-/** Inner app — rendered only when apiKey is set. */
-function AdminShell({ apiKey, onKeyChange }) {
+function AdminShell({ apiKey, onLogout }) {
   const navActive = ({ isActive }) => ({
     ...styles.navLink,
     ...(isActive ? { color: 'var(--text)', background: 'var(--elevated)', fontWeight: 500 } : {}),
@@ -176,17 +169,9 @@ function AdminShell({ apiKey, onKeyChange }) {
           <NavLink to="/config" style={navActive}>Config</NavLink>
           <NavLink to="/health" style={navActive}>Health</NavLink>
         </nav>
-        <div style={styles.keyBox}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>API Key:</span>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => onKeyChange(e.target.value)}
-            style={styles.keyInput}
-            placeholder="X-Admin-Key"
-            title="Admin API key — stored in session storage only"
-          />
-        </div>
+        <button type="button" style={styles.logoutBtn} onClick={onLogout}>
+          Logout
+        </button>
       </header>
       <div style={styles.body}>
         <Routes>
@@ -208,16 +193,16 @@ export default function App() {
     setApiKey(key);
   }, []);
 
-  const handleKeyChange = useCallback((key) => {
-    setApiKey(key);
+  const handleLogout = useCallback(() => {
+    setApiKey('');
   }, []);
 
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/admin">
       {!apiKey ? (
         <ApiKeyGate onKeySet={handleKeySet} />
       ) : (
-        <AdminShell apiKey={apiKey} onKeyChange={handleKeyChange} />
+        <AdminShell apiKey={apiKey} onLogout={handleLogout} />
       )}
     </BrowserRouter>
   );

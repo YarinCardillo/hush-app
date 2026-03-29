@@ -153,6 +153,7 @@ function InstanceConfigSection({ apiKey }) {
   const [config, setConfig] = useState(null);
   const [regMode, setRegMode] = useState('open');
   const [guildDiscovery, setGuildDiscovery] = useState('disabled');
+  const [serverCreationPolicy, setServerCreationPolicy] = useState('open');
   const [name, setName] = useState('');
   const [iconUrl, setIconUrl] = useState('');
   const [saving, setSaving] = useState(false);
@@ -166,6 +167,7 @@ function InstanceConfigSection({ apiKey }) {
       setConfig(data);
       setRegMode(data.registrationMode || 'open');
       setGuildDiscovery(data.guildDiscovery || 'disabled');
+      setServerCreationPolicy(data.serverCreationPolicy || 'open');
       setName(data.name || '');
       setIconUrl(data.iconUrl || '');
     }).catch((e) => {
@@ -184,9 +186,10 @@ function InstanceConfigSection({ apiKey }) {
         iconUrl: iconUrl.trim() || undefined,
         registrationMode: regMode,
         guildDiscovery,
+        serverCreationPolicy,
       });
-      setSuccess('Configuration saved');
-      setTimeout(() => setSuccess(''), 3000);
+      setSuccess('Configuration saved. Changes apply to clients on next connection.');
+      setTimeout(() => setSuccess(''), 4000);
     } catch (e) {
       setError(e.message);
     }
@@ -235,12 +238,24 @@ function InstanceConfigSection({ apiKey }) {
         >
           <option value="open">Open</option>
           <option value="invite_only">Invite only</option>
-          <option value="waitlist">Waitlist</option>
           <option value="closed">Closed</option>
         </select>
         <div style={PAGE_STYLES.note}>
           Controls who can register new accounts on this instance.
         </div>
+      </div>
+
+      <div style={PAGE_STYLES.fieldRow}>
+        <label style={PAGE_STYLES.label}>Server creation policy</label>
+        <select
+          className="select"
+          value={serverCreationPolicy}
+          onChange={(e) => setServerCreationPolicy(e.target.value)}
+        >
+          <option value="open">Open — any user can create guilds</option>
+          <option value="paid">Paid — reserved for paid accounts</option>
+          <option value="disabled">Disabled — only admins can create guilds</option>
+        </select>
       </div>
 
       <div style={PAGE_STYLES.fieldRow}>

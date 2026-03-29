@@ -127,25 +127,35 @@ export default function HealthPage({ apiKey }) {
   const timerRef = useRef(null);
   const countdownRef = useRef(null);
 
+  const cancelledRef = useRef(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const data = await getHealth(apiKey);
+      if (cancelledRef.current) return;
       setHealth(data);
       setLastRefresh(new Date());
     } catch (e) {
+      if (cancelledRef.current) return;
       setError(e.message);
     }
-    setLoading(false);
-    setCountdown(REFRESH_INTERVAL_MS / 1000);
+    if (!cancelledRef.current) {
+      setLoading(false);
+      setCountdown(REFRESH_INTERVAL_MS / 1000);
+    }
   }, [apiKey]);
 
   // Initial load and auto-refresh every 30s
   useEffect(() => {
+    cancelledRef.current = false;
     load();
     timerRef.current = setInterval(load, REFRESH_INTERVAL_MS);
-    return () => clearInterval(timerRef.current);
+    return () => {
+      cancelledRef.current = true;
+      clearInterval(timerRef.current);
+    };
   }, [load]);
 
   // Countdown ticker
