@@ -727,6 +727,8 @@ export default function Home() {
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
           className="glass home-form-card"
         >
+          {renderFormContent()}
+
           {authView !== AUTH_VIEW.PIN_SETUP && (
             <AuthInstanceSelector
               value={selectedInstanceUrl}
@@ -735,8 +737,6 @@ export default function Home() {
               disabled={authLoading}
             />
           )}
-
-          {renderFormContent()}
 
           <div className="home-footer">
             <div>

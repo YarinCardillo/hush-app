@@ -5,18 +5,18 @@ import {
 } from '../../lib/authInstanceStore';
 
 const SHELL_STYLE = {
-  marginBottom: '16px',
+  marginTop: '14px',
   display: 'flex',
   flexDirection: 'column',
-  gap: '8px',
+  gap: '6px',
 };
 
 const LABEL_STYLE = {
-  fontSize: '0.72rem',
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
+  fontSize: '0.78rem',
   color: 'var(--hush-text-muted)',
-  fontFamily: 'var(--font-mono)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
 };
 
 const BUTTON_STYLE = {
@@ -24,11 +24,11 @@ const BUTTON_STYLE = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  gap: '12px',
-  padding: '12px 14px',
-  borderRadius: '14px',
+  gap: '10px',
+  padding: '9px 11px',
+  borderRadius: '12px',
   border: '1px solid var(--hush-border)',
-  background: 'color-mix(in srgb, var(--hush-surface) 86%, transparent)',
+  background: 'color-mix(in srgb, var(--hush-surface) 82%, transparent)',
   color: 'var(--hush-text)',
   cursor: 'pointer',
 };
@@ -36,9 +36,9 @@ const BUTTON_STYLE = {
 const PANEL_STYLE = {
   display: 'flex',
   flexDirection: 'column',
-  gap: '10px',
-  padding: '12px',
-  borderRadius: '16px',
+  gap: '8px',
+  padding: '10px',
+  borderRadius: '14px',
   border: '1px solid var(--hush-border)',
   background: 'color-mix(in srgb, var(--hush-surface) 92%, transparent)',
   boxShadow: '0 18px 50px rgba(0, 0, 0, 0.18)',
@@ -50,7 +50,7 @@ const LIST_BUTTON_STYLE = {
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: '10px',
-  padding: '10px 12px',
+  padding: '9px 11px',
   borderRadius: '12px',
   border: '1px solid var(--hush-border)',
   background: 'transparent',
@@ -106,7 +106,9 @@ export function AuthInstanceSelector({ value, instances, onSelect, disabled = fa
 
   return (
     <div ref={rootRef} style={SHELL_STYLE}>
-      <div style={LABEL_STYLE}>Instance</div>
+      <div style={LABEL_STYLE}>
+        <span>Instance</span>
+      </div>
 
       <button
         type="button"
@@ -115,15 +117,20 @@ export function AuthInstanceSelector({ value, instances, onSelect, disabled = fa
         disabled={disabled}
         title={value}
       >
-          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-            <span>{getInstanceDisplayName(value)}</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--hush-text-muted)' }}>
-              Current auth instance
-            </span>
-          </span>
+        <span
+          style={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            fontSize: '0.92rem',
+          }}
+        >
+          {getInstanceDisplayName(value)}
+        </span>
         <svg
-          width="16"
-          height="16"
+          width="15"
+          height="15"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -159,8 +166,8 @@ export function AuthInstanceSelector({ value, instances, onSelect, disabled = fa
                   onClick={() => commitSelection(instance.url)}
                   disabled={isSaving}
                 >
-                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-                    <span>{getInstanceDisplayName(instance.url)}</span>
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '1px' }}>
+                    <span style={{ fontSize: '0.92rem' }}>{getInstanceDisplayName(instance.url)}</span>
                     <span style={{ fontSize: '0.75rem', color: 'var(--hush-text-muted)' }}>
                       {isDefault ? 'Pinned default' : instance.lastUsedAt ? `Last used ${new Date(instance.lastUsedAt).toLocaleDateString()}` : 'Saved instance'}
                     </span>
