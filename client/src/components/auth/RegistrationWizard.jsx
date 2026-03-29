@@ -70,6 +70,20 @@ const REG_IDB_NAME = 'hush-reg-wizard';
 const REG_IDB_STORE = 'state';
 const REG_STATE_TTL_MS = 10 * 60_000; // 10 minutes — users need time to write down 12 words
 
+function createFreshMnemonicState() {
+  const mnemonic = generateIdentityMnemonic();
+  return {
+    mnemonic,
+    mnemonicWords: mnemonic.split(' '),
+  };
+}
+
+function normalizeRestoredStep(step, visibleSteps, initialStep, pastDisplayStep) {
+  if (pastDisplayStep) return STEP.MNEMONIC_CONFIRM;
+  if (step === STEP.SUBMITTING) return STEP.MNEMONIC_CONFIRM;
+  return visibleSteps.includes(step) ? step : initialStep;
+}
+
 /**
  * Open a tiny IDB database for registration wizard state.
  * Survives iOS page discards where sessionStorage is wiped.
@@ -154,17 +168,28 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
 
   // Try sessionStorage first (sync), then IDB fallback (async) for iOS page discards.
   const syncSaved = useRef(loadSavedWizardState()).current;
+  const syncSavedPastDisplayStep = Boolean(syncSaved?.pastDisplayStep);
+  const initialMnemonicState = useRef(
+    syncSaved?.mnemonic
+      ? { mnemonic: syncSaved.mnemonic, mnemonicWords: syncSaved.mnemonic.split(' ') }
+      : createFreshMnemonicState(),
+  ).current;
 
-  const [step, setStep] = useState(syncSaved?.step && visibleSteps.includes(syncSaved.step) ? syncSaved.step : initialStep);
+  const [step, setStep] = useState(
+    normalizeRestoredStep(syncSaved?.step, visibleSteps, initialStep, syncSavedPastDisplayStep),
+  );
   const [inviteCode, setInviteCode] = useState(syncSaved?.inviteCode ?? '');
   const [username, setUsername] = useState(syncSaved?.username ?? '');
   const [displayName, setDisplayName] = useState(syncSaved?.displayName ?? '');
-  const [mnemonic, setMnemonic] = useState(() => syncSaved?.mnemonic ?? generateIdentityMnemonic());
-  const [mnemonicWords, setMnemonicWords] = useState(() => mnemonic.split(' '));
+  const [mnemonic, setMnemonic] = useState(initialMnemonicState.mnemonic);
+  const [mnemonicWords, setMnemonicWords] = useState(initialMnemonicState.mnemonicWords);
   const [challengePositions, setChallengePositions] = useState(syncSaved?.challengePositions ?? null);
+  const [pastDisplayStep, setPastDisplayStep] = useState(syncSavedPastDisplayStep);
   const [savedConfirmed, setSavedConfirmed] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [ignoreExternalError, setIgnoreExternalError] = useState(false);
   const idbRestoredRef = useRef(false);
+  const confirmHistoryGuardRef = useRef(false);
 
   // Async IDB fallback: if sessionStorage was empty (iOS page discard), try IDB.
   useEffect(() => {
@@ -172,22 +197,38 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
     idbRestoredRef.current = true;
     loadWizardStateFromIDB().then((idbState) => {
       if (!idbState) return;
-      if (idbState.step && visibleSteps.includes(idbState.step)) setStep(idbState.step);
-      if (idbState.inviteCode) setInviteCode(idbState.inviteCode);
-      if (idbState.username) setUsername(idbState.username);
-      if (idbState.displayName) setDisplayName(idbState.displayName);
+      const restoredPastDisplayStep = Boolean(idbState.pastDisplayStep);
+      setStep(
+        normalizeRestoredStep(idbState.step, visibleSteps, initialStep, restoredPastDisplayStep),
+      );
+      setPastDisplayStep(restoredPastDisplayStep);
+      setInviteCode(idbState.inviteCode ?? '');
+      setUsername(idbState.username ?? '');
+      setDisplayName(idbState.displayName ?? '');
       if (idbState.mnemonic) {
         setMnemonic(idbState.mnemonic);
         setMnemonicWords(idbState.mnemonic.split(' '));
       }
-      if (idbState.challengePositions?.length === 3) setChallengePositions(idbState.challengePositions);
+      setChallengePositions(idbState.challengePositions?.length === 3 ? idbState.challengePositions : null);
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initialStep, syncSaved, visibleSteps]);
 
   // Persist wizard state on every change — dual-write to sessionStorage + IDB.
   useEffect(() => {
-    saveWizardState({ step, inviteCode, username, displayName, mnemonic, challengePositions });
-  }, [step, inviteCode, username, displayName, mnemonic, challengePositions]);
+    saveWizardState({
+      step,
+      inviteCode,
+      username,
+      displayName,
+      mnemonic,
+      challengePositions,
+      pastDisplayStep,
+    });
+  }, [step, inviteCode, username, displayName, mnemonic, challengePositions, pastDisplayStep]);
+
+  useEffect(() => {
+    setIgnoreExternalError(false);
+  }, [error]);
 
   // Username availability state: 'idle' | 'checking' | 'ok' | 'taken' | 'invalid'
   const [usernameState, setUsernameState] = useState('idle');
@@ -195,6 +236,22 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
 
   const currentStepIndex = visibleSteps.indexOf(step);
   const totalDots = visibleSteps.length;
+
+  const restartWizard = useCallback(() => {
+    const nextMnemonicState = createFreshMnemonicState();
+    clearWizardState();
+    setInviteCode('');
+    setUsername('');
+    setDisplayName('');
+    setMnemonic(nextMnemonicState.mnemonic);
+    setMnemonicWords(nextMnemonicState.mnemonicWords);
+    setChallengePositions(null);
+    setPastDisplayStep(false);
+    setSavedConfirmed(false);
+    setIgnoreExternalError(true);
+    setLocalError('');
+    setStep(initialStep);
+  }, [initialStep]);
 
   // Username validation and debounced check.
   useEffect(() => {
@@ -266,21 +323,50 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
 
   const handleMnemonicDisplayNext = useCallback(() => {
     if (!savedConfirmed) return;
-    goNext();
-  }, [savedConfirmed, goNext]);
+    setPastDisplayStep(true);
+    setStep(STEP.MNEMONIC_CONFIRM);
+    setLocalError('');
+  }, [savedConfirmed]);
 
-  const handleConfirmComplete = useCallback(() => {
-    clearWizardState();
+  const handleConfirmComplete = useCallback(async () => {
+    setLocalError('');
     setStep(STEP.SUBMITTING);
-    onComplete({
-      username: username.trim(),
-      displayName: displayName.trim() || username.trim(),
-      mnemonic,
-      inviteCode: inviteCode.trim() || undefined,
-    });
+    try {
+      await onComplete({
+        username: username.trim(),
+        displayName: displayName.trim() || username.trim(),
+        mnemonic,
+        inviteCode: inviteCode.trim() || undefined,
+      });
+      clearWizardState();
+    } catch (err) {
+      setStep(STEP.MNEMONIC_CONFIRM);
+      setLocalError(err?.message || 'Failed to create account. Please try again.');
+    }
   }, [username, displayName, mnemonic, inviteCode, onComplete]);
 
-  const displayedError = error?.message || localError;
+  useEffect(() => {
+    if (step !== STEP.MNEMONIC_CONFIRM) {
+      confirmHistoryGuardRef.current = false;
+      return undefined;
+    }
+
+    if (!confirmHistoryGuardRef.current) {
+      window.history.pushState({ hushRegConfirmGuard: Date.now() }, '', window.location.href);
+      confirmHistoryGuardRef.current = true;
+    }
+
+    const handlePopState = () => {
+      restartWizard();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [restartWizard, step]);
+
+  const displayedError = (!ignoreExternalError ? error?.message : '') || localError;
 
   return (
     <div className="rw-container">
@@ -335,7 +421,7 @@ export function RegistrationWizard({ onComplete, onCancel, registrationMode = 'o
         <MnemonicConfirm
           words={mnemonicWords}
           onConfirm={handleConfirmComplete}
-          onBack={goBack}
+          onStartOver={restartWizard}
           challengePositions={challengePositions}
           onPositionsSelected={setChallengePositions}
         />

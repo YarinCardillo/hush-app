@@ -26,10 +26,10 @@ function pickRandomPositions(max, count) {
  * @param {{
  *   words: string[],
  *   onConfirm: () => void,
- *   onBack: () => void
+ *   onStartOver?: () => void,
  * }} props
  */
-export function MnemonicConfirm({ words, onConfirm, onBack, challengePositions, onPositionsSelected }) {
+export function MnemonicConfirm({ words, onConfirm, onStartOver, challengePositions, onPositionsSelected }) {
   const [positions] = useState(() => {
     if (challengePositions?.length === 3) return challengePositions;
     return pickRandomPositions(words.length, 3);
@@ -121,9 +121,9 @@ export function MnemonicConfirm({ words, onConfirm, onBack, challengePositions, 
         <button
           type="button"
           className="back-link"
-          onClick={onBack}
+          onClick={onStartOver}
         >
-          ← Back
+          Start over
         </button>
         <button
           type="button"
