@@ -1,6 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { createGuild, updateGuildMetadata, listServerTemplates } from '../lib/api';
+import { parseInviteLink } from '../lib/inviteLinks.js';
 import * as api from '../lib/api';
 import * as mlsGroup from '../lib/mlsGroup';
 import * as mlsStoreLib from '../lib/mlsStore';
@@ -61,6 +63,34 @@ function getPolicyState(policy) {
  * }} props
  */
 export default function GuildCreateModal({ getToken, onClose, onCreated, activeInstanceUrl }) {
+  const navigate = useNavigate();
+
+  // ── Tab state ──────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState('create');
+  const [inviteInput, setInviteInput] = useState('');
+  const [joinError, setJoinError] = useState(null);
+
+  const switchTab = useCallback((tab) => {
+    setActiveTab(tab);
+    setJoinError(null);
+  }, []);
+
+  const handleJoin = useCallback(() => {
+    setJoinError(null);
+    const parsed = parseInviteLink(inviteInput);
+    if (!parsed) {
+      setJoinError('Invalid invite link. Paste a Hush invite URL or code.');
+      return;
+    }
+    onClose();
+    if (parsed.instanceHost) {
+      navigate(`/join/${parsed.instanceHost}/${parsed.code}`);
+    } else {
+      navigate(`/invite/${parsed.code}`);
+    }
+  }, [inviteInput, navigate, onClose]);
+
+  // ── Create form state ──────────────────────────────────────────────────
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -241,106 +271,163 @@ export default function GuildCreateModal({ getToken, onClose, onCreated, activeI
         className={`modal-content ${isOpen ? 'modal-content-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-title">Create a server</div>
-        <form className="modal-form" onSubmit={handleSubmit}>
-          {/* Server name */}
-          <div>
-            <label htmlFor="guild-name" className="modal-field-label">Server name</label>
-            <input
-              id="guild-name"
-              name="guild-name"
-              className="input"
-              type="text"
-              placeholder="My server"
-              value={name}
-              onChange={(e) => { setName(e.target.value); setError(''); }}
-              maxLength={100}
-              autoComplete="off"
-              autoFocus
-            />
-          </div>
+        <div className="modal-title">
+          {activeTab === 'create' ? 'Create a server' : 'Join a server'}
+        </div>
 
-          {/* Instance picker — ALWAYS visible, even with 1 instance */}
-          <div>
-            <label htmlFor="guild-instance" className="modal-field-label">Instance</label>
-            {connectedInstances.length === 0 ? (
-              <div style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', padding: '8px 0' }}>
-                No instances connected.
-              </div>
-            ) : (
-              <select
-                id="guild-instance"
+        {/* Tab bar */}
+        <div className="gcm-tab-bar">
+          <button
+            type="button"
+            className={`gcm-tab${activeTab === 'create' ? ' gcm-tab--active' : ''}`}
+            onClick={() => switchTab('create')}
+          >
+            Create
+          </button>
+          <button
+            type="button"
+            className={`gcm-tab${activeTab === 'join' ? ' gcm-tab--active' : ''}`}
+            onClick={() => switchTab('join')}
+          >
+            Join
+          </button>
+        </div>
+
+        {activeTab === 'create' && (
+          <form className="modal-form" onSubmit={handleSubmit}>
+            {/* Server name */}
+            <div>
+              <label htmlFor="guild-name" className="modal-field-label">Server name</label>
+              <input
+                id="guild-name"
+                name="guild-name"
                 className="input"
-                value={selectedInstanceUrl ?? ''}
-                onChange={(e) => setSelectedInstanceUrl(e.target.value || null)}
-                style={{ cursor: 'pointer' }}
-              >
-                {connectedInstances.map(({ url }) => {
-                  const host = (() => {
-                    try { return new URL(url).host; } catch { return url; }
-                  })();
-                  return (
-                    <option key={url} value={url}>{host}</option>
-                  );
-                })}
-              </select>
-            )}
-          </div>
-
-          {/* Policy annotation */}
-          {annotation && (
-            <div className={`gcm-policy-note${policyDisabled ? ' gcm-policy-note--disabled' : ' gcm-policy-note--request'}`}>
-              {annotation}
+                type="text"
+                placeholder="My server"
+                value={name}
+                onChange={(e) => { setName(e.target.value); setError(''); }}
+                maxLength={100}
+                autoComplete="off"
+                autoFocus
+              />
             </div>
-          )}
 
-          {/* Template picker — only shown when multiple templates exist */}
-          {templatesLoaded && templates.length > 1 && (
-            <div style={{ marginTop: '4px' }}>
-              <label className="modal-field-label">Template</label>
-              <div className="gcm-template-list">
-                {templates.map(tmpl => (
-                  <label
-                    key={tmpl.id}
-                    className={`gcm-template-item${selectedTemplateId === tmpl.id ? ' gcm-template-item--selected' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="template"
-                      value={tmpl.id}
-                      checked={selectedTemplateId === tmpl.id}
-                      onChange={() => setSelectedTemplateId(tmpl.id)}
-                      style={{ accentColor: 'var(--hush-live)' }}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="gcm-template-name">
-                        {tmpl.name}
-                        {tmpl.isDefault && <span className="gcm-template-default-tag">(default)</span>}
-                      </div>
-                      <div className="gcm-template-channels">
-                        {tmpl.channels.filter(c => c.type !== 'system').map(c => c.type === 'voice' ? `${c.name} (voice)` : `#${c.name}`).join(', ') || 'system only'}
-                      </div>
-                    </div>
-                  </label>
-                ))}
+            {/* Instance picker — ALWAYS visible, even with 1 instance */}
+            <div>
+              <label htmlFor="guild-instance" className="modal-field-label">Instance</label>
+              {connectedInstances.length === 0 ? (
+                <div style={{ fontSize: '0.8rem', color: 'var(--hush-text-muted)', padding: '8px 0' }}>
+                  No instances connected.
+                </div>
+              ) : (
+                <select
+                  id="guild-instance"
+                  className="input"
+                  value={selectedInstanceUrl ?? ''}
+                  onChange={(e) => setSelectedInstanceUrl(e.target.value || null)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {connectedInstances.map(({ url }) => {
+                    const host = (() => {
+                      try { return new URL(url).host; } catch { return url; }
+                    })();
+                    return (
+                      <option key={url} value={url}>{host}</option>
+                    );
+                  })}
+                </select>
+              )}
+            </div>
+
+            {/* Policy annotation */}
+            {annotation && (
+              <div className={`gcm-policy-note${policyDisabled ? ' gcm-policy-note--disabled' : ' gcm-policy-note--request'}`}>
+                {annotation}
               </div>
-            </div>
-          )}
+            )}
 
-          {error && <div className="modal-error">{error}</div>}
-          <div className="modal-actions">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={loading || !name.trim() || policyDisabled || connectedInstances.length === 0}
-            >
-              {loading ? 'Creating\u2026' : buttonLabel}
-            </button>
+            {/* Template picker — only shown when multiple templates exist */}
+            {templatesLoaded && templates.length > 1 && (
+              <div style={{ marginTop: '4px' }}>
+                <label className="modal-field-label">Template</label>
+                <div className="gcm-template-list">
+                  {templates.map(tmpl => (
+                    <label
+                      key={tmpl.id}
+                      className={`gcm-template-item${selectedTemplateId === tmpl.id ? ' gcm-template-item--selected' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="template"
+                        value={tmpl.id}
+                        checked={selectedTemplateId === tmpl.id}
+                        onChange={() => setSelectedTemplateId(tmpl.id)}
+                        style={{ accentColor: 'var(--hush-live)' }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="gcm-template-name">
+                          {tmpl.name}
+                          {tmpl.isDefault && <span className="gcm-template-default-tag">(default)</span>}
+                        </div>
+                        <div className="gcm-template-channels">
+                          {tmpl.channels.filter(c => c.type !== 'system').map(c => c.type === 'voice' ? `${c.name} (voice)` : `#${c.name}`).join(', ') || 'system only'}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {error && <div className="modal-error">{error}</div>}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={onClose}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={loading || !name.trim() || policyDisabled || connectedInstances.length === 0}
+              >
+                {loading ? 'Creating\u2026' : buttonLabel}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {activeTab === 'join' && (
+          <div className="modal-form">
+            <div>
+              <label htmlFor="invite-input" className="modal-field-label">Invite link</label>
+              <input
+                id="invite-input"
+                name="invite-input"
+                className="input"
+                type="text"
+                placeholder="https://… or invite code"
+                value={inviteInput}
+                onChange={(e) => { setInviteInput(e.target.value); setJoinError(null); }}
+                autoComplete="off"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleJoin(); } }}
+              />
+            </div>
+            {joinError && <div className="modal-error">{joinError}</div>}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={onClose}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!inviteInput.trim()}
+                onClick={handleJoin}
+              >
+                Join server
+              </button>
+            </div>
           </div>
-        </form>
+        )}
       </div>
     </div>,
     document.body,

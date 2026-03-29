@@ -3416,6 +3416,38 @@ a[href]:active {
   color: var(--hush-text-ghost);
 }
 
+/* GuildCreateModal: tab bar */
+.gcm-tab-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--hush-border);
+}
+
+.gcm-tab {
+  flex: 1;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--hush-text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+  margin-bottom: -1px;
+}
+
+.gcm-tab:hover {
+  color: var(--hush-text);
+}
+
+.gcm-tab--active {
+  color: var(--hush-text);
+  border-bottom-color: var(--hush-amber);
+}
+
 /* GuildContextMenu */
 .gcm-context-menu {
   position: fixed;
