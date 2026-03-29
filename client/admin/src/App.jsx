@@ -5,7 +5,7 @@ import UserListPage from './pages/UserListPage.jsx';
 import ConfigPage from './pages/ConfigPage.jsx';
 import HealthPage from './pages/HealthPage.jsx';
 
-const STORAGE_KEY = 'hush_admin_api_key';
+const ADMIN_HEALTH_URL = '/api/admin/health';
 
 const styles = {
   shell: {
@@ -103,19 +103,43 @@ const styles = {
 
 function ApiKeyGate({ onKeySet }) {
   const [value, setValue] = useState('');
+  const [error, setError] = useState('');
+  const [validating, setValidating] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const key = value.trim();
-    if (key) onKeySet(key);
+    if (!key) return;
+
+    setError('');
+    setValidating(true);
+    try {
+      const res = await fetch(ADMIN_HEALTH_URL, {
+        headers: { 'X-Admin-Key': key },
+      });
+      if (res.status === 401 || res.status === 403) {
+        setError('Invalid API key.');
+        setValidating(false);
+        return;
+      }
+      if (!res.ok) {
+        setError(`Server error: ${res.status}`);
+        setValidating(false);
+        return;
+      }
+      onKeySet(key);
+    } catch {
+      setError('Could not reach the server.');
+      setValidating(false);
+    }
   };
 
   return (
     <div style={styles.gate}>
       <div style={styles.gateTitle}>Hush Instance Admin</div>
       <div style={styles.gateNote}>
-        Enter the admin API key for this instance. The key is stored in session storage
-        and cleared when you close the tab.
+        Enter the admin API key for this instance. The key is held in memory only
+        and cleared on page refresh.
       </div>
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
         <input
@@ -126,8 +150,9 @@ function ApiKeyGate({ onKeySet }) {
           style={styles.gateInput}
           autoFocus
         />
-        <button type="submit" className="btn btn-primary" disabled={!value.trim()}>
-          Authenticate
+        {error && <div style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>{error}</div>}
+        <button type="submit" className="btn btn-primary" disabled={!value.trim() || validating}>
+          {validating ? 'Verifying...' : 'Authenticate'}
         </button>
       </form>
     </div>
@@ -177,15 +202,13 @@ function AdminShell({ apiKey, onKeyChange }) {
 }
 
 export default function App() {
-  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem(STORAGE_KEY) || '');
+  const [apiKey, setApiKey] = useState('');
 
   const handleKeySet = useCallback((key) => {
-    sessionStorage.setItem(STORAGE_KEY, key);
     setApiKey(key);
   }, []);
 
   const handleKeyChange = useCallback((key) => {
-    sessionStorage.setItem(STORAGE_KEY, key);
     setApiKey(key);
   }, []);
 
