@@ -158,7 +158,6 @@ export function PinSetupModal({ onSetPin, onSkip, isLoading = false }) {
             onChange={(e) => setConfirm(e.target.value)}
             placeholder={`Repeat your ${isPin ? 'PIN' : 'passphrase'}`}
             minLength={minLength}
-            inputMode={isPin ? 'numeric' : undefined}
             autoComplete="new-password"
           />
           {mismatch && (

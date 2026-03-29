@@ -26,6 +26,24 @@ vi.mock('./contexts/AuthContext', () => ({
 
 vi.mock('./contexts/InstanceContext', () => ({
   InstanceProvider: ({ children }) => children,
+  useInstanceContext: () => ({ mergedGuilds: [], guildsLoaded: true }),
+}));
+
+// Mock useBootController so we can control bootState in App tests
+vi.mock('./hooks/useBootController.jsx', () => ({
+  BootProvider: ({ children }) => children,
+  useBootController: vi.fn(() => ({
+    bootState: 'needs_login',
+    user: null,
+    mergedGuilds: [],
+    guildsLoaded: true,
+    setPinSetupPending: vi.fn(),
+    clearPinSetupPending: vi.fn(),
+  })),
+}));
+
+vi.mock('./lib/slugify', () => ({
+  slugify: (s) => s,
 }));
 
 vi.mock('./components/AppBackground', () => ({ default: () => null }));
@@ -64,6 +82,7 @@ vi.mock('./pages/ExplorePage', () => ({ default: () => <div>ExplorePage</div> })
 
 import App from './App';
 import { useSingleTab } from './hooks/useSingleTab';
+import { useBootController } from './hooks/useBootController.jsx';
 import { cleanup } from '@testing-library/react';
 
 // ---------------------------------------------------------------------------
@@ -122,24 +141,46 @@ describe('useSingleTab', () => {
     MockBroadcastChannel.reset();
     originalBroadcastChannel = global.BroadcastChannel;
     global.BroadcastChannel = MockBroadcastChannel;
+    // Clear sessionStorage so each test starts with a fresh tab ID.
+    sessionStorage.removeItem('hush_tab_id');
   });
 
   afterEach(() => {
     vi.useRealTimers();
     global.BroadcastChannel = originalBroadcastChannel;
+    sessionStorage.removeItem('hush_tab_id');
   });
 
-  it('isBlockedTab is true when session_active is received within 500ms (duplicate tab)', async () => {
+  it('isBlockedTab is true when session_active from a DIFFERENT tab ID (duplicate tab)', async () => {
     const { result } = renderHook(() => realUseSingleTab());
 
     await act(async () => {
       const hookChannel = MockBroadcastChannel._instances[0];
       if (hookChannel?.onmessage) {
-        hookChannel.onmessage({ data: { type: 'session_active' } });
+        hookChannel.onmessage({ data: { type: 'session_active', tabId: 'other-tab-id' } });
       }
     });
 
     expect(result.current.isBlockedTab).toBe(true);
+  });
+
+  it('isBlockedTab is false when session_active from the SAME tab ID (refresh)', async () => {
+    const { result } = renderHook(() => realUseSingleTab());
+
+    // Read the tab ID that the hook just stored in sessionStorage
+    const ownTabId = sessionStorage.getItem('hush_tab_id');
+    expect(ownTabId).toBeTruthy();
+
+    await act(async () => {
+      const hookChannel = MockBroadcastChannel._instances[0];
+      if (hookChannel?.onmessage) {
+        // Same tab ID — simulates pre-refresh page responding
+        hookChannel.onmessage({ data: { type: 'session_active', tabId: ownTabId } });
+      }
+    });
+
+    // Should NOT be blocked — it's the same tab refreshing
+    expect(result.current.isBlockedTab).toBe(false);
   });
 
   it('isBlockedTab is false when no session_active received within 500ms (primary tab)', async () => {
@@ -170,6 +211,34 @@ describe('useSingleTab', () => {
     });
 
     expect(result.current.isBlockedTab).toBe(true);
+  });
+
+  it('primary tab responds to ping with its own tabId', async () => {
+    renderHook(() => realUseSingleTab());
+
+    // Become primary
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+    });
+
+    // Simulate another tab's ping — the primary tab should respond
+    const primaryChannel = MockBroadcastChannel._instances[0];
+
+    // Create a "new tab" channel to receive the response
+    const newTabChannel = new MockBroadcastChannel('hush_session');
+    const received = [];
+    newTabChannel.onmessage = (e) => received.push(e.data);
+
+    // Send ping from the new tab channel
+    await act(async () => {
+      newTabChannel.postMessage({ type: 'session_ping', tabId: 'new-tab-id' });
+    });
+
+    expect(received).toEqual([
+      expect.objectContaining({ type: 'session_active', tabId: expect.any(String) }),
+    ]);
+    // The response tabId should be the primary tab's ID, not the sender's
+    expect(received[0].tabId).not.toBe('new-tab-id');
   });
 
   it('isBlockedTab is false when BroadcastChannel is unavailable (graceful degradation)', async () => {
@@ -210,21 +279,48 @@ describe('App — blocked-tab overlay', () => {
     expect(screen.getByRole('button', { name: /use this one instead/i })).toBeInTheDocument();
   });
 
-  it('renders the normal app when isBlockedTab is false', () => {
+  it('renders Home when bootState is needs_login', async () => {
     useSingleTab.mockReturnValue({ isBlockedTab: false, takeOver: vi.fn() });
+    useBootController.mockReturnValue({ bootState: 'needs_login', user: null, mergedGuilds: [], guildsLoaded: true });
 
     render(<MemoryRouter><App /></MemoryRouter>);
 
     expect(screen.queryByText(/already open in another tab/i)).not.toBeInTheDocument();
+    expect(await screen.findByText('Home')).toBeInTheDocument();
   });
 
-  it('renders the public device-link route while logged out', async () => {
+  it('renders Home when bootState is needs_pin', async () => {
     useSingleTab.mockReturnValue({ isBlockedTab: false, takeOver: vi.fn() });
+    useBootController.mockReturnValue({ bootState: 'needs_pin', user: null, mergedGuilds: [], guildsLoaded: false });
 
-    render(<MemoryRouter initialEntries={['/link-device?mode=new']}><App /></MemoryRouter>);
+    render(<MemoryRouter><App /></MemoryRouter>);
 
-    expect(screen.queryByText(/already open in another tab/i)).not.toBeInTheDocument();
+    expect(await screen.findByText('Home')).toBeInTheDocument();
+  });
+
+  it('keeps the device-link route public while login is required', async () => {
+    useSingleTab.mockReturnValue({ isBlockedTab: false, takeOver: vi.fn() });
+    useBootController.mockReturnValue({ bootState: 'needs_login', user: null, mergedGuilds: [], guildsLoaded: false });
+
+    render(
+      <MemoryRouter initialEntries={['/link-device?mode=new']}>
+        <App />
+      </MemoryRouter>,
+    );
+
     expect(await screen.findByText('LinkDevice')).toBeInTheDocument();
+  });
+
+  it('renders blank fallback when bootState is loading', () => {
+    useSingleTab.mockReturnValue({ isBlockedTab: false, takeOver: vi.fn() });
+    useBootController.mockReturnValue({ bootState: 'loading', user: null, mergedGuilds: [], guildsLoaded: false });
+
+    const { container } = render(<MemoryRouter><App /></MemoryRouter>);
+
+    // No Home, no overlay — just blank.
+    expect(screen.queryByText('Home')).not.toBeInTheDocument();
+    expect(screen.queryByText(/already open/i)).not.toBeInTheDocument();
+    expect(container.querySelector('[style]')).toBeTruthy();
   });
 
   it('calls takeOver when "Use this one instead" button is clicked', async () => {

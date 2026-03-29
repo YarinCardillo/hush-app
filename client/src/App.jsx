@@ -1,10 +1,12 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { InstanceProvider } from './contexts/InstanceContext';
+import { Routes, Route, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import { InstanceProvider, useInstanceContext } from './contexts/InstanceContext';
+import { BootProvider, useBootController } from './hooks/useBootController.jsx';
 import AppBackground from './components/AppBackground';
 import { applyThemeMode, getStoredThemeMode } from './components/UserSettingsModal';
 import { useSingleTab } from './hooks/useSingleTab';
+import { slugify } from './lib/slugify';
 
 // Apply stored theme before first paint to avoid FOUC.
 applyThemeMode(getStoredThemeMode());
@@ -24,27 +26,134 @@ const fallback = (
   }} />
 );
 
+// ── PostLoginRedirect ─────────────────────────────────────────────────────────
+
 /**
- * Auth guard for protected routes. Redirects to "/" (Home/PIN screen)
- * when the user is unauthenticated or the vault is locked. Without this,
- * iOS page evictions leave the user on a guild URL with no auth context,
- * showing an empty layout instead of the PIN unlock screen.
+ * Shown at "/" when the user is authenticated. Redirects to the first guild
+ * (if any) or to /home (empty state). Handles ?join= invite params.
  *
- * @param {{ children: React.ReactNode }} props
+ * This replaces the routing logic that was previously in Home.jsx's vault-state
+ * effect. The BootController guarantees this only renders when auth is ready.
  */
-function AuthGuard({ children }) {
-  const { vaultState, isAuthenticated, loading } = useAuth();
+function PostLoginRedirect() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { mergedGuilds, guildsLoaded } = useInstanceContext();
+  const joinParam = searchParams.get('join');
 
-  // While auth is rehydrating, show the same blank fallback to avoid flash.
-  if (loading) return fallback;
+  useEffect(() => {
+    // Handle invite join param — redirect immediately, don't wait for guilds.
+    if (joinParam) {
+      navigate(`/invite/${encodeURIComponent(joinParam)}`, { replace: true });
+      return;
+    }
 
-  // Vault locked or no session — redirect to Home for PIN unlock or login.
-  if (vaultState === 'locked' || vaultState === 'none' || !isAuthenticated) {
-    return <Navigate to="/" replace />;
+    // Wait for instance boot so mergedGuilds is populated.
+    if (!guildsLoaded) return;
+
+    // Navigate to first guild or empty state.
+    if (mergedGuilds.length > 0) {
+      const first = mergedGuilds[0];
+      const instanceHost = first.instanceUrl
+        ? new URL(first.instanceUrl).host
+        : null;
+      const guildSlug = slugify(first._localName ?? first.name ?? first.id ?? 'guild');
+      if (instanceHost) {
+        navigate(`/${instanceHost}/${guildSlug}`, { replace: true });
+        return;
+      }
+    }
+
+    navigate('/home', { replace: true });
+  }, [guildsLoaded, mergedGuilds, navigate, joinParam]);
+
+  return fallback;
+}
+
+// ── AppContent ────────────────────────────────────────────────────────────────
+
+/**
+ * Top-level rendering switch driven by useBootController.
+ *
+ * This is the single place that decides what the user sees. No other component
+ * independently checks auth/vault/guild state for routing decisions.
+ *
+ * Boot states:
+ *   'loading'     → blank screen (auth rehydrating)
+ *   'needs_login' → Home (login/register UI) for all non-public routes
+ *   'needs_pin'   → Home (PIN unlock screen) for all non-public routes
+ *   'pin_setup'   → Home (PIN setup after registration) for all non-public routes
+ *   'ready'       → full route tree (instances still booting)
+ *   'booted'      → full route tree (everything loaded)
+ */
+function AppContent() {
+  const { bootState } = useBootController();
+
+  if (bootState === 'loading') return fallback;
+
+  // ── Unauthenticated: show login/PIN for most routes, keep public routes ──
+
+  if (bootState === 'needs_login' || bootState === 'needs_pin' || bootState === 'pin_setup') {
+    return (
+      <Suspense fallback={fallback}>
+        <Routes>
+          {/* Public routes — accessible without auth */}
+          <Route path="/join/:instance/:code" element={<Invite />} />
+          <Route path="/invite/:code" element={<Invite />} />
+          <Route path="/link-device" element={<LinkDevice />} />
+          <Route path="/room/:roomName" element={<Room />} />
+          <Route path="/roadmap" element={<Roadmap />} />
+
+          {/* Everything else → login/PIN screen */}
+          <Route path="*" element={<Home />} />
+        </Routes>
+      </Suspense>
+    );
   }
 
-  return children;
+  // ── Authenticated (ready or booted): full route tree ─────────────────────
+
+  return (
+    <Suspense fallback={fallback}>
+      <Routes>
+        {/* Post-login redirect: "/" → first guild or /home */}
+        <Route path="/" element={<PostLoginRedirect />} />
+
+        {/* DM landing / no-guild empty state */}
+        <Route path="/home" element={<ServerLayout />} />
+
+        {/* Guild discovery */}
+        <Route path="/explore" element={<ExplorePage />} />
+
+        {/* Cross-instance invite */}
+        <Route path="/join/:instance/:code" element={<Invite />} />
+
+        {/* Same-instance invite (legacy path kept) */}
+        <Route path="/invite/:code" element={<Invite />} />
+
+        {/* Device-link approval/new-device handoff */}
+        <Route path="/link-device" element={<LinkDevice />} />
+
+        {/* Instance-aware guild route: /:instance/:guildSlug/:channelSlug? */}
+        <Route path="/:instance/:guildSlug/:channelSlug?" element={<ServerLayout />} />
+
+        {/* Legacy: /servers/:serverId/* */}
+        <Route path="/servers/:serverId/*" element={<ServerLayout />} />
+
+        {/* Legacy redirects */}
+        <Route path="/guilds" element={<Navigate to="/home" replace />} />
+        <Route path="/channels" element={<Navigate to="/home" replace />} />
+        <Route path="/channels/:channelId" element={<Navigate to="/home" replace />} />
+
+        {/* Utility pages */}
+        <Route path="/room/:roomName" element={<Room />} />
+        <Route path="/roadmap" element={<Roadmap />} />
+      </Routes>
+    </Suspense>
+  );
 }
+
+// ── Cosmetic components ──────────────────────────────────────────────────────
 
 /** Syncs favicon and apple-touch-icon with theme (prefers-color-scheme or data-theme). */
 function FaviconThemeSync() {
@@ -77,8 +186,6 @@ function FaviconThemeSync() {
 /**
  * Full-screen overlay shown when the app detects it is open in a duplicate
  * browser tab. Prevents two tabs from sharing the same MLS/vault state.
- *
- * @param {{ takeOver: () => void }} props
  */
 function BlockedTabOverlay({ takeOver }) {
   return (
@@ -115,6 +222,8 @@ function BlockedTabOverlay({ takeOver }) {
   );
 }
 
+// ── App root ─────────────────────────────────────────────────────────────────
+
 export default function App() {
   const { isBlockedTab, takeOver } = useSingleTab();
 
@@ -125,45 +234,11 @@ export default function App() {
   return (
     <AuthProvider>
       <InstanceProvider>
-        <FaviconThemeSync />
-        <AppBackground />
-        <Suspense fallback={fallback}>
-          <Routes>
-            {/* Auth / landing page */}
-            <Route path="/" element={<Home />} />
-
-            {/* DM landing / no-guild empty state */}
-            <Route path="/home" element={<AuthGuard><ServerLayout /></AuthGuard>} />
-
-            {/* Guild discovery */}
-            <Route path="/explore" element={<AuthGuard><ExplorePage /></AuthGuard>} />
-
-            {/* Cross-instance invite */}
-            <Route path="/join/:instance/:code" element={<Invite />} />
-
-            {/* Same-instance invite (legacy path kept) */}
-            <Route path="/invite/:code" element={<Invite />} />
-
-            {/* Device-link approval/new-device handoff */}
-            <Route path="/link-device" element={<LinkDevice />} />
-            {/* Instance-aware guild route: /:instance/:guildSlug/:channelSlug? */}
-            <Route path="/:instance/:guildSlug/:channelSlug?" element={<AuthGuard><ServerLayout /></AuthGuard>} />
-
-            {/* Legacy: /servers/:serverId/* — still works via ServerLayout legacy lookup */}
-            <Route path="/servers/:serverId/*" element={<AuthGuard><ServerLayout /></AuthGuard>} />
-
-            {/* Legacy: /guilds — redirect to /home */}
-            <Route path="/guilds" element={<Navigate to="/home" replace />} />
-
-            {/* Legacy single-tenant paths */}
-            <Route path="/channels" element={<Navigate to="/home" replace />} />
-            <Route path="/channels/:channelId" element={<Navigate to="/home" replace />} />
-
-            {/* Utility pages */}
-            <Route path="/room/:roomName" element={<Room />} />
-            <Route path="/roadmap" element={<Roadmap />} />
-          </Routes>
-        </Suspense>
+        <BootProvider>
+          <FaviconThemeSync />
+          <AppBackground />
+          <AppContent />
+        </BootProvider>
       </InstanceProvider>
     </AuthProvider>
   );

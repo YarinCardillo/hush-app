@@ -22,12 +22,14 @@ import {
 } from '../lib/bip39Identity';
 import {
   encryptVault,
-  decryptVault,
+  decryptVaultAndExportKey,
+  decryptVaultWithRawKey,
   openVaultStore,
   saveEncryptedKey,
   loadEncryptedKey,
   deleteVaultDatabase,
   getVaultConfig,
+  setVaultConfig,
   bytesToHex,
   hexToBytes as vaultHexToBytes,
   saveSaltToIDB,
@@ -81,7 +83,10 @@ export const JWT_KEY = 'hush_jwt';
 const DEVICE_ID_KEY = 'hush_device_id';
 const VAULT_USER_KEY_PREFIX = 'hush_vault_user_';
 const VAULT_SESSION_FLAG = 'hush_vault_session_alive';
+const VAULT_DERIVED_KEY = 'hush_vault_derived_key';
+const VAULT_IDLE_DEADLINE_KEY = 'hush_vault_idle_deadline';
 const LEGACY_VAULT_TIMEOUT_KEY = 'hush_vault_timeout';
+const PIN_SETUP_PENDING_KEY = 'hush_pin_setup_pending';
 const PIN_ATTEMPTS_KEY_PREFIX = 'hush_pin_attempts_';
 const INACTIVITY_EVENTS = ['mousemove', 'keydown', 'touchstart', 'click'];
 
@@ -117,6 +122,8 @@ export function getDeviceId() {
 export function clearSession() {
   sessionStorage.removeItem(JWT_KEY);
   sessionStorage.removeItem(VAULT_SESSION_FLAG);
+  sessionStorage.removeItem(VAULT_DERIVED_KEY);
+  sessionStorage.removeItem(PIN_SETUP_PENDING_KEY);
 }
 
 /**
@@ -142,19 +149,13 @@ function pinDelayMs(failureCount) {
 }
 
 /**
- * Parses the stored vault-timeout selector value into its effective policy.
+ * Parses the legacy global vault-timeout selector value into the normalized
+ * timeout shape used by identityVault config.
  *
  * @param {string|null} raw
  * @returns {'browser_close'|'refresh'|'never'|number|null}
  */
 function parseLegacyVaultTimeout(raw) {
-  if (raw == null || raw === '') return null;
-
-  const numeric = Number(raw);
-  if (Number.isInteger(numeric) && numeric > 0) {
-    return numeric;
-  }
-
   switch (raw) {
     case 'browser_close':
     case 'refresh':
@@ -220,17 +221,19 @@ function clearPinAttempts(userId) {
  *   isAuthenticated: boolean,
  *   loading: boolean,
  *   error: Error|null,
+ *   needsPinSetup: boolean,
  *   isGuest: boolean,
  *   guestExpiresAt: string|null,
  *   voiceDisconnectRef: React.MutableRefObject<(() => void)|null>,
- *   performChallengeResponse: (privateKey: Uint8Array, publicKey: Uint8Array) => Promise<void>,
- *   performRegister: (username: string, displayName: string, mnemonic: string, inviteCode?: string) => Promise<void>,
- *   performRecovery: (mnemonic: string, revokeOtherDevices?: boolean) => Promise<void>,
- *   completeDeviceLink: (bundle: { rootPrivateKey: Uint8Array, rootPublicKey: Uint8Array, historySnapshot?: object|null }) => Promise<void>,
+ *   performChallengeResponse: (privateKey: Uint8Array, publicKey: Uint8Array, baseUrl?: string) => Promise<void>,
+ *   performRegister: (username: string, displayName: string, mnemonic: string, inviteCode?: string, baseUrl?: string) => Promise<void>,
+ *   performRecovery: (mnemonic: string, revokeOtherDevices?: boolean, baseUrl?: string) => Promise<void>,
+ *   completeDeviceLink: (bundle: { rootPrivateKey: Uint8Array, rootPublicKey: Uint8Array, historySnapshot?: object|null }, baseUrl?: string) => Promise<void>,
  *   performGuestAuth: () => Promise<{ user: object }>,
  *   unlockVault: (pin: string) => Promise<void>,
  *   lockVault: () => void,
  *   setPIN: (pin: string) => Promise<void>,
+ *   skipPinSetup: () => void,
  *   performLogout: () => Promise<void>,
  *   clearError: () => void,
  * }}
@@ -241,6 +244,9 @@ export function useAuth() {
   const [vaultState, setVaultState] = useState('none');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [needsPinSetup, setNeedsPinSetupState] = useState(
+    () => sessionStorage.getItem(PIN_SETUP_PENDING_KEY) === '1',
+  );
 
   /**
    * Set when transparency log verification detects a key mismatch.
@@ -282,6 +288,16 @@ export function useAuth() {
   const isAuthenticated = Boolean(token && user);
 
   const clearError = useCallback(() => setError(null), []);
+  const setPinSetupPendingState = useCallback((pending) => {
+    setNeedsPinSetupState(pending);
+    if (pending) {
+      sessionStorage.setItem(PIN_SETUP_PENDING_KEY, '1');
+      return;
+    }
+    sessionStorage.removeItem(PIN_SETUP_PENDING_KEY);
+  }, []);
+  const requirePinSetup = useCallback(() => setPinSetupPendingState(true), [setPinSetupPendingState]);
+  const clearPinSetup = useCallback(() => setPinSetupPendingState(false), [setPinSetupPendingState]);
 
   // ── Guest session timers ───────────────────────────────────────────────────
 
@@ -370,17 +386,78 @@ export function useAuth() {
   }, []);
 
   /**
-   * Starts (or resets) the inactivity lock timer for a numeric timeout policy.
+   * Clears the persisted inactivity deadline used to enforce numeric vault
+   * timeouts across background/foreground transitions.
+   */
+  const clearInactivityDeadline = useCallback(() => {
+    inactivityDeadlineRef.current = null;
+    sessionStorage.removeItem(VAULT_IDLE_DEADLINE_KEY);
+  }, []);
+
+  /**
+   * Persists the absolute deadline for the active numeric vault timeout.
+   *
+   * @param {number} deadlineMs
+   */
+  const setInactivityDeadline = useCallback((deadlineMs) => {
+    inactivityDeadlineRef.current = deadlineMs;
+    sessionStorage.setItem(VAULT_IDLE_DEADLINE_KEY, String(deadlineMs));
+  }, []);
+
+  /**
+   * Reads the current inactivity deadline from memory or sessionStorage.
+   *
+   * @returns {number|null}
+   */
+  const getInactivityDeadline = useCallback(() => {
+    if (typeof inactivityDeadlineRef.current === 'number') {
+      return inactivityDeadlineRef.current;
+    }
+
+    const raw = sessionStorage.getItem(VAULT_IDLE_DEADLINE_KEY);
+    if (!raw) return null;
+
+    const deadlineMs = Number(raw);
+    if (!Number.isFinite(deadlineMs)) {
+      sessionStorage.removeItem(VAULT_IDLE_DEADLINE_KEY);
+      return null;
+    }
+
+    inactivityDeadlineRef.current = deadlineMs;
+    return deadlineMs;
+  }, []);
+
+  /**
+   * Applies a hard vault lock caused by inactivity expiry.
+   *
+   * Clears the derived AES key so a reload cannot auto-unlock after the vault
+   * has timed out.
+   */
+  const lockVaultForTimeout = useCallback(() => {
+    identityKeyRef.current = null;
+    sessionStorage.removeItem(VAULT_DERIVED_KEY);
+    clearInactivityDeadline();
+    setVaultState('locked');
+  }, [clearInactivityDeadline]);
+
+  /**
+   * Arms the inactivity timer to fire at the given absolute deadline.
+   *
    * @param {number} deadlineMs
    */
   const startInactivityTimer = useCallback((deadlineMs) => {
     clearInactivityTimer();
+
     const remainingMs = Math.max(deadlineMs - Date.now(), 0);
+    if (remainingMs === 0) {
+      lockVaultForTimeout();
+      return;
+    }
+
     inactivityTimerRef.current = setTimeout(() => {
-      identityKeyRef.current = null;
-      setVaultState('locked');
+      lockVaultForTimeout();
     }, remainingMs);
-  }, [clearInactivityTimer]);
+  }, [clearInactivityTimer, lockVaultForTimeout]);
 
   // ── Vault configuration helpers ────────────────────────────────────────────
 
@@ -388,70 +465,118 @@ export function useAuth() {
    * Applies the vault timeout policy for the given user after unlock.
    * @param {string} userId
    */
+  /**
+   * Ref for the beforeunload handler used by the 'refresh' vault timeout
+   * policy. Stored in a ref so it can be removed on vault lock or unmount.
+   */
+  const beforeUnloadRef = useRef(null);
   const inactivityResetRef = useRef(null);
   const inactivityResumeRef = useRef(null);
   const inactivityDeadlineRef = useRef(null);
 
+  /**
+   * Clears all window-level side effects associated with the active vault
+   * timeout policy so a new policy can be applied cleanly.
+   */
   const clearVaultTimeoutEffects = useCallback(() => {
     clearInactivityTimer();
-    inactivityDeadlineRef.current = null;
-
+    clearInactivityDeadline();
+    if (beforeUnloadRef.current) {
+      window.removeEventListener('beforeunload', beforeUnloadRef.current);
+      beforeUnloadRef.current = null;
+    }
     if (inactivityResetRef.current) {
-      INACTIVITY_EVENTS.forEach((eventName) => {
-        window.removeEventListener(eventName, inactivityResetRef.current);
+      INACTIVITY_EVENTS.forEach((ev) => {
+        window.removeEventListener(ev, inactivityResetRef.current);
       });
       inactivityResetRef.current = null;
     }
-
     if (inactivityResumeRef.current) {
       document.removeEventListener('visibilitychange', inactivityResumeRef.current);
       window.removeEventListener('focus', inactivityResumeRef.current);
+      window.removeEventListener('pageshow', inactivityResumeRef.current);
       inactivityResumeRef.current = null;
     }
-  }, [clearInactivityTimer]);
+  }, [clearInactivityDeadline, clearInactivityTimer]);
+
+  /**
+   * Returns the effective per-user vault config. If the old global timeout key
+   * is still present, migrate it into the per-user config on first read.
+   *
+   * @param {string} userId
+   * @returns {{ timeout: string|number, pinType: string }|null}
+   */
+  const getEffectiveVaultConfig = useCallback((userId) => {
+    const existing = getVaultConfig(userId);
+    if (existing?.timeout !== undefined) {
+      return existing;
+    }
+
+    const legacyTimeout = parseLegacyVaultTimeout(localStorage.getItem(LEGACY_VAULT_TIMEOUT_KEY));
+    if (legacyTimeout == null) {
+      return existing;
+    }
+
+    const migrated = {
+      timeout: legacyTimeout,
+      pinType: existing?.pinType ?? 'pin',
+    };
+    setVaultConfig(userId, migrated);
+    localStorage.removeItem(LEGACY_VAULT_TIMEOUT_KEY);
+    return migrated;
+  }, []);
 
   const applyVaultTimeout = useCallback((userId) => {
     clearVaultTimeoutEffects();
-    const config = getVaultConfig(userId);
-    const timeout = config?.timeout ?? parseLegacyVaultTimeout(localStorage.getItem(LEGACY_VAULT_TIMEOUT_KEY)) ?? 'browser_close';
+    const config = getEffectiveVaultConfig(userId);
+    const timeout = config?.timeout ?? 'browser_close';
 
     if (timeout === 'browser_close') {
       // Mark session alive in sessionStorage; on next page load without this
-      // flag (browser closed), vault stays locked.
+      // flag (browser closed), vault stays locked. The derived key persists
+      // in sessionStorage so auto-unlock works on refresh.
       sessionStorage.setItem(VAULT_SESSION_FLAG, '1');
       return;
     }
 
     if (timeout === 'refresh') {
+      // Session flag is set so we can detect browser-close vs refresh, but
+      // the derived key is cleared on beforeunload so the vault re-locks on
+      // every page refresh. This is the "lock on refresh" UX.
       sessionStorage.setItem(VAULT_SESSION_FLAG, '1');
+      const handler = () => {
+        sessionStorage.removeItem(VAULT_DERIVED_KEY);
+      };
+      window.addEventListener('beforeunload', handler);
+      beforeUnloadRef.current = handler;
       return;
     }
 
     if (timeout === 'never') {
+      // Derived key stays in sessionStorage indefinitely (until tab closes
+      // or explicit logout). No session flag needed — auto-unlock always.
+      sessionStorage.setItem(VAULT_SESSION_FLAG, '1');
       return;
     }
 
     if (typeof timeout === 'number' && timeout > 0) {
       sessionStorage.setItem(VAULT_SESSION_FLAG, '1');
       const timeoutMs = timeout * 60 * 1000;
-
       const resetTimer = () => {
         if (document.visibilityState === 'hidden') return;
         const deadlineMs = Date.now() + timeoutMs;
-        inactivityDeadlineRef.current = deadlineMs;
+        setInactivityDeadline(deadlineMs);
         startInactivityTimer(deadlineMs);
       };
-
       const handleResume = () => {
         if (document.visibilityState === 'hidden') return;
-        const deadlineMs = inactivityDeadlineRef.current;
-        if (typeof deadlineMs !== 'number') {
+        const deadlineMs = getInactivityDeadline();
+        if (deadlineMs == null) {
           resetTimer();
           return;
         }
         if (Date.now() >= deadlineMs) {
-          identityKeyRef.current = null;
-          setVaultState('locked');
+          lockVaultForTimeout();
           return;
         }
         startInactivityTimer(deadlineMs);
@@ -461,12 +586,22 @@ export function useAuth() {
       INACTIVITY_EVENTS.forEach(ev => window.addEventListener(ev, resetTimer, { passive: true }));
       document.addEventListener('visibilitychange', handleResume);
       window.addEventListener('focus', handleResume);
+      window.addEventListener('pageshow', handleResume);
       inactivityResetRef.current = resetTimer;
       inactivityResumeRef.current = handleResume;
 
+      // Cleanup when vault locks or component unmounts is handled by the
+      // useEffect that subscribes to vaultState changes.
       return resetTimer;
     }
-  }, [clearVaultTimeoutEffects, startInactivityTimer]);
+  }, [
+    clearVaultTimeoutEffects,
+    getEffectiveVaultConfig,
+    getInactivityDeadline,
+    lockVaultForTimeout,
+    setInactivityDeadline,
+    startInactivityTimer,
+  ]);
 
   // ── Core auth completion ───────────────────────────────────────────────────
 
@@ -476,8 +611,9 @@ export function useAuth() {
    * set user to a synthetic guest object.
    *
    * @param {{ token: string, user?: object, guestId?: string, expiresAt?: string }} data
+   * @param {string} [baseUrl]
    */
-  const finishAuth = useCallback(async (data) => {
+  const finishAuth = useCallback(async (data, baseUrl = '') => {
     const { token: jwt, user: u } = data;
     if (!jwt) throw new Error('invalid auth response');
 
@@ -495,6 +631,7 @@ export function useAuth() {
       };
       setUser(guestUser);
       setIsGuest(true);
+      clearPinSetup();
       const expiresAtIso = data.expiresAt ?? (claims.exp ? new Date(claims.exp * 1000).toISOString() : null);
       setGuestExpiresAt(expiresAtIso);
       if (expiresAtIso) {
@@ -506,13 +643,13 @@ export function useAuth() {
     if (!u?.id) throw new Error('invalid auth response');
 
     const deviceId = getDeviceId();
-    await uploadKeyPackagesAfterAuth(jwt, u.id, deviceId);
+    await uploadKeyPackagesAfterAuth(jwt, u.id, deviceId, {}, baseUrl);
 
     sessionStorage.setItem(JWT_KEY, jwt);
     setToken(jwt);
     setUser(u);
     return { token: jwt, user: u };
-  }, [startGuestExpiryTimers]);
+  }, [startGuestExpiryTimers, clearPinSetup]);
 
   // ── Challenge-response login ───────────────────────────────────────────────
 
@@ -522,23 +659,24 @@ export function useAuth() {
    *
    * @param {Uint8Array} privateKey - 32-byte Ed25519 seed.
    * @param {Uint8Array} publicKey - 32-byte Ed25519 public key.
+   * @param {string} [baseUrl] - Optional auth instance base URL.
    */
-  const performChallengeResponse = useCallback(async (privateKey, publicKey) => {
+  const performChallengeResponse = useCallback(async (privateKey, publicKey, baseUrl = '') => {
     const deviceId = getDeviceId();
     const publicKeyBase64 = toBase64(publicKey);
 
-    const { nonce } = await requestChallenge(publicKeyBase64);
+    const { nonce } = await requestChallenge(publicKeyBase64, baseUrl);
 
     const nonceBytes = hexToBytes(nonce);
     const signature = await signChallenge(nonceBytes, privateKey);
     const signatureBase64 = toBase64(signature);
 
-    const data = await verifyChallenge(publicKeyBase64, nonce, signatureBase64, deviceId);
+    const data = await verifyChallenge(publicKeyBase64, nonce, signatureBase64, deviceId, baseUrl);
 
     // Keep private key in memory for vault lock/unlock, not in any storage.
     identityKeyRef.current = { privateKey, publicKey };
 
-    const { user: u } = await finishAuth(data);
+    const { user: u } = await finishAuth(data, baseUrl);
 
     // Mark vault key presence using public key hex (no secret material).
     localStorage.setItem(`${VAULT_USER_KEY_PREFIX}${u.id}`, bytesToHex(publicKey));
@@ -557,8 +695,9 @@ export function useAuth() {
    * @param {string} displayName
    * @param {string} mnemonic - 12-word BIP39 mnemonic.
    * @param {string} [inviteCode] - Optional invite code.
+   * @param {string} [baseUrl] - Optional auth instance base URL.
    */
-  const performRegister = useCallback(async (username, displayName, mnemonic, inviteCode) => {
+  const performRegister = useCallback(async (username, displayName, mnemonic, inviteCode, baseUrl = '') => {
     setLoading(true);
     setError(null);
     try {
@@ -590,16 +729,17 @@ export function useAuth() {
         publicKeyBase64,
         deviceId,
         inviteCode,
-        '', // baseUrl: default to local instance during registration
+        baseUrl,
         transparencySigBase64,
         transparencySigBase64 ? transparencyTs : null,
       );
 
       identityKeyRef.current = { privateKey, publicKey };
 
-      const { user: u } = await finishAuth(data);
+      const { user: u } = await finishAuth(data, baseUrl);
 
       localStorage.setItem(`${VAULT_USER_KEY_PREFIX}${u.id}`, bytesToHex(publicKey));
+      requirePinSetup();
       setVaultState('unlocked');
       applyVaultTimeout(u.id);
       return { user: u };
@@ -613,7 +753,7 @@ export function useAuth() {
     } finally {
       setLoading(false);
     }
-  }, [finishAuth, applyVaultTimeout]);
+  }, [finishAuth, applyVaultTimeout, requirePinSetup]);
 
   // ── Recovery ───────────────────────────────────────────────────────────────
 
@@ -623,14 +763,15 @@ export function useAuth() {
    *
    * @param {string} mnemonic - 12-word BIP39 mnemonic.
    * @param {boolean} [revokeOtherDevices=false]
+   * @param {string} [baseUrl] - Optional auth instance base URL.
    */
-  const performRecovery = useCallback(async (mnemonic, revokeOtherDevices = false) => {
+  const performRecovery = useCallback(async (mnemonic, revokeOtherDevices = false, baseUrl = '') => {
     setLoading(true);
     setError(null);
     try {
       const { privateKey, publicKey } = await mnemonicToIdentityKey(mnemonic);
 
-      const authResult = await performChallengeResponse(privateKey, publicKey);
+      const authResult = await performChallengeResponse(privateKey, publicKey, baseUrl);
 
       if (revokeOtherDevices) {
         const jwt = sessionStorage.getItem(JWT_KEY);
@@ -643,6 +784,7 @@ export function useAuth() {
             .map(d => revokeDeviceKey(jwt, d.deviceId)),
         );
       }
+      requirePinSetup();
       return authResult;
     } catch (err) {
       setError(err);
@@ -654,7 +796,7 @@ export function useAuth() {
     } finally {
       setLoading(false);
     }
-  }, [performChallengeResponse]);
+  }, [performChallengeResponse, requirePinSetup]);
 
   // ── Device linking ────────────────────────────────────────────────────────
 
@@ -662,12 +804,14 @@ export function useAuth() {
    * Completes a device-link handoff using the transferred root key material.
    *
    * The new device authenticates with the transferred root key, uploads its own
-   * MLS credential/key packages, and imports the read-only history snapshot.
+   * MLS credential/key packages, imports the read-only history snapshot, and
+   * then requires the user to set a fresh local PIN.
    *
    * @param {{ rootPrivateKey: Uint8Array, rootPublicKey: Uint8Array, historySnapshot?: object|null }} bundle
+   * @param {string} [baseUrl] - Optional auth instance base URL.
    * @returns {Promise<{ user: object }>}
    */
-  const completeDeviceLink = useCallback(async (bundle) => {
+  const completeDeviceLink = useCallback(async (bundle, baseUrl = '') => {
     setLoading(true);
     setError(null);
 
@@ -677,13 +821,14 @@ export function useAuth() {
         throw new Error('invalid device link bundle');
       }
 
-      const authResult = await performChallengeResponse(bundle.rootPrivateKey, bundle.rootPublicKey);
+      const authResult = await performChallengeResponse(bundle.rootPrivateKey, bundle.rootPublicKey, baseUrl);
 
       if (bundle.historySnapshot && authResult?.user?.id) {
         historyDb = await openHistoryStore(authResult.user.id, getDeviceId());
         await importHistorySnapshot(historyDb, bundle.historySnapshot);
       }
 
+      requirePinSetup();
       return authResult;
     } catch (err) {
       setError(err);
@@ -697,11 +842,11 @@ export function useAuth() {
       try {
         historyDb?.close();
       } catch {
-        // Ignore close failures during best-effort cleanup.
+        // Ignore close errors for best-effort cleanup.
       }
       setLoading(false);
     }
-  }, [performChallengeResponse]);
+  }, [performChallengeResponse, requirePinSetup]);
 
   // ── Guest auth ─────────────────────────────────────────────────────────────
 
@@ -758,7 +903,12 @@ export function useAuth() {
         throw new Error('vault is empty');
       }
 
-      const privateKey = await decryptVault(blob, pin);
+      const { privateKey, rawKeyHex } = await decryptVaultAndExportKey(blob, pin);
+
+      // Persist the derived AES key in sessionStorage so page refresh can
+      // auto-unlock the vault without re-entering the PIN. The key is
+      // cleared according to the vault timeout policy (see applyVaultTimeout).
+      sessionStorage.setItem(VAULT_DERIVED_KEY, rawKeyHex);
 
       // Derive public key from stored hex marker. If localStorage was evicted
       // (iOS non-Safari), fall back to IDB backup.
@@ -786,6 +936,7 @@ export function useAuth() {
         return authResult;
       }
 
+      clearPinSetup();
       setVaultState('unlocked');
       applyVaultTimeout(userId);
     } catch (err) {
@@ -813,7 +964,7 @@ export function useAuth() {
       wrongPinError.code = 'WRONG_PIN';
       throw wrongPinError;
     }
-  }, [user, applyVaultTimeout]);
+  }, [user, applyVaultTimeout, clearPinSetup]);
 
   /**
    * Locks the vault by clearing the in-memory private key.
@@ -821,6 +972,7 @@ export function useAuth() {
    */
   const lockVault = useCallback(() => {
     identityKeyRef.current = null;
+    sessionStorage.removeItem(VAULT_DERIVED_KEY);
     clearVaultTimeoutEffects();
     setVaultState('locked');
   }, [clearVaultTimeoutEffects]);
@@ -853,21 +1005,37 @@ export function useAuth() {
     }
 
     db.close();
-  }, [user]);
+    clearPinSetup();
+  }, [user, clearPinSetup]);
 
   /**
-   * Updates the active vault-timeout policy and reapplies it immediately when
-   * the vault is already unlocked.
+   * Dismisses the post-auth PIN-setup prompt while keeping the current
+   * authenticated session unlocked.
+   */
+  const skipPinSetup = useCallback(() => {
+    clearPinSetup();
+  }, [clearPinSetup]);
+
+  /**
+   * Updates the persisted vault timeout policy for the current user and
+   * reapplies it immediately when the vault is already unlocked.
    *
    * @param {'browser_close'|'refresh'|'never'|number} timeout
    */
   const updateVaultTimeout = useCallback((timeout) => {
-    localStorage.setItem(LEGACY_VAULT_TIMEOUT_KEY, String(timeout));
+    if (!user?.id) return;
 
-    if (vaultState === 'unlocked' && user?.id) {
+    const current = getEffectiveVaultConfig(user.id);
+    setVaultConfig(user.id, {
+      timeout,
+      pinType: current?.pinType ?? 'pin',
+    });
+    localStorage.removeItem(LEGACY_VAULT_TIMEOUT_KEY);
+
+    if (vaultState === 'unlocked') {
       applyVaultTimeout(user.id);
     }
-  }, [applyVaultTimeout, user?.id, vaultState]);
+  }, [applyVaultTimeout, getEffectiveVaultConfig, user?.id, vaultState]);
 
   // ── Scorched-earth logout ──────────────────────────────────────────────────
 
@@ -952,6 +1120,7 @@ export function useAuth() {
     setToken(null);
     setUser(null);
     setVaultState('none');
+    setNeedsPinSetupState(false);
     setIsGuest(false);
     setGuestExpiresAt(null);
     setError(null);
@@ -965,6 +1134,8 @@ export function useAuth() {
     const sessionAlive = sessionStorage.getItem(VAULT_SESSION_FLAG) === '1';
 
     if (!stored) {
+      clearPinSetup();
+
       // No JWT — but vault may still exist (tab closed, sessionStorage wiped).
       // Check localStorage for vault marker. If found, show PIN unlock;
       // after unlock, challenge-response auth gets a fresh JWT.
@@ -1059,6 +1230,7 @@ export function useAuth() {
           setToken(null);
           setUser(null);
           setVaultState('none');
+          setNeedsPinSetupState(false);
           return;
         }
 
@@ -1074,17 +1246,70 @@ export function useAuth() {
 
           const vaultPublicKeyHex = localStorage.getItem(`${VAULT_USER_KEY_PREFIX}${u.id}`);
 
-          if (vaultPublicKeyHex && sessionAlive) {
-            // Vault unlocked before the current session; treat as unlocked
-            // since the session flag persisted (tab reload, not browser close).
-            setVaultState('unlocked');
-            applyVaultTimeout(u.id);
-          } else if (vaultPublicKeyHex) {
-            // Vault exists but session flag absent (browser restarted or
-            // refresh policy) — require PIN re-entry.
-            setVaultState('locked');
+          if (vaultPublicKeyHex) {
+            // Vault exists. Check if we can auto-unlock using the derived AES
+            // key stored in sessionStorage from a previous PIN entry. This
+            // avoids re-prompting for PIN on every page refresh.
+            const storedDerivedKey = sessionStorage.getItem(VAULT_DERIVED_KEY);
+
+            if (sessionAlive && storedDerivedKey) {
+              // Session is alive (not a browser restart) and we have the
+              // derived key — attempt auto-unlock.
+              try {
+                const db = await openVaultStore(u.id);
+                const blob = await loadEncryptedKey(db);
+                db.close();
+
+                if (blob && !cancelled) {
+                  const privateKey = await decryptVaultWithRawKey(blob, storedDerivedKey);
+                  if (cancelled) return;
+                  const publicKey = vaultPublicKeyHex ? hexToBytes(vaultPublicKeyHex) : null;
+                  identityKeyRef.current = { privateKey, publicKey };
+                  clearPinSetup();
+                  setVaultState('unlocked');
+                  applyVaultTimeout(u.id);
+                } else if (!cancelled) {
+                  // Vault blob missing — PIN was never set. Clear stale marker.
+                  sessionStorage.removeItem(VAULT_DERIVED_KEY);
+                  localStorage.removeItem(`${VAULT_USER_KEY_PREFIX}${u.id}`);
+                  setVaultState('unlocked');
+                }
+              } catch {
+                // Derived key invalid or vault corrupt — fall back to PIN.
+                if (!cancelled) {
+                  sessionStorage.removeItem(VAULT_DERIVED_KEY);
+                  clearPinSetup();
+                  setVaultState('locked');
+                }
+              }
+            } else {
+              // No derived key or session flag absent — verify the vault blob
+              // actually exists before showing PIN screen. The vault marker
+              // (public key hex) is written during registration, but the
+              // encrypted blob is only created when the user sets a PIN. If
+              // they skipped PIN setup, the marker exists but the vault is empty.
+              try {
+                const db = await openVaultStore(u.id);
+                const blob = await loadEncryptedKey(db);
+                db.close();
+                if (cancelled) return;
+                if (blob) {
+                  clearPinSetup();
+                  setVaultState('locked');
+                } else {
+                  // Stale marker — PIN was never set. Clear it.
+                  localStorage.removeItem(`${VAULT_USER_KEY_PREFIX}${u.id}`);
+                  setVaultState('unlocked');
+                }
+              } catch {
+                if (!cancelled) {
+                  clearPinSetup();
+                  setVaultState('locked');
+                }
+              }
+            }
           } else {
-            // Authenticated via JWT but no vault set up yet.
+            // Authenticated via JWT but no vault set up yet (PIN never configured).
             setVaultState('unlocked');
           }
         }
@@ -1099,7 +1324,7 @@ export function useAuth() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [clearPinSetup]);
 
   // ── Request persistent storage ───────────────────────────────────────────
   // Opt out of best-effort eviction on iOS. Without this, non-Safari browsers
@@ -1164,13 +1389,14 @@ export function useAuth() {
           setToken(null);
           setUser(null);
           setVaultState('none');
+          clearPinSetup();
         }
       };
     } catch {
       // BroadcastChannel unavailable.
     }
     return () => { try { bc?.close(); } catch { /* noop */ } };
-  }, [clearVaultTimeoutEffects]);
+  }, [clearPinSetup, clearVaultTimeoutEffects]);
 
   return {
     user,
@@ -1179,6 +1405,7 @@ export function useAuth() {
     isAuthenticated,
     loading,
     error,
+    needsPinSetup,
     performChallengeResponse,
     performRegister,
     performRecovery,
@@ -1188,6 +1415,7 @@ export function useAuth() {
     lockVault,
     setPIN,
     updateVaultTimeout,
+    skipPinSetup,
     performLogout,
     clearError,
     // Ref to the in-memory identity keypair. Used by useInstances for

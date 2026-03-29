@@ -167,6 +167,84 @@ export async function decryptVault(blob, pin) {
   return new Uint8Array(plaintext);
 }
 
+/**
+ * Decrypts an encrypted vault blob AND exports the raw AES-256 key bytes.
+ *
+ * Performs a single PBKDF2 derivation (extractable=true) so the caller can
+ * persist the raw key in sessionStorage for auto-unlock on page refresh
+ * without re-entering the PIN.
+ *
+ * @param {Uint8Array} blob - Encrypted blob produced by encryptVault.
+ * @param {string} pin - User PIN or passphrase.
+ * @returns {Promise<{ privateKey: Uint8Array, rawKeyHex: string }>}
+ * @throws {DOMException} If PIN is incorrect (GCM authentication failure).
+ */
+export async function decryptVaultAndExportKey(blob, pin) {
+  const salt = generateAndStoreSalt();
+  const pinBytes = new TextEncoder().encode(pin);
+
+  const baseKey = await crypto.subtle.importKey('raw', pinBytes, 'PBKDF2', false, [
+    'deriveKey',
+  ]);
+
+  // Derive as extractable so we can export the raw bytes for sessionStorage.
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt'],
+  );
+
+  const nonce = blob.slice(0, NONCE_LENGTH);
+  const ciphertext = blob.slice(NONCE_LENGTH);
+
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: nonce },
+    key,
+    ciphertext,
+  );
+
+  const exported = await crypto.subtle.exportKey('raw', key);
+  const rawKeyHex = bytesToHex(new Uint8Array(exported));
+
+  return { privateKey: new Uint8Array(plaintext), rawKeyHex };
+}
+
+/**
+ * Decrypts an encrypted vault blob using a previously exported raw AES key.
+ *
+ * Used on page refresh to auto-unlock the vault without re-entering the PIN.
+ * The rawKeyHex was obtained from a prior decryptVaultAndExportKey call and
+ * stored in sessionStorage.
+ *
+ * @param {Uint8Array} blob - Encrypted blob produced by encryptVault.
+ * @param {string} rawKeyHex - Hex-encoded 32-byte AES-256 key.
+ * @returns {Promise<Uint8Array>} Decrypted 32-byte private key.
+ * @throws {DOMException} If the key is incorrect (GCM authentication failure).
+ */
+export async function decryptVaultWithRawKey(blob, rawKeyHex) {
+  const keyBytes = hexToBytes(rawKeyHex);
+  const key = await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt'],
+  );
+
+  const nonce = blob.slice(0, NONCE_LENGTH);
+  const ciphertext = blob.slice(NONCE_LENGTH);
+
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: nonce },
+    key,
+    ciphertext,
+  );
+
+  return new Uint8Array(plaintext);
+}
+
 // ---------------------------------------------------------------------------
 // Public API — IndexedDB persistence
 // ---------------------------------------------------------------------------

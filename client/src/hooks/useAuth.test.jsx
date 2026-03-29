@@ -33,6 +33,9 @@ vi.mock('../lib/bip39Identity', () => ({
     publicKey: new Uint8Array(32).fill(2),
   }),
   signChallenge: vi.fn().mockResolvedValue(new Uint8Array(64).fill(3)),
+  signTransparencyEntry: vi.fn().mockResolvedValue({
+    signature: new Uint8Array(64).fill(4),
+  }),
 }));
 
 // Shared blob store (reset between tests via beforeEach).
@@ -46,6 +49,14 @@ vi.mock('../lib/identityVault', () => ({
   }),
   decryptVault: vi.fn().mockImplementation(async (blob, pin) => {
     if (pin === 'wrong') throw new DOMException('decryption failed', 'OperationError');
+    return new Uint8Array(blob.slice(12));
+  }),
+  decryptVaultAndExportKey: vi.fn().mockImplementation(async (blob, pin) => {
+    if (pin === 'wrong') throw new DOMException('decryption failed', 'OperationError');
+    return { privateKey: new Uint8Array(blob.slice(12)), rawKeyHex: 'aabbccdd' };
+  }),
+  decryptVaultWithRawKey: vi.fn().mockImplementation(async (blob, rawKeyHex) => {
+    if (rawKeyHex === 'bad-key') throw new DOMException('decryption failed', 'OperationError');
     return new Uint8Array(blob.slice(12));
   }),
   openVaultStore: vi.fn().mockImplementation(async (userId) => ({
@@ -131,6 +142,8 @@ beforeEach(() => {
   vi.mocked(vaultMod.saveEncryptedKey).mockClear();
   vi.mocked(vaultMod.encryptVault).mockClear();
   vi.mocked(vaultMod.openVaultStore).mockClear();
+  vi.mocked(vaultMod.getVaultConfig).mockReturnValue(null);
+  vi.mocked(vaultMod.setVaultConfig).mockClear();
 });
 
 afterEach(() => {
@@ -157,6 +170,36 @@ describe('useAuth — performChallengeResponse', () => {
     expect(result.current.isAuthenticated).toBe(true);
     expect(result.current.vaultState).toBe('unlocked');
     expect(sessionStorage.getItem(JWT_KEY)).toBe('jwt-test');
+  });
+
+  it('uses the provided auth instance for challenge verification and key upload', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.performChallengeResponse(
+        new Uint8Array(32).fill(1),
+        new Uint8Array(32).fill(2),
+        'https://chat.example.com',
+      );
+    });
+
+    expect(apiMod.requestChallenge).toHaveBeenCalledWith(expect.any(String), 'https://chat.example.com');
+    expect(apiMod.verifyChallenge).toHaveBeenCalledWith(
+      expect.any(String),
+      'deadbeef',
+      expect.any(String),
+      expect.any(String),
+      'https://chat.example.com',
+    );
+    expect(apiMod.uploadKeyPackagesAfterAuth).toHaveBeenCalledWith(
+      'jwt-test',
+      'user-1',
+      expect.any(String),
+      {},
+      'https://chat.example.com',
+    );
   });
 
   it('persists public key hex in localStorage for vault detection', async () => {
@@ -191,8 +234,42 @@ describe('useAuth — performRegister', () => {
     expect(result.current.token).toBe('jwt-register');
     expect(result.current.user?.id).toBe('user-reg');
     expect(result.current.vaultState).toBe('unlocked');
+    expect(result.current.needsPinSetup).toBe(true);
     expect(sessionStorage.getItem(JWT_KEY)).toBe('jwt-register');
     expect(apiMod.registerWithPublicKey).toHaveBeenCalledOnce();
+  });
+
+  it('registers and uploads MLS state against the provided auth instance', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.performRegister(
+        'newuser',
+        'New User',
+        'word '.repeat(12).trim(),
+        undefined,
+        'https://chat.example.com',
+      );
+    });
+
+    expect(apiMod.registerWithPublicKey).toHaveBeenCalledWith(
+      'newuser',
+      'New User',
+      expect.any(String),
+      expect.any(String),
+      undefined,
+      'https://chat.example.com',
+      expect.any(String),
+      expect.any(Number),
+    );
+    expect(apiMod.uploadKeyPackagesAfterAuth).toHaveBeenCalledWith(
+      'jwt-register',
+      'user-reg',
+      expect.any(String),
+      {},
+      'https://chat.example.com',
+    );
   });
 
   it('resets state on registration failure', async () => {
@@ -210,6 +287,7 @@ describe('useAuth — performRegister', () => {
     expect(result.current.vaultState).toBe('none');
     expect(result.current.token).toBeNull();
     expect(result.current.user).toBeNull();
+    expect(result.current.needsPinSetup).toBe(false);
   });
 });
 
@@ -434,10 +512,15 @@ describe('useAuth — performLogout', () => {
 });
 
 describe('useAuth — session rehydration', () => {
-  it('sets vaultState=locked when JWT exists but session flag is absent', async () => {
+  it('sets vaultState=locked when JWT exists but session flag is absent (vault blob exists)', async () => {
     sessionStorage.setItem(JWT_KEY, 'valid-jwt');
     localStorage.setItem('hush_vault_user_user-42', 'aabb');
     // No VAULT_SESSION_FLAG.
+
+    // Vault blob must exist in IDB — otherwise it's a stale marker (PIN never set).
+    const fakeBlob = new Uint8Array(44);
+    fakeBlob.set(new Uint8Array(32).fill(1), 12);
+    _vaultBlobs.set('user-42', fakeBlob);
 
     vi.mocked(apiMod.fetchWithAuth).mockResolvedValue(
       mockFetchOk({ id: 'user-42', username: 'eve', displayName: 'Eve' }),
@@ -449,10 +532,51 @@ describe('useAuth — session rehydration', () => {
     expect(result.current.vaultState).toBe('locked');
   });
 
-  it('sets vaultState=unlocked when JWT and session flag both exist', async () => {
+  it('sets vaultState=unlocked when vault marker exists but no blob (PIN never set)', async () => {
+    sessionStorage.setItem(JWT_KEY, 'valid-jwt');
+    localStorage.setItem('hush_vault_user_user-42', 'aabb');
+    // No blob in _vaultBlobs — simulates registration without PIN setup.
+
+    vi.mocked(apiMod.fetchWithAuth).mockResolvedValue(
+      mockFetchOk({ id: 'user-42', username: 'eve', displayName: 'Eve' }),
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.vaultState).toBe('unlocked');
+    // Stale marker should be cleared.
+    expect(localStorage.getItem('hush_vault_user_user-42')).toBeNull();
+  });
+
+  it('preserves pending pin setup across refresh when JWT is still valid', async () => {
+    sessionStorage.setItem(JWT_KEY, 'valid-jwt');
+    sessionStorage.setItem('hush_pin_setup_pending', '1');
+
+    vi.mocked(apiMod.fetchWithAuth).mockResolvedValue(
+      mockFetchOk({ id: 'user-42', username: 'eve', displayName: 'Eve' }),
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.vaultState).toBe('unlocked');
+    expect(result.current.needsPinSetup).toBe(true);
+  });
+
+  it('auto-unlocks vault when JWT, session flag, AND derived key all exist (refresh)', async () => {
+    // Soft refresh: JWT valid, session alive, and the derived AES key from a
+    // prior PIN entry is in sessionStorage. The vault should auto-decrypt
+    // without showing the PIN screen.
     sessionStorage.setItem(JWT_KEY, 'valid-jwt');
     sessionStorage.setItem('hush_vault_session_alive', '1');
+    sessionStorage.setItem('hush_vault_derived_key', 'aabbccdd');
     localStorage.setItem('hush_vault_user_user-43', 'aabb');
+
+    // Populate the vault blob so loadEncryptedKey returns something.
+    const fakeBlob = new Uint8Array(44); // 12-byte nonce + 32-byte key
+    fakeBlob.set(new Uint8Array(32).fill(1), 12);
+    _vaultBlobs.set('user-43', fakeBlob);
 
     vi.mocked(apiMod.fetchWithAuth).mockResolvedValue(
       mockFetchOk({ id: 'user-43', username: 'frank', displayName: 'Frank' }),
@@ -462,6 +586,79 @@ describe('useAuth — session rehydration', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.vaultState).toBe('unlocked');
+    expect(vaultMod.decryptVaultWithRawKey).toHaveBeenCalledWith(fakeBlob, 'aabbccdd');
+  });
+
+  it('migrates the legacy global vault timeout key into the per-user config on startup', async () => {
+    sessionStorage.setItem(JWT_KEY, 'valid-jwt');
+    sessionStorage.setItem('hush_vault_session_alive', '1');
+    sessionStorage.setItem('hush_vault_derived_key', 'aabbccdd');
+    localStorage.setItem('hush_vault_timeout', '15m');
+    localStorage.setItem('hush_vault_user_user-43', 'aabb');
+
+    const fakeBlob = new Uint8Array(44);
+    fakeBlob.set(new Uint8Array(32).fill(1), 12);
+    _vaultBlobs.set('user-43', fakeBlob);
+
+    vi.mocked(apiMod.fetchWithAuth).mockResolvedValue(
+      mockFetchOk({ id: 'user-43', username: 'frank', displayName: 'Frank' }),
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(vaultMod.setVaultConfig).toHaveBeenCalledWith(
+      'user-43',
+      { timeout: 15, pinType: 'pin' },
+    );
+    expect(localStorage.getItem('hush_vault_timeout')).toBeNull();
+    expect(result.current.vaultState).toBe('unlocked');
+  });
+
+  it('sets vaultState=locked when JWT and session flag exist but derived key is absent (vault blob exists)', async () => {
+    // Session alive but no derived key — vault timeout='refresh' cleared it,
+    // or this is the first load after browser restart. Must prompt for PIN.
+    sessionStorage.setItem(JWT_KEY, 'valid-jwt');
+    sessionStorage.setItem('hush_vault_session_alive', '1');
+    // No hush_vault_derived_key set.
+    localStorage.setItem('hush_vault_user_user-43', 'aabb');
+
+    // Vault blob must exist — otherwise it's a stale marker.
+    const fakeBlob = new Uint8Array(44);
+    fakeBlob.set(new Uint8Array(32).fill(1), 12);
+    _vaultBlobs.set('user-43', fakeBlob);
+
+    vi.mocked(apiMod.fetchWithAuth).mockResolvedValue(
+      mockFetchOk({ id: 'user-43', username: 'frank', displayName: 'Frank' }),
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.vaultState).toBe('locked');
+  });
+
+  it('falls back to locked if stored derived key fails to decrypt', async () => {
+    // Derived key in sessionStorage is corrupt or stale — auto-unlock fails,
+    // should fall back to PIN screen.
+    sessionStorage.setItem(JWT_KEY, 'valid-jwt');
+    sessionStorage.setItem('hush_vault_session_alive', '1');
+    sessionStorage.setItem('hush_vault_derived_key', 'bad-key');
+    localStorage.setItem('hush_vault_user_user-43', 'aabb');
+
+    const fakeBlob = new Uint8Array(44);
+    _vaultBlobs.set('user-43', fakeBlob);
+
+    vi.mocked(apiMod.fetchWithAuth).mockResolvedValue(
+      mockFetchOk({ id: 'user-43', username: 'frank', displayName: 'Frank' }),
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.vaultState).toBe('locked');
+    // Bad key should be cleared from sessionStorage.
+    expect(sessionStorage.getItem('hush_vault_derived_key')).toBeNull();
   });
 
   it('sets vaultState=none when JWT is invalid (401)', async () => {
@@ -490,12 +687,10 @@ describe('useAuth — setPIN', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
-      await result.current.performChallengeResponse(
-        new Uint8Array(32).fill(1),
-        new Uint8Array(32).fill(2),
-      );
+      await result.current.performRegister('newuser', 'New User', 'word '.repeat(12).trim());
     });
     await waitFor(() => expect(result.current.vaultState).toBe('unlocked'));
+    expect(result.current.needsPinSetup).toBe(true);
 
     await act(async () => {
       await result.current.setPIN('my-secret-pin');
@@ -506,6 +701,7 @@ describe('useAuth — setPIN', () => {
       'my-secret-pin',
     );
     expect(vaultMod.saveEncryptedKey).toHaveBeenCalled();
+    expect(result.current.needsPinSetup).toBe(false);
   });
 
   it('throws if called without identity key in memory', async () => {
@@ -518,6 +714,27 @@ describe('useAuth — setPIN', () => {
     });
 
     expect(caught?.message).toMatch(/no identity key/i);
+  });
+});
+
+describe('useAuth — skipPinSetup', () => {
+  it('clears the pending pin-setup state without logging out', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.performRegister('newuser', 'New User', 'word '.repeat(12).trim());
+    });
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.needsPinSetup).toBe(true);
+
+    act(() => {
+      result.current.skipPinSetup();
+    });
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.needsPinSetup).toBe(false);
   });
 });
 
@@ -538,6 +755,43 @@ describe('useAuth — lockVault', () => {
     await waitFor(() => expect(result.current.vaultState).toBe('locked'));
 
     expect(vaultMod.deleteVaultDatabase).not.toHaveBeenCalled();
+  });
+
+  it('removes a stale refresh handler when vault timeout changes while unlocked', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.performChallengeResponse(
+        new Uint8Array(32).fill(1),
+        new Uint8Array(32).fill(2),
+      );
+    });
+    await waitFor(() => expect(result.current.vaultState).toBe('unlocked'));
+
+    sessionStorage.setItem('hush_vault_derived_key', 'secret');
+
+    act(() => {
+      result.current.updateVaultTimeout('refresh');
+    });
+
+    act(() => {
+      result.current.updateVaultTimeout('browser_close');
+    });
+
+    window.dispatchEvent(new Event('beforeunload'));
+
+    expect(vaultMod.setVaultConfig).toHaveBeenNthCalledWith(
+      1,
+      'user-1',
+      { timeout: 'refresh', pinType: 'pin' },
+    );
+    expect(vaultMod.setVaultConfig).toHaveBeenNthCalledWith(
+      2,
+      'user-1',
+      { timeout: 'browser_close', pinType: 'pin' },
+    );
+    expect(sessionStorage.getItem('hush_vault_derived_key')).toBe('secret');
   });
 });
 
