@@ -102,6 +102,7 @@ export async function updateConfig(apiKey, updates) {
     body: JSON.stringify(updates),
   });
   await checkResponse(res);
+  if (res.status === 204) return {};
   return res.json();
 }
 
