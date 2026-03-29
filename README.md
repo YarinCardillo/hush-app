@@ -12,17 +12,30 @@ End-to-end encrypted communication platform. Every message, every call, every sc
 
 **Prerequisites:** Linux server with [Docker](https://docs.docker.com/engine/install/) and docker-compose installed.
 
+**With a domain name** (recommended — gives you a real TLS certificate):
+
 ```bash
 git clone https://github.com/YarinCardillo/hush-app
 cd hush-app
 ./scripts/setup.sh --domain chat.example.com --email ops@example.com
 ```
 
-That's it. The script generates secrets, configures TLS via Let's Encrypt (Caddy), starts all services, and prints your live URL. Expected time: under 10 minutes.
+**With just an IP address** (self-signed TLS — browsers show a certificate warning):
+
+```bash
+git clone https://github.com/YarinCardillo/hush-app
+cd hush-app
+./scripts/setup.sh --ip 203.0.113.42
+```
+
+That's it. The script generates secrets, configures TLS, starts all services, and prints your live URL. Expected time: under 10 minutes.
+
+> **IP mode note:** Caddy generates a self-signed certificate from its internal CA. Browsers will show a certificate warning on first visit — accept it to proceed. E2EE protects your data regardless of the TLS certificate type.
 
 **Flags:**
-- `--domain <domain>` — your public hostname (required)
-- `--email <email>` — used for Let's Encrypt certificate renewal (required)
+- `--domain <domain>` — your public hostname (Let's Encrypt TLS)
+- `--ip <address>` — your server IP (self-signed TLS, no domain needed)
+- `--email <email>` — for Let's Encrypt renewal (required with `--domain`, ignored with `--ip`)
 - `--force` — re-run on an already-configured instance (overwrites `.env`)
 
 **What `setup.sh` does:**
