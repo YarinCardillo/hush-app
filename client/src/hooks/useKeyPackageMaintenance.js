@@ -11,7 +11,7 @@
  * Mount point: ServerLayout (after wsClient is available and auth is confirmed).
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as mlsStore from '../lib/mlsStore';
 import * as hushCrypto from '../lib/hushCrypto';
 import { uploadMLSKeyPackages, getKeyPackageCount } from '../lib/api';
@@ -112,41 +112,47 @@ async function replenishKeyPackages(token, userId, deviceId, threshold, deps) {
  * Mounts KeyPackage maintenance lifecycle. Should be called once in ServerLayout
  * where wsClient, token, and userId are all available.
  *
- * @param {{ token: string|null, userId: string, deviceId: string, threshold: number|null, wsClient: object|null }} opts
+ * @param {{ token: string|null, userId: string, deviceId: string, threshold: number|null, wsClient: object|null, baseUrl: string|null }} opts
  */
-export function useKeyPackageMaintenance({ token, userId, deviceId, threshold, wsClient }) {
-  const depsRef = useRef({
+export function useKeyPackageMaintenance({ token, userId, deviceId, threshold, wsClient, baseUrl }) {
+  // Rebuild bound deps whenever baseUrl changes so interval callbacks always
+  // target the correct instance. Empty string is valid (same-origin fallback).
+  const deps = useMemo(() => ({
     mlsStore,
     crypto: hushCrypto,
-    uploadMLSKeyPackages,
-    getKeyPackageCount,
-  });
+    uploadMLSKeyPackages: (tok, body) => uploadMLSKeyPackages(tok, body, baseUrl),
+    getKeyPackageCount: (tok, did) => getKeyPackageCount(tok, did, baseUrl),
+  }), [baseUrl]);
+
+  // Keep a ref so interval/WS callbacks always pick up the latest deps without
+  // needing to be re-registered every time baseUrl changes.
+  const depsRef = useRef(deps);
+  depsRef.current = deps;
 
   // Trigger 1 & 2: run on mount and every 6h.
   useEffect(() => {
-    if (!token || !userId || !deviceId) return;
+    // baseUrl null/undefined means the caller hasn't resolved the instance yet.
+    if (!token || !userId || !deviceId || baseUrl == null) return;
 
     const resolvedThreshold = threshold ?? DEFAULT_THRESHOLD;
-    const deps = depsRef.current;
 
-    replenishKeyPackages(token, userId, deviceId, resolvedThreshold, deps);
+    replenishKeyPackages(token, userId, deviceId, resolvedThreshold, depsRef.current);
 
     const timer = setInterval(() => {
-      replenishKeyPackages(token, userId, deviceId, resolvedThreshold, deps);
+      replenishKeyPackages(token, userId, deviceId, resolvedThreshold, depsRef.current);
     }, PERIODIC_CHECK_MS);
 
     return () => clearInterval(timer);
-  }, [token, userId, deviceId, threshold]);
+  }, [token, userId, deviceId, threshold, baseUrl]);
 
   // Trigger 3: key_packages.low WS event.
   useEffect(() => {
-    if (!wsClient || !token || !userId || !deviceId) return;
+    if (!wsClient || !token || !userId || !deviceId || baseUrl == null) return;
 
     const resolvedThreshold = threshold ?? DEFAULT_THRESHOLD;
-    const deps = depsRef.current;
 
     const handler = () => {
-      replenishKeyPackages(token, userId, deviceId, resolvedThreshold, deps);
+      replenishKeyPackages(token, userId, deviceId, resolvedThreshold, depsRef.current);
     };
 
     wsClient.on('key_packages.low', handler);
@@ -154,5 +160,5 @@ export function useKeyPackageMaintenance({ token, userId, deviceId, threshold, w
     return () => {
       wsClient.off('key_packages.low', handler);
     };
-  }, [wsClient, token, userId, deviceId, threshold]);
+  }, [wsClient, token, userId, deviceId, threshold, baseUrl]);
 }
