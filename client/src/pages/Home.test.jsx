@@ -184,15 +184,20 @@ describe('Home', () => {
     expect(link).toHaveAttribute('href', '/link-device?mode=new');
   });
 
-  it('shows a warning badge instead of a false inactive badge when handshake fails', async () => {
+  it('keeps the encrypted badge static when handshake fails and shows the reachability error separately', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     global.fetch = vi.fn().mockRejectedValue(new TypeError('Load failed'));
 
     renderHome();
 
-    expect(await screen.findByText(/could not verify encryption/i)).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent(/could not reach .*check the instance url and that the server is online/i);
-    expect(screen.queryByText(/^end-to-end encrypted$/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/^end-to-end encrypted$/i)).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not reach .*check the instance url and that the server is online/i);
     consoleErrorSpy.mockRestore();
+  });
+
+  it('shows the encrypted badge even when handshake capabilities are absent', () => {
+    renderHome();
+
+    expect(screen.getByText(/^end-to-end encrypted$/i)).toBeInTheDocument();
   });
 });

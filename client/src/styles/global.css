@@ -4185,12 +4185,6 @@ a[href]:active {
   text-decoration: none;
 }
 
-.home-e2ee-badge--inactive {
-  background: rgba(85, 85, 104, 0.08);
-  color: var(--hush-text-muted);
-  text-decoration: line-through;
-}
-
 .home-form-card {
   width: 100%;
   padding: 24px;

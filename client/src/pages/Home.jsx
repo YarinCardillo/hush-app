@@ -256,12 +256,10 @@ export default function Home() {
   // Handshake data for the selected auth instance.
   const [handshakeData, setHandshakeData] = useState(null);
   const [handshakeError, setHandshakeError] = useState(null);
-  const [isHandshakeLoading, setIsHandshakeLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
 
-    setIsHandshakeLoading(true);
     setHandshakeData(null);
     setHandshakeError(null);
 
@@ -275,9 +273,6 @@ export default function Home() {
         if (cancelled) return;
         setHandshakeData(null);
         setHandshakeError(err);
-      })
-      .finally(() => {
-        if (!cancelled) setIsHandshakeLoading(false);
       });
 
     return () => {
@@ -286,39 +281,6 @@ export default function Home() {
   }, [selectedInstanceUrl]);
 
   const registrationMode = handshakeData?.registration_mode ?? 'open';
-  const caps = handshakeData?.capabilities ?? handshakeData?.Capabilities ?? {};
-  const e2eeActive = caps['e2ee.chat'] === true && caps['e2ee.media'] === true;
-  const handshakeStatus = isHandshakeLoading
-    ? 'loading'
-    : handshakeError
-    ? 'unreachable'
-    : e2eeActive
-    ? 'active'
-    : 'inactive';
-  const e2eeBadgeLabel = handshakeStatus === 'loading'
-    ? 'checking encryption…'
-    : handshakeStatus === 'unreachable'
-    ? 'could not verify encryption'
-    : handshakeStatus === 'inactive'
-    ? 'e2ee not advertised'
-    : 'end-to-end encrypted';
-  const e2eeBadgeClassName = [
-    'home-e2ee-badge',
-    handshakeStatus === 'active' ? 'home-e2ee-badge--active' : '',
-    handshakeStatus === 'inactive' ? 'home-e2ee-badge--inactive' : '',
-  ].filter(Boolean).join(' ');
-  const e2eeBadgeStyle = handshakeStatus === 'unreachable'
-    ? {
-        background: 'color-mix(in srgb, var(--hush-danger) 10%, transparent)',
-        color: 'var(--hush-danger)',
-        borderColor: 'color-mix(in srgb, var(--hush-danger) 30%, transparent)',
-      }
-    : handshakeStatus === 'loading'
-    ? {
-        background: 'rgba(255,255,255,0.03)',
-        color: 'var(--hush-text-secondary)',
-      }
-    : undefined;
   const instanceReachabilityMessage = handshakeError
     ? getInstanceUnreachableMessage(selectedInstanceUrl)
     : '';
@@ -769,9 +731,7 @@ export default function Home() {
           transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1], delay: 0.6 }}
         >
           <span
-            className={e2eeBadgeClassName}
-            style={e2eeBadgeStyle}
-            title={handshakeError?.message || selectedInstanceUrl}
+            className="home-e2ee-badge home-e2ee-badge--active"
           >
             <svg
               width="10"
@@ -787,7 +747,7 @@ export default function Home() {
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
-            {e2eeBadgeLabel}
+            end-to-end encrypted
           </span>
         </motion.div>
 
