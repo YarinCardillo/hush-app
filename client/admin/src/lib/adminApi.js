@@ -216,8 +216,8 @@ export async function instanceUnban(apiKey, userId, reason) {
  */
 export async function getAuditLog(apiKey, opts = {}) {
   const params = new URLSearchParams();
-  if (opts.limit) params.set('limit', String(opts.limit));
-  if (opts.offset) params.set('offset', String(opts.offset));
+  if (opts.limit != null) params.set('limit', String(opts.limit));
+  if (opts.offset != null) params.set('offset', String(opts.offset));
   if (opts.action) params.set('action', opts.action);
   if (opts.targetId) params.set('target_id', opts.targetId);
   const url = `${BASE}/audit-log${params.size ? `?${params}` : ''}`;
