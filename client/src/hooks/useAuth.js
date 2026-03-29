@@ -81,6 +81,7 @@ export const JWT_KEY = 'hush_jwt';
 const DEVICE_ID_KEY = 'hush_device_id';
 const VAULT_USER_KEY_PREFIX = 'hush_vault_user_';
 const VAULT_SESSION_FLAG = 'hush_vault_session_alive';
+const LEGACY_VAULT_TIMEOUT_KEY = 'hush_vault_timeout';
 const PIN_ATTEMPTS_KEY_PREFIX = 'hush_pin_attempts_';
 const INACTIVITY_EVENTS = ['mousemove', 'keydown', 'touchstart', 'click'];
 
@@ -138,6 +139,40 @@ function pinDelayMs(failureCount) {
     if (failureCount >= threshold) return delayMs;
   }
   return 0;
+}
+
+/**
+ * Parses the stored vault-timeout selector value into its effective policy.
+ *
+ * @param {string|null} raw
+ * @returns {'browser_close'|'refresh'|'never'|number|null}
+ */
+function parseLegacyVaultTimeout(raw) {
+  if (raw == null || raw === '') return null;
+
+  const numeric = Number(raw);
+  if (Number.isInteger(numeric) && numeric > 0) {
+    return numeric;
+  }
+
+  switch (raw) {
+    case 'browser_close':
+    case 'refresh':
+    case 'never':
+      return raw;
+    case '1m':
+      return 1;
+    case '15m':
+      return 15;
+    case '30m':
+      return 30;
+    case '1h':
+      return 60;
+    case '4h':
+      return 240;
+    default:
+      return null;
+  }
 }
 
 /**
@@ -335,15 +370,16 @@ export function useAuth() {
   }, []);
 
   /**
-   * Starts (or resets) the inactivity lock timer for a numeric timeout config.
-   * @param {number} timeoutMinutes
+   * Starts (or resets) the inactivity lock timer for a numeric timeout policy.
+   * @param {number} deadlineMs
    */
-  const startInactivityTimer = useCallback((timeoutMinutes) => {
+  const startInactivityTimer = useCallback((deadlineMs) => {
     clearInactivityTimer();
+    const remainingMs = Math.max(deadlineMs - Date.now(), 0);
     inactivityTimerRef.current = setTimeout(() => {
       identityKeyRef.current = null;
       setVaultState('locked');
-    }, timeoutMinutes * 60 * 1000);
+    }, remainingMs);
   }, [clearInactivityTimer]);
 
   // ── Vault configuration helpers ────────────────────────────────────────────
@@ -352,9 +388,32 @@ export function useAuth() {
    * Applies the vault timeout policy for the given user after unlock.
    * @param {string} userId
    */
+  const inactivityResetRef = useRef(null);
+  const inactivityResumeRef = useRef(null);
+  const inactivityDeadlineRef = useRef(null);
+
+  const clearVaultTimeoutEffects = useCallback(() => {
+    clearInactivityTimer();
+    inactivityDeadlineRef.current = null;
+
+    if (inactivityResetRef.current) {
+      INACTIVITY_EVENTS.forEach((eventName) => {
+        window.removeEventListener(eventName, inactivityResetRef.current);
+      });
+      inactivityResetRef.current = null;
+    }
+
+    if (inactivityResumeRef.current) {
+      document.removeEventListener('visibilitychange', inactivityResumeRef.current);
+      window.removeEventListener('focus', inactivityResumeRef.current);
+      inactivityResumeRef.current = null;
+    }
+  }, [clearInactivityTimer]);
+
   const applyVaultTimeout = useCallback((userId) => {
+    clearVaultTimeoutEffects();
     const config = getVaultConfig(userId);
-    const timeout = config?.timeout ?? 'browser_close';
+    const timeout = config?.timeout ?? parseLegacyVaultTimeout(localStorage.getItem(LEGACY_VAULT_TIMEOUT_KEY)) ?? 'browser_close';
 
     if (timeout === 'browser_close') {
       // Mark session alive in sessionStorage; on next page load without this
@@ -374,16 +433,40 @@ export function useAuth() {
 
     if (typeof timeout === 'number' && timeout > 0) {
       sessionStorage.setItem(VAULT_SESSION_FLAG, '1');
-      startInactivityTimer(timeout);
+      const timeoutMs = timeout * 60 * 1000;
 
-      const resetTimer = () => startInactivityTimer(timeout);
+      const resetTimer = () => {
+        if (document.visibilityState === 'hidden') return;
+        const deadlineMs = Date.now() + timeoutMs;
+        inactivityDeadlineRef.current = deadlineMs;
+        startInactivityTimer(deadlineMs);
+      };
+
+      const handleResume = () => {
+        if (document.visibilityState === 'hidden') return;
+        const deadlineMs = inactivityDeadlineRef.current;
+        if (typeof deadlineMs !== 'number') {
+          resetTimer();
+          return;
+        }
+        if (Date.now() >= deadlineMs) {
+          identityKeyRef.current = null;
+          setVaultState('locked');
+          return;
+        }
+        startInactivityTimer(deadlineMs);
+      };
+
+      resetTimer();
       INACTIVITY_EVENTS.forEach(ev => window.addEventListener(ev, resetTimer, { passive: true }));
+      document.addEventListener('visibilitychange', handleResume);
+      window.addEventListener('focus', handleResume);
+      inactivityResetRef.current = resetTimer;
+      inactivityResumeRef.current = handleResume;
 
-      // Cleanup when vault locks or component unmounts is handled by the
-      // useEffect that subscribes to vaultState changes.
       return resetTimer;
     }
-  }, [startInactivityTimer]);
+  }, [clearVaultTimeoutEffects, startInactivityTimer]);
 
   // ── Core auth completion ───────────────────────────────────────────────────
 
@@ -738,9 +821,9 @@ export function useAuth() {
    */
   const lockVault = useCallback(() => {
     identityKeyRef.current = null;
-    clearInactivityTimer();
+    clearVaultTimeoutEffects();
     setVaultState('locked');
-  }, [clearInactivityTimer]);
+  }, [clearVaultTimeoutEffects]);
 
   /**
    * Encrypts the current in-memory private key with a PIN and saves it to vault IDB.
@@ -771,6 +854,20 @@ export function useAuth() {
 
     db.close();
   }, [user]);
+
+  /**
+   * Updates the active vault-timeout policy and reapplies it immediately when
+   * the vault is already unlocked.
+   *
+   * @param {'browser_close'|'refresh'|'never'|number} timeout
+   */
+  const updateVaultTimeout = useCallback((timeout) => {
+    localStorage.setItem(LEGACY_VAULT_TIMEOUT_KEY, String(timeout));
+
+    if (vaultState === 'unlocked' && user?.id) {
+      applyVaultTimeout(user.id);
+    }
+  }, [applyVaultTimeout, user?.id, vaultState]);
 
   // ── Scorched-earth logout ──────────────────────────────────────────────────
 
@@ -850,7 +947,7 @@ export function useAuth() {
 
     // 7. Reset in-memory state.
     identityKeyRef.current = null;
-    clearInactivityTimer();
+    clearVaultTimeoutEffects();
     clearGuestTimers();
     setToken(null);
     setUser(null);
@@ -859,7 +956,7 @@ export function useAuth() {
     setGuestExpiresAt(null);
     setError(null);
     setLoading(false);
-  }, [user, clearInactivityTimer, clearGuestTimers]);
+  }, [user, clearGuestTimers, clearVaultTimeoutEffects]);
 
   // ── Startup: session rehydration ──────────────────────────────────────────
 
@@ -1042,9 +1139,9 @@ export function useAuth() {
 
   useEffect(() => {
     if (vaultState !== 'unlocked') {
-      clearInactivityTimer();
+      clearVaultTimeoutEffects();
     }
-  }, [vaultState, clearInactivityTimer]);
+  }, [vaultState, clearVaultTimeoutEffects]);
 
   useEffect(() => {
     return () => {
@@ -1063,7 +1160,7 @@ export function useAuth() {
       bc.onmessage = (event) => {
         if (event.data?.type === 'hush_logout') {
           identityKeyRef.current = null;
-          clearInactivityTimer();
+          clearVaultTimeoutEffects();
           setToken(null);
           setUser(null);
           setVaultState('none');
@@ -1073,7 +1170,7 @@ export function useAuth() {
       // BroadcastChannel unavailable.
     }
     return () => { try { bc?.close(); } catch { /* noop */ } };
-  }, [clearInactivityTimer]);
+  }, [clearVaultTimeoutEffects]);
 
   return {
     user,
@@ -1090,6 +1187,7 @@ export function useAuth() {
     unlockVault,
     lockVault,
     setPIN,
+    updateVaultTimeout,
     performLogout,
     clearError,
     // Ref to the in-memory identity keypair. Used by useInstances for

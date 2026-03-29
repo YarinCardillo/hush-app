@@ -51,6 +51,46 @@ function getStoredLightTheme() {
   return localStorage.getItem(LIGHT_THEME_KEY) || 'og-light';
 }
 
+function formatVaultTimeoutValue(timeout) {
+  if (typeof timeout === 'number') {
+    switch (timeout) {
+      case 60:
+        return '1h';
+      case 240:
+        return '4h';
+      default:
+        return String(timeout) + 'm';
+    }
+  }
+  return timeout || 'browser_close';
+}
+
+function parseVaultTimeoutValue(value) {
+  switch (value) {
+    case 'browser_close':
+    case 'refresh':
+    case 'never':
+      return value;
+    case '1m':
+      return 1;
+    case '15m':
+      return 15;
+    case '30m':
+      return 30;
+    case '1h':
+      return 60;
+    case '4h':
+      return 240;
+    default:
+      return 'browser_close';
+  }
+}
+
+function getStoredVaultTimeoutValue() {
+  const raw = localStorage.getItem(VAULT_TIMEOUT_KEY);
+  return formatVaultTimeoutValue(raw);
+}
+
 function findThemeCss(key, themes, fallback) {
   const found = themes.find((t) => t.key === key);
   return found ? found.css : fallback;
@@ -117,13 +157,17 @@ function LogoutConfirmModal({ onConfirm, onCancel, loading }) {
 // ─── Account Tab ──────────────────────────────────────────
 
 function AccountTab() {
-  const { user, performLogout, logout } = useAuth();
+  const { user, performLogout, logout, updateVaultTimeout } = useAuth();
   const navigate = useNavigate();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [vaultTimeout, setVaultTimeout] = useState(
-    () => localStorage.getItem(VAULT_TIMEOUT_KEY) || 'browser_close',
+    () => getStoredVaultTimeoutValue(),
   );
+
+  useEffect(() => {
+    setVaultTimeout(getStoredVaultTimeoutValue());
+  }, []);
 
   const handleLogoutClick = () => {
     setShowLogoutConfirm(true);
@@ -142,6 +186,10 @@ function AccountTab() {
 
   const handleVaultTimeoutChange = (value) => {
     setVaultTimeout(value);
+    if (typeof updateVaultTimeout === 'function') {
+      updateVaultTimeout(parseVaultTimeoutValue(value));
+      return;
+    }
     localStorage.setItem(VAULT_TIMEOUT_KEY, value);
   };
 
