@@ -295,7 +295,11 @@ export async function requestChallenge(publicKeyBase64, baseUrl = '') {
     throw createNetworkError('request challenge', targetUrl, err);
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `requestChallenge ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(data.error || `requestChallenge ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -322,7 +326,11 @@ export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, d
     throw createNetworkError('verify challenge', targetUrl, err);
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `verifyChallenge ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(data.error || `verifyChallenge ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -428,7 +436,11 @@ export async function registerWithPublicKey(
     throw createNetworkError('register', targetUrl, err);
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `registerWithPublicKey ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(data.error || `registerWithPublicKey ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
