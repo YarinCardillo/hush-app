@@ -433,9 +433,8 @@ export default function Home() {
   }, [performRecovery, rememberSelectedInstance, selectedInstanceUrl]);
 
   const handlePinUnlock = useCallback(async (pin) => {
-    await rememberSelectedInstance(selectedInstanceUrl);
     await unlockVault(pin);
-  }, [rememberSelectedInstance, selectedInstanceUrl, unlockVault]);
+  }, [unlockVault]);
 
   const handleSwitchAccount = useCallback(() => {
     // Don't wipe the vault yet — user might press Back.
@@ -703,7 +702,7 @@ export default function Home() {
         >
           {renderFormContent()}
 
-          {authView !== AUTH_VIEW.PIN_SETUP && (
+          {authView !== AUTH_VIEW.PIN_SETUP && vaultState !== 'locked' && (
             <>
               <AuthInstanceSelector
                 value={selectedInstanceUrl}
