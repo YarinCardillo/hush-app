@@ -602,8 +602,8 @@ export default function ServerList({
         <button
           type="button"
           className="sl-add-btn"
-          title="Create a server"
-          aria-label="Create a server"
+          title="Add a server"
+          aria-label="Add a server"
           onClick={() => setShowCreateModal(true)}
         >
           +
