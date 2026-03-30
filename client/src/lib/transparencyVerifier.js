@@ -104,20 +104,28 @@ export async function verifyInclusion(leafData, leafIndex, treeSize, auditPath, 
     let current = await leafHash(leafData);
     let idx = leafIndex;
     let n = treeSize;
+    let pathIdx = 0;
 
-    for (const siblingHex of auditPath) {
-      const sibling = hexToBytes(siblingHex);
+    while (n > 1) {
       if (idx % 2 === 0) {
-        // Current is left child; sibling is right.
-        current = await nodeHash(current, sibling);
+        if (idx + 1 < n) {
+          if (pathIdx >= auditPath.length) return false;
+          const sibling = hexToBytes(auditPath[pathIdx]);
+          current = await nodeHash(current, sibling);
+          pathIdx++;
+        }
+        // Else: promoted — no sibling, no hash.
       } else {
-        // Current is right child; sibling is left.
+        if (pathIdx >= auditPath.length) return false;
+        const sibling = hexToBytes(auditPath[pathIdx]);
         current = await nodeHash(sibling, current);
+        pathIdx++;
       }
       idx = Math.floor(idx / 2);
       n = Math.ceil(n / 2);
     }
 
+    if (pathIdx !== auditPath.length) return false;
     const computed = bytesToHex(current);
     return computed === expectedRoot.toLowerCase();
   } catch {
