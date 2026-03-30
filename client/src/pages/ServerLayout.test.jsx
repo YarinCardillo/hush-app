@@ -3,6 +3,10 @@ import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/re
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ServerLayout from './ServerLayout';
 
+const { mockVerifyOwnKey } = vi.hoisted(() => ({
+  mockVerifyOwnKey: vi.fn().mockResolvedValue({ ok: true }),
+}));
+
 vi.mock('../lib/mlsStore', () => ({
   openStore: vi.fn().mockReturnValue(Promise.resolve({})),
   preloadGroupState: vi.fn().mockResolvedValue(undefined),
@@ -101,6 +105,7 @@ vi.mock('../contexts/InstanceContext', () => ({
 
 vi.mock('../hooks/useAuth', () => ({
   JWT_KEY: 'hush_jwt',
+  HOME_INSTANCE_KEY: 'hush_home_instance',
   getDeviceId: vi.fn(() => 'device-1'),
 }));
 
@@ -134,6 +139,12 @@ vi.mock('../lib/ws', () => ({
     send: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
+  })),
+}));
+
+vi.mock('../lib/transparencyVerifier', () => ({
+  TransparencyVerifier: vi.fn().mockImplementation(() => ({
+    verifyOwnKey: mockVerifyOwnKey,
   })),
 }));
 
@@ -212,6 +223,7 @@ vi.mock('../hooks/useToast', () => ({
 import { getGuildChannels, getGuildMembers } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useInstanceContext } from '../contexts/InstanceContext';
+import { TransparencyVerifier } from '../lib/transparencyVerifier';
 
 function renderAtRoute(path) {
   return render(
@@ -229,9 +241,12 @@ function renderAtRoute(path) {
 describe('ServerLayout', () => {
   beforeEach(() => {
     cleanup();
+    localStorage.clear();
     sessionStorage.setItem('hush_jwt', 'test-token');
     vi.mocked(getGuildChannels).mockResolvedValue([]);
     vi.mocked(getGuildMembers).mockResolvedValue([]);
+    mockVerifyOwnKey.mockClear();
+    vi.mocked(TransparencyVerifier).mockClear();
   });
 
   it('shows welcome message when no guild is selected (/guilds route)', async () => {
@@ -328,5 +343,52 @@ describe('ServerLayout', () => {
     vi.mocked(getGuildMembers).mockClear();
     renderAtRoute('/servers/s1/channels');
     expect(getGuildChannels).not.toHaveBeenCalled();
+  });
+
+  it('skips own-key transparency verification on remote guild instances', async () => {
+    localStorage.setItem('hush_home_instance', 'https://home.example.com');
+    vi.mocked(useInstanceContext).mockReturnValueOnce({
+      instanceStates: new Map([
+        ['https://remote.example.com', { connectionState: 'connected' }],
+      ]),
+      mergedGuilds: [{
+        id: 's-remote',
+        name: 'Test Guild',
+        ownerId: 'u1',
+        instanceUrl: 'https://remote.example.com',
+      }],
+      getWsClient: vi.fn(() => null),
+      getTokenForInstance: vi.fn(() => 'remote-token'),
+      refreshGuilds: vi.fn().mockResolvedValue(undefined),
+      bootInstance: vi.fn().mockResolvedValue(undefined),
+      disconnectInstance: vi.fn().mockResolvedValue(undefined),
+      guildOrder: [],
+      setGuildOrder: vi.fn().mockResolvedValue(undefined),
+    });
+
+    vi.mocked(useAuth).mockReturnValueOnce({
+      token: 'home-token',
+      user: { id: 'u1' },
+      logout: vi.fn(),
+      identityKeyRef: { current: { publicKey: new Uint8Array(32) } },
+      transparencyError: null,
+      setTransparencyError: vi.fn(),
+    });
+
+    const { getHandshake } = await import('../lib/api');
+    vi.mocked(getHandshake).mockResolvedValue({
+      transparency_url: '/api/transparency',
+      log_public_key: 'aa'.repeat(32),
+      key_package_low_threshold: 10,
+    });
+
+    renderAtRoute('/remote.example.com/test-guild');
+
+    await waitFor(() => {
+      expect(getGuildChannels).toHaveBeenCalledWith('remote-token', 's-remote', 'https://remote.example.com');
+    });
+
+    expect(TransparencyVerifier).not.toHaveBeenCalled();
+    expect(mockVerifyOwnKey).not.toHaveBeenCalled();
   });
 });

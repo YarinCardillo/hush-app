@@ -91,7 +91,12 @@ describe('createInstanceApi', () => {
 
   it('forwards baseUrl as last argument to getMLSCommitsSinceEpoch', () => {
     api.getMLSCommitsSinceEpoch(TOKEN, 'channel-1', 3);
-    expect(apiModule.getMLSCommitsSinceEpoch).toHaveBeenCalledWith(TOKEN, 'channel-1', 3, BASE_URL);
+    expect(apiModule.getMLSCommitsSinceEpoch).toHaveBeenCalledWith(TOKEN, 'channel-1', 3, 100, BASE_URL);
+  });
+
+  it('forwards explicit limit and baseUrl to getMLSCommitsSinceEpoch', () => {
+    api.getMLSCommitsSinceEpoch(TOKEN, 'channel-1', 3, 250);
+    expect(apiModule.getMLSCommitsSinceEpoch).toHaveBeenCalledWith(TOKEN, 'channel-1', 3, 250, BASE_URL);
   });
 
   it('forwards baseUrl as last argument to getMLSPendingWelcomes', () => {

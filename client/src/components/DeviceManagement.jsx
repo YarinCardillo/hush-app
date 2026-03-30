@@ -14,6 +14,7 @@ import { listDeviceKeys, revokeDeviceKey } from '../lib/api.js';
 import { getReadableDeviceLabel } from '../lib/deviceLabel.js';
 import { TransparencyVerifier } from '../lib/transparencyVerifier.js';
 import { bytesToHex } from '../lib/identityVault.js';
+import { HOME_INSTANCE_KEY } from '../hooks/useAuth.js';
 
 function formatRelativeTime(dateStr) {
   if (!dateStr) return 'Never';
@@ -56,6 +57,13 @@ function getDeviceDisplayLabel(device, currentDeviceId) {
   return device?.deviceId || 'Unknown device';
 }
 
+function getHomeInstanceUrl() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  return localStorage.getItem(HOME_INSTANCE_KEY) || window.location.origin;
+}
+
 export default function DeviceManagement({ token, currentDeviceId, identityKeyRef, handshakeData, setTransparencyError }) {
   const navigate = useNavigate();
   const [devices, setDevices] = useState([]);
@@ -84,11 +92,15 @@ export default function DeviceManagement({ token, currentDeviceId, identityKeyRe
   // Verify the transparency log after a device operation. Gracefully degrades
   // when transparency props are not passed (e.g. legacy callers).
   const verifyTransparencyAfterOp = useCallback(async (opName) => {
-    if (!handshakeData?.transparency_url || !handshakeData?.log_public_key || !identityKeyRef?.current?.publicKey) return;
+    if (!handshakeData?.log_public_key || !identityKeyRef?.current?.publicKey) return;
+
+    const homeInstanceUrl = getHomeInstanceUrl();
+    if (!homeInstanceUrl) return;
+
     try {
       const pubKeyHex = bytesToHex(identityKeyRef.current.publicKey);
       const verifier = new TransparencyVerifier(
-        handshakeData.transparency_url,
+        homeInstanceUrl,
         handshakeData.log_public_key,
       );
       const result = await verifier.verifyOwnKey(pubKeyHex, token);

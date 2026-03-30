@@ -11,7 +11,7 @@ import * as api from '../lib/api';
 import { importMetadataKey, fromBase64, decryptGuildMetadata } from '../lib/guildMetadata';
 import { useAuth } from '../contexts/AuthContext';
 import { useInstanceContext } from '../contexts/InstanceContext';
-import { JWT_KEY, getDeviceId } from '../hooks/useAuth';
+import { HOME_INSTANCE_KEY, JWT_KEY, getDeviceId } from '../hooks/useAuth';
 import { bytesToHex } from '../lib/identityVault';
 import { TransparencyVerifier } from '../lib/transparencyVerifier';
 import { createInstanceApi } from '../lib/instanceApi';
@@ -56,6 +56,20 @@ function getLocalToken() {
   return typeof window !== 'undefined'
     ? (sessionStorage.getItem(JWT_KEY) ?? sessionStorage.getItem('hush_token'))
     : null;
+}
+
+/**
+ * Returns the authenticated user's home instance URL when known.
+ * Own-key transparency verification is only authoritative on the home instance
+ * in T.1 because federated sessions do not create remote transparency entries.
+ *
+ * @returns {string|null}
+ */
+function getHomeInstanceUrl() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  return localStorage.getItem(HOME_INSTANCE_KEY) || window.location.origin;
 }
 
 const LAYOUT_SCROLL_LOCK_STYLE = {
@@ -162,6 +176,7 @@ export default function ServerLayout() {
    * Legacy-style: parsed from /* splat.
    */
   const channelId = channelSlug ?? legacyChannelId;
+  const homeInstanceUrl = getHomeInstanceUrl();
 
   /** Per-instance WS client, or null if not connected / no instance. */
   const wsClient = instanceUrl ? getWsClient(instanceUrl) : null;
@@ -928,6 +943,7 @@ export default function ServerLayout() {
     if (!handshakeData?.transparency_url || !handshakeData?.log_public_key) return;
     if (!token || !identityKeyRef?.current?.publicKey) return;
     if (!instanceUrl) return;
+    if (!homeInstanceUrl || instanceUrl !== homeInstanceUrl) return;
 
     const pubKeyHex = bytesToHex(identityKeyRef.current.publicKey);
     const verifier = new TransparencyVerifier(
@@ -956,6 +972,7 @@ export default function ServerLayout() {
     if (!handshakeData?.transparency_url || !handshakeData?.log_public_key) return;
     if (!token || !identityKeyRef?.current?.publicKey) return;
     if (!instanceUrl) return;
+    if (!homeInstanceUrl || instanceUrl !== homeInstanceUrl) return;
 
     const check = async () => {
       try {
@@ -992,6 +1009,7 @@ export default function ServerLayout() {
       if (!handshakeData?.transparency_url || !handshakeData?.log_public_key) return;
       if (!token || !identityKeyRef?.current?.publicKey) return;
       if (!instanceUrl) return;
+      if (!homeInstanceUrl || instanceUrl !== homeInstanceUrl) return;
 
       const pubKeyHex = bytesToHex(identityKeyRef.current.publicKey);
       const verifier = new TransparencyVerifier(

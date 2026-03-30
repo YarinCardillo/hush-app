@@ -57,9 +57,9 @@ export function createInstanceApi(baseUrl, getToken) {
     postMLSCommit: (token, channelId, commitBytesBase64, groupInfoBase64, epoch) =>
       apiModule.postMLSCommit(tok(token), channelId, commitBytesBase64, groupInfoBase64, epoch, baseUrl),
 
-    /** @param {string|null} token @param {string} channelId @param {number} sinceEpoch */
-    getMLSCommitsSinceEpoch: (token, channelId, sinceEpoch) =>
-      apiModule.getMLSCommitsSinceEpoch(tok(token), channelId, sinceEpoch, baseUrl),
+    /** @param {string|null} token @param {string} channelId @param {number} sinceEpoch @param {number} [limit=100] */
+    getMLSCommitsSinceEpoch: (token, channelId, sinceEpoch, limit = 100) =>
+      apiModule.getMLSCommitsSinceEpoch(tok(token), channelId, sinceEpoch, limit, baseUrl),
 
     // ── MLS Pending Welcomes ─────────────────────────────────────────────────
 
