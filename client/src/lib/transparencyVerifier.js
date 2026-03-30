@@ -251,9 +251,9 @@ export class TransparencyVerifier {
       for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
         const proof = proofs[i];
-        if (!entry.logSig || !proof) continue;
+        if (!proof?.logSignature) continue;
 
-        const sig = base64ToBytes(entry.logSig);
+        const sig = base64ToBytes(proof.logSignature);
         const entryBytes = base64ToBytes(entry.entryCbor);
         const rootBytes = hexToBytes(proof.rootHash);
 
