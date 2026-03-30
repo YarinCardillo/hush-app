@@ -297,12 +297,47 @@ but each instance maintains its own user record and JWT.
 
 ### Identity Model
 
+#### Client-side storage
+
 | Scope | Storage | What it holds |
 |-|-|-|
 | Identity (global) | IndexedDB vault, encrypted with PIN | BIP39 private key — one per browser |
 | Home instance | `localStorage['hush_home_instance']` | URL of the instance where the user first registered |
 | Per-instance JWT | `sessionStorage['hush_jwt_{host}']` | Session token for each connected instance |
 | Instance registry | IndexedDB `hush-instance-registry` | Known instances with connection state |
+
+#### Federated Identity Model
+
+Users who connect from a foreign instance are not stored in the `users` table.
+Instead, they are stored in `federated_identities`:
+
+| Column | Type | Notes |
+|-|-|-|
+| `id` | UUID PK | Internal surrogate key |
+| `public_key` | TEXT UNIQUE NOT NULL | Ed25519 public key (base64) — globally unique |
+| `home_instance` | TEXT NOT NULL | Base URL of the user's home instance |
+| `username` | TEXT NOT NULL | Username as registered on the home instance |
+| `display_name` | TEXT | Optional display name (may be encrypted) |
+| `cached_at` | TIMESTAMPTZ | When this record was last refreshed |
+
+The canonical handle format is `@username@instance` (e.g. `@alice@hush.example.com`).
+Local users are identified by `@username` (no instance suffix).
+
+**Polymorphic membership (XOR pattern)**
+
+The `server_members`, `messages`, `mls_commits`, and `mls_pending_welcomes`
+tables each carry both `user_id` and `federated_identity_id` columns. A
+`CHECK` constraint enforces that exactly one is non-NULL:
+
+```sql
+CONSTRAINT chk_member_identity CHECK (
+    (user_id IS NOT NULL AND federated_identity_id IS NULL) OR
+    (user_id IS NULL AND federated_identity_id IS NOT NULL)
+)
+```
+
+This XOR pattern means queries never need a union across two tables; a
+single row unambiguously identifies either a local or foreign participant.
 
 ### Auth Flows
 
@@ -321,10 +356,23 @@ but each instance maintains its own user record and JWT.
 **Joining a new instance (invite link or manual add):**
 1. `useInstances.bootInstance(foreignUrl)` runs while the user is already
    authenticated on the home instance
-2. Challenge-response against the foreign instance
-3. If the public key is unknown (server returns 404), auto-registers
-4. Foreign instance issues its own JWT — stored per-instance
+2. Challenge-response against the foreign instance via `POST /api/auth/federated-verify`
+3. If the public key is unknown (server returns 404), the client calls
+   `federatedVerify` (not `registerWithPublicKey`) — the server creates a
+   `federated_identities` row on first contact
+4. Foreign instance issues a federated JWT — stored per-instance in sessionStorage
 5. WS connection established, guilds fetched and merged into the sidebar
+
+**Federated auth (`POST /api/auth/federated-verify`):**
+
+Same Ed25519 challenge-response as `/api/auth/verify`, but the server-side
+behaviour differs:
+
+1. Look up the public key in `federated_identities` (not `users`)
+2. If not found, create a new `federated_identities` row from the request body
+   (`home_instance`, `username`, `display_name`)
+3. Issue a JWT with `is_federated: true` and `fid: <federatedIdentityID>`
+4. No session record is written to the database (stateless token)
 
 ### Design Rules
 
@@ -334,6 +382,15 @@ but each instance maintains its own user record and JWT.
 - The server returns **404** (not 401) for unknown public keys at `/api/auth/verify`,
   enabling clients to distinguish "not registered" from "bad credentials."
 - JWTs are **never shared** between instances. Each instance issues its own.
+- **Federated JWTs are stateless** — no DB session record is created. The JWT
+  payload carries `is_federated: true` and `fid` (federated identity UUID).
+  The auth middleware skips session validation for tokens with this flag.
+- **WebSocket hub presence** — federated clients are tracked in the same
+  connection map as local clients. Their map key is prefixed with `"fed:"` to
+  avoid collisions with local user IDs (e.g. `"fed:<federatedIdentityID>"`).
+- **Local users live in `users`; foreign users live in `federated_identities`.**
+  These tables are never merged. Membership tables reference one or the other
+  via the XOR CHECK constraint — never both.
 
 ---
 
