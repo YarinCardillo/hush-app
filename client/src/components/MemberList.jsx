@@ -44,6 +44,11 @@ function getMemberId(m) {
   return m.id ?? m.userId ?? '';
 }
 
+/** Extract hostname from an instance URL, falling back to the raw string. */
+function instanceHostname(url) {
+  try { return new URL(url).hostname; } catch { return url; }
+}
+
 /**
  * Groups members into buckets by effective permission level.
  * Uses getMemberLevel() so both new integer API and legacy role strings are handled.
@@ -200,6 +205,9 @@ export default function MemberList({
                       {m.displayName || 'Unknown'}
                       {isYou && ' (You)'}
                     </span>
+                    {m.homeInstance && (
+                      <span className="ml-badge ml-badge--instance">{instanceHostname(m.homeInstance)}</span>
+                    )}
                     {badgeLabel && memberLevel >= PERM_ADMIN && (
                       <span className="ml-badge ml-badge--admin">{badgeLabel}</span>
                     )}

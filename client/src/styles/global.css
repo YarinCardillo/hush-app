@@ -2387,6 +2387,14 @@ a[href]:active {
   border: 1px solid var(--hush-border);
 }
 
+.ml-badge--instance {
+  color: var(--hush-text-secondary);
+  background: var(--hush-elevated);
+  border: 1px solid var(--hush-border);
+  font-size: 0.65rem;
+  padding: 1px 4px;
+}
+
 /* ── Modal shared classes (replaces modalStyles.js) ── */
 
 .modal-title {
