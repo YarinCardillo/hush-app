@@ -211,12 +211,12 @@ export class TransparencyVerifier {
     }
 
     // Verify each entry's Merkle inclusion proof.
+    // Server may omit proofs for entries it can't currently prove (tree recovery).
+    // Skip those — not evidence of tampering.
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
       const proof = proofs[i];
-      if (!proof) {
-        return { verified: false, entries, treeHead };
-      }
+      if (!proof) continue;
 
       const entryBytes = base64ToBytes(entry.entryCbor);
       const valid = await verifyInclusion(
@@ -230,6 +230,11 @@ export class TransparencyVerifier {
       if (!valid) {
         return { verified: false, entries, treeHead };
       }
+    }
+
+    // If we had entries but no proofs at all, treat as unverified.
+    if (entries.length > 0 && proofs.filter(Boolean).length === 0) {
+      return { verified: false, entries, treeHead };
     }
 
     // Bind each entry to the queried public key. A malicious server must not

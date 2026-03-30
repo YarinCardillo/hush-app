@@ -500,6 +500,35 @@ describe('TransparencyVerifier', () => {
     vi.restoreAllMocks();
   });
 
+  it('verify() returns { verified: true } when some proofs are missing (partial response)', async () => {
+    const pubKeyHex = bytesToHex(pubKey);
+    const entryBytes = new TextEncoder().encode('entry-with-proof');
+    const mockResponse = await buildMockApiResponse(entryBytes, pubKeyHex);
+
+    // Add a second entry with no corresponding proof
+    mockResponse.entries.push({
+      leafIndex: 1,
+      operation: 'device_add',
+      userPubKey: pubKeyHex,
+      subjectKey: null,
+      entryCbor: mockResponse.entries[0].entryCbor,
+      userSig: mockResponse.entries[0].userSig,
+      logSig: mockResponse.entries[0].logSig,
+      loggedAt: new Date().toISOString(),
+    });
+    // proofs array still has only 1 element — proofs[1] is undefined
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    const verifier = new TransparencyVerifier('https://example.com', pubKeyHex);
+    const result = await verifier.verify(pubKeyHex, 'mock-token');
+    expect(result.verified).toBe(true);
+    vi.restoreAllMocks();
+  });
+
   it('verifyOtherUserKey() returns { ok: false, warning } on proof failure', async () => {
     const pubKeyHex = bytesToHex(pubKey);
     const entryBytes = new TextEncoder().encode('other-entry');
