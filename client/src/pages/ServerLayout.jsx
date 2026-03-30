@@ -939,6 +939,8 @@ export default function ServerLayout() {
       .then(result => {
         if (!result.ok) {
           setTransparencyError(result.error);
+        } else if (result.warning) {
+          console.warn('[transparency]', result.warning);
         }
       })
       .catch(err => {
@@ -965,6 +967,8 @@ export default function ServerLayout() {
         const result = await verifier.verifyOwnKey(pubKeyHex, token);
         if (!result.ok) {
           setTransparencyError(result.error);
+        } else if (result.warning) {
+          console.warn('[transparency]', result.warning);
         }
       } catch (err) {
         console.warn('[transparency] periodic check failed:', err);

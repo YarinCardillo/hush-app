@@ -259,24 +259,23 @@ export class TransparencyVerifier {
   /**
    * Verify the caller's own identity key against the transparency log.
    *
-   * HARD FAIL: if the log has no entry for this key, or if entries exist but
-   * any proof fails to validate, returns { ok: false, error }.
+   * HARD FAIL: if entries exist but any proof fails to validate,
+   * returns { ok: false, error }. The caller MUST block the app UI.
    *
-   * The caller MUST block the app UI on hard fail — do not dismiss silently.
+   * SOFT PASS: if no entries exist, returns { ok: true, warning }.
+   * Missing entries can happen legitimately (non-fatal append failure
+   * during registration). Not evidence of tampering.
    *
    * @param {string} identityPubKeyHex - Hex-encoded 32-byte Ed25519 public key.
    * @param {string} token             - JWT for authenticated API calls.
-   * @returns {Promise<{ ok: boolean, error?: string }>}
+   * @returns {Promise<{ ok: boolean, error?: string, warning?: string }>}
    */
   async verifyOwnKey(identityPubKeyHex, token) {
     try {
       const { verified, entries } = await this.verify(identityPubKeyHex, token);
 
       if (entries.length === 0) {
-        return {
-          ok: false,
-          error: 'Key mismatch detected. Your account may be compromised.',
-        };
+        return { ok: true, warning: 'No transparency log entries found for your key.' };
       }
 
       if (!verified) {

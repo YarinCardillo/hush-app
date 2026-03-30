@@ -433,7 +433,7 @@ describe('TransparencyVerifier', () => {
     vi.restoreAllMocks();
   });
 
-  it('verifyOwnKey() returns { ok: false, error } when no entries found', async () => {
+  it('verifyOwnKey() returns { ok: true, warning } when no entries found', async () => {
     const pubKeyHex = bytesToHex(pubKey);
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
@@ -443,9 +443,9 @@ describe('TransparencyVerifier', () => {
 
     const verifier = new TransparencyVerifier('https://example.com', pubKeyHex);
     const result = await verifier.verifyOwnKey(pubKeyHex, 'mock-token');
-    expect(result.ok).toBe(false);
-    expect(result.error).toBeDefined();
-    expect(result.error).toContain('mismatch');
+    expect(result.ok).toBe(true);
+    expect(result.warning).toBeDefined();
+    expect(result.warning).toContain('No transparency log entries');
     vi.restoreAllMocks();
   });
 
