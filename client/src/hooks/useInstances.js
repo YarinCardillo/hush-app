@@ -380,7 +380,8 @@ export function useInstances() {
       const { privateKey, publicKey } = identityKey;
       const publicKeyBase64 = toBase64(publicKey);
       const deviceId = getDeviceId();
-      const displayName = localUser?.username ?? 'user';
+      const username = localUser?.username ?? 'user';
+      const displayName = localUser?.displayName ?? username;
 
       let jwt;
       let authUser;
@@ -412,14 +413,14 @@ export function useInstances() {
           fedNonce,
           fedSignatureBase64,
           homeInstance,
-          displayName,
+          username,
           displayName,
           instanceUrl,
         );
         if (!isActiveGeneration()) return;
         jwt = result.token;
         // federatedVerify returns { token, federatedIdentity } not { token, user }
-        authUser = result.federatedIdentity ?? { id: result.federatedIdentity?.id };
+        authUser = result.federatedIdentity;
       }
 
       // Step 3: Persist to IDB.
