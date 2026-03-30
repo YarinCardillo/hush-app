@@ -38,7 +38,7 @@ import {
   getHandshake,
   requestChallenge,
   verifyChallenge,
-  registerWithPublicKey,
+  federatedVerify,
   getMyGuilds,
   fetchWithAuth,
 } from '../lib/api.js';
@@ -395,23 +395,31 @@ export function useInstances() {
         jwt = result.token;
         authUser = result.user;
       } catch (err) {
-        // 404 means the key is unknown on this instance — auto-register.
+        // 404 means the key is unknown on this instance — authenticate as a federated user.
         const isNotFound = err?.status === 404
           || err?.response?.status === 404
           || (typeof err?.message === 'string' && err.message.includes('unknown public key'));
         if (!isNotFound) throw err;
 
-        const result = await registerWithPublicKey(
-          displayName,
-          displayName,
+        // The nonce was consumed by the failed verify — request a fresh challenge.
+        const homeInstance = getActiveAuthInstanceUrlSync();
+        const { nonce: fedNonce } = await requestChallenge(publicKeyBase64, instanceUrl);
+        const fedNonceBytes = hexToBytes(fedNonce);
+        const fedSignature = await signChallenge(fedNonceBytes, privateKey);
+        const fedSignatureBase64 = toBase64(fedSignature);
+        const result = await federatedVerify(
           publicKeyBase64,
-          deviceId,
-          null,
+          fedNonce,
+          fedSignatureBase64,
+          homeInstance,
+          displayName,
+          displayName,
           instanceUrl,
         );
         if (!isActiveGeneration()) return;
         jwt = result.token;
-        authUser = result.user;
+        // federatedVerify returns { token, federatedIdentity } not { token, user }
+        authUser = result.federatedIdentity ?? { id: result.federatedIdentity?.id };
       }
 
       // Step 3: Persist to IDB.

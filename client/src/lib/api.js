@@ -335,15 +335,56 @@ export async function verifyChallenge(publicKeyBase64, nonce, signatureBase64, d
 }
 
 /**
- * Register a new account with a BIP39-derived public key.
+ * Authenticate on a foreign instance as a federated user.
+ * Uses the same nonce from /challenge — the server verifies the Ed25519 signature
+ * and upserts a federated_identity record instead of a local user.
  *
- * @param {string} username - Unique username.
- * @param {string} displayName - Display name.
  * @param {string} publicKeyBase64 - Base64-encoded Ed25519 public key.
- * @param {string} deviceId - Stable per-device identifier (UUID).
- * @param {string} [inviteCode] - Optional invite code for invite_only registration mode.
- * @returns {Promise<{ token: string, user: object }>}
+ * @param {string} nonce - Hex nonce from /challenge response.
+ * @param {string} signatureBase64 - Base64-encoded Ed25519 signature over nonce bytes.
+ * @param {string} homeInstance - URL of the user's home instance.
+ * @param {string} username - Username on the home instance.
+ * @param {string} displayName - Display name on the home instance.
+ * @param {string} [baseUrl=''] - Foreign instance base URL.
+ * @returns {Promise<{ token: string, federatedIdentity: object }>}
  */
+export async function federatedVerify(
+  publicKeyBase64,
+  nonce,
+  signatureBase64,
+  homeInstance,
+  username,
+  displayName,
+  baseUrl = '',
+) {
+  const authBaseUrl = resolveAuthBaseUrl(baseUrl);
+  const targetUrl = `${authBaseUrl}/api/auth/federated-verify`;
+  let res;
+  try {
+    res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicKey: publicKeyBase64,
+        nonce,
+        signature: signatureBase64,
+        homeInstance,
+        username,
+        displayName,
+      }),
+    });
+  } catch (err) {
+    throw createNetworkError('federated-verify', targetUrl, err);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || `federatedVerify ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
 /**
  * Request an ephemeral guest session token.
  * No account is created. The JWT carries is_guest=true and a short expiry.
