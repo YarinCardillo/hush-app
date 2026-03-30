@@ -482,6 +482,24 @@ describe('TransparencyVerifier', () => {
     vi.restoreAllMocks();
   });
 
+  it('verify() returns { verified: false } when entry userPubKey does not match queried key', async () => {
+    const pubKeyHex = bytesToHex(pubKey);
+    const entryBytes = new TextEncoder().encode('entry-for-wrong-key');
+    const mockResponse = await buildMockApiResponse(entryBytes, pubKeyHex);
+    // Tamper: change the entry's userPubKey to a different key
+    mockResponse.entries[0].userPubKey = 'aa'.repeat(32);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    const verifier = new TransparencyVerifier('https://example.com', pubKeyHex);
+    const result = await verifier.verify(pubKeyHex, 'mock-token');
+    expect(result.verified).toBe(false);
+    vi.restoreAllMocks();
+  });
+
   it('verifyOtherUserKey() returns { ok: false, warning } on proof failure', async () => {
     const pubKeyHex = bytesToHex(pubKey);
     const entryBytes = new TextEncoder().encode('other-entry');

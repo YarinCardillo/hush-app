@@ -232,6 +232,14 @@ export class TransparencyVerifier {
       }
     }
 
+    // Bind each entry to the queried public key. A malicious server must not
+    // be able to return validly logged entries for a different key.
+    for (const entry of entries) {
+      if (!entry.userPubKey || entry.userPubKey.toLowerCase() !== pubkeyHex.toLowerCase()) {
+        return { verified: false, entries, treeHead };
+      }
+    }
+
     // Verify each entry's countersignature against the log public key.
     // The server signs: CBOR(entry) || leafIndex(8 bytes BE) || rootHash(32 bytes).
     if (this._logPubKey) {
