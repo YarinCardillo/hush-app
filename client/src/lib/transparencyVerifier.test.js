@@ -332,10 +332,17 @@ describe('TransparencyVerifier', () => {
     const lh = await leafHash(entryBytes);
     const rootHex = bytesToHex(lh);
 
-    // Countersign: CBOR(entry 1-5) || leafIndex BE8 || root[32]
-    // Simplified for test: we sign rootHex bytes as the tree head data.
-    const treeHeadData = new TextEncoder().encode(`treeHead:${rootHex}`);
-    const logSig = await ed.signAsync(treeHeadData, privKey);
+    // Countersign: CBOR(entry) || leafIndex(8B BE) || rootHash(32B)
+    const leafIndex = 0;
+    const rootBytes = hexToBytes(rootHex);
+    const indexBuf = new ArrayBuffer(8);
+    new DataView(indexBuf).setBigUint64(0, BigInt(leafIndex), false);
+    const indexBytes = new Uint8Array(indexBuf);
+    const signedMsg = new Uint8Array(entryBytes.length + 8 + rootBytes.length);
+    signedMsg.set(entryBytes, 0);
+    signedMsg.set(indexBytes, entryBytes.length);
+    signedMsg.set(rootBytes, entryBytes.length + 8);
+    const logSig = await ed.signAsync(signedMsg, privKey);
 
     return {
       entries: [{
@@ -358,7 +365,7 @@ describe('TransparencyVerifier', () => {
       treeHead: {
         size: 1,
         root: rootHex,
-        signature: toBase64(treeHeadData), // pass-through for test (verifier uses rootHash from proof)
+        signature: toBase64(signedMsg), // pass-through for test (verifier uses per-entry logSig)
       },
     };
   }

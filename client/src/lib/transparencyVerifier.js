@@ -224,14 +224,29 @@ export class TransparencyVerifier {
       }
     }
 
-    // Verify the tree head signature if we have the log public key.
-    // The log signs the last proof's rootHash so we can anchor the verified chain.
-    if (this._logPubKey && proofs.length > 0) {
-      const lastProof = proofs[proofs.length - 1];
-      if (lastProof.logSignature) {
-        const sig = base64ToBytes(lastProof.logSignature);
-        const treeHeadData = new TextEncoder().encode(`treeHead:${lastProof.rootHash}`);
-        const sigValid = await verifyLogSignature(this._logPubKey, treeHeadData, sig);
+    // Verify each entry's countersignature against the log public key.
+    // The server signs: CBOR(entry) || leafIndex(8 bytes BE) || rootHash(32 bytes).
+    if (this._logPubKey) {
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const proof = proofs[i];
+        if (!entry.logSig || !proof) continue;
+
+        const sig = base64ToBytes(entry.logSig);
+        const entryBytes = base64ToBytes(entry.entryCbor);
+        const rootBytes = hexToBytes(proof.rootHash);
+
+        // Reconstruct the signed message: CBOR || leafIndex(8B BE) || rootHash(32B)
+        const indexBuf = new ArrayBuffer(8);
+        new DataView(indexBuf).setBigUint64(0, BigInt(proof.leafIndex), false);
+        const indexBytes = new Uint8Array(indexBuf);
+
+        const msg = new Uint8Array(entryBytes.length + 8 + rootBytes.length);
+        msg.set(entryBytes, 0);
+        msg.set(indexBytes, entryBytes.length);
+        msg.set(rootBytes, entryBytes.length + 8);
+
+        const sigValid = await verifyLogSignature(this._logPubKey, msg, sig);
         if (!sigValid) {
           return { verified: false, entries, treeHead };
         }
